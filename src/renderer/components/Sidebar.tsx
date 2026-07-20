@@ -9,7 +9,11 @@ const items: { label: string; route: Route; match: string[] }[] = [
   { label: 'Настройки', route: { name: 'settings' }, match: ['settings'] }
 ]
 
-export function Sidebar() {
+interface SidebarProps {
+  onNavigate?: () => void
+}
+
+export function Sidebar({ onNavigate }: SidebarProps) {
   const route = useStore((s) => s.route)
   const navigate = useStore((s) => s.navigate)
   const characters = useStore((s) => s.characters)
@@ -18,6 +22,10 @@ export function Sidebar() {
   const health = useStore((s) => s.health)
 
   const anyReady = canChat(health) || canImage(health) || canTts(health)
+  const go = (next: Route) => {
+    navigate(next)
+    onNavigate?.()
+  }
 
   return (
     <aside className="sidebar">
@@ -34,7 +42,7 @@ export function Sidebar() {
           <button
             key={it.label}
             className={`nav__item ${it.match.includes(route.name) ? 'nav__item--active' : ''}`}
-            onClick={() => navigate(it.route)}
+            onClick={() => go(it.route)}
           >
             {it.label}
           </button>
@@ -49,7 +57,7 @@ export function Sidebar() {
               className={`nav__item ${
                 route.name === 'character' && route.id === c.id ? 'nav__item--active' : ''
               } ${locked ? 'nav__item--locked' : ''}`}
-              onClick={() => navigate({ name: 'character', id: c.id })}
+              onClick={() => go({ name: 'character', id: c.id })}
             >
               {c.name}
               {locked && <span className="nav__lock">гл. {c.unlockChapter}</span>}
@@ -62,7 +70,7 @@ export function Sidebar() {
 
       <button
         className="sidebar__status"
-        onClick={() => navigate({ name: 'settings' })}
+        onClick={() => go({ name: 'settings' })}
         title="Настройки подключения"
       >
         <span className={`dot-online ${anyReady ? '' : 'dot-online--off'}`} />

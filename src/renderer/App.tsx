@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useStore } from './store/useStore'
 import { Sidebar } from './components/Sidebar'
 import { Toasts } from './components/Toasts'
@@ -12,6 +12,7 @@ import { Profile } from './screens/Profile'
 import { Logo } from './components/Logo'
 
 export default function App() {
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   const ready = useStore((s) => s.ready)
   const route = useStore((s) => s.route)
   const init = useStore((s) => s.init)
@@ -20,6 +21,10 @@ export default function App() {
   useEffect(() => {
     init()
   }, [init])
+
+  useEffect(() => {
+    setSidebarOpen(false)
+  }, [route])
 
   // проверка обновления: раз при запуске, ненавязчивый тост со ссылкой
   useEffect(() => {
@@ -49,8 +54,25 @@ export default function App() {
   }
 
   return (
-    <div className="app-shell">
-      <Sidebar />
+    <div className={`app-shell ${sidebarOpen ? 'app-shell--menu-open' : ''}`}>
+      <button
+        className="mobile-menu-button"
+        type="button"
+        aria-label={sidebarOpen ? 'Закрыть меню' : 'Открыть меню'}
+        aria-expanded={sidebarOpen}
+        onClick={() => setSidebarOpen((open) => !open)}
+      >
+        <span />
+        <span />
+        <span />
+      </button>
+      <button
+        className="sidebar-backdrop"
+        type="button"
+        aria-label="Закрыть меню"
+        onClick={() => setSidebarOpen(false)}
+      />
+      <Sidebar onNavigate={() => setSidebarOpen(false)} />
       <main className="main-area">
         {route.name === 'library' && <Library />}
         {route.name === 'book' && <Book />}

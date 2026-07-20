@@ -35,6 +35,26 @@ npm run dev                                     # Electron + Vite HMR
 Без Electron (быстрая проверка UI в браузере): открыть `http://localhost:5173` — dev-shim
 подменяет IPC (картинки — плейсхолдеры, текст — через реальный прокси).
 
+## Android MVP (WebView / Capacitor)
+
+Android-версия на первом этапе — это тот же React UI внутри Android WebView.
+Electron `main/preload/IPC` заменён мобильным мостом `src/renderer/lib/mobileBridge.ts`:
+настройки и состояние лежат в Capacitor Preferences, кэш картинок/аудио/видео — в
+app cache через Capacitor Filesystem, AI-запросы идут на тот же proxy-server.
+
+```bash
+npm run android:sync
+JAVA_HOME=/usr/local/opt/openjdk@21 ./android/gradlew -p android assembleDebug
+```
+
+Локально нужен JDK 21 и Android SDK. APK после сборки:
+`android/app/build/outputs/apk/debug/app-debug.apk`.
+
+В MVP намеренно нет фоновых сервисов и фоновой аудиокниги: звук/генерации работают
+в активном приложении, долгие AI-задачи остаются серверными. Импорт пользовательских
+книг на Android пока выключен; его надо добавить отдельным шагом через системный
+file picker, без широких storage permissions.
+
 ## Ключевые места в коде
 
 | Что | Где |

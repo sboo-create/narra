@@ -131,9 +131,14 @@
   width: 168px;
   text-align: left;
   transition: transform 0.2s ease;
+  cursor: pointer;
+  outline: none;
 }
 .book-spine:hover {
   transform: translateY(-6px);
+}
+.book-spine:focus-visible {
+  box-shadow: 0 0 0 3px rgba(217, 74, 43, 0.18);
 }
 .book-spine__cover {
   width: 168px;
@@ -227,6 +232,8 @@
 .reader {
   height: 100vh;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
 }
 .reader__bar {
   position: sticky;
@@ -1481,6 +1488,160 @@
   .book-hero,
   .char-hero {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 760px) {
+  .page {
+    padding: 80px 18px 70px;
+  }
+
+  .page__title {
+    font-size: 34px;
+  }
+
+  .reader__bar,
+  .chat__head {
+    padding-left: 66px;
+  }
+
+  .reader__bar {
+    gap: 12px;
+  }
+
+  .reader__bar-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .reader__page {
+    max-width: none;
+    padding: 42px 22px 96px;
+  }
+
+  .reader__title {
+    font-size: 34px;
+  }
+
+  .reader__prose {
+    font-size: 18px;
+    line-height: 1.72;
+  }
+
+  .toolbar {
+    align-items: stretch;
+    margin-bottom: 34px;
+  }
+
+  .toolbar__chips,
+  .toolbar__right,
+  .toolbar__sort {
+    width: 100%;
+  }
+
+  .toolbar__right {
+    display: grid;
+    gap: 8px;
+  }
+
+  .toolbar__sort {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .sort-btn {
+    min-width: 0;
+    padding-inline: 10px;
+    white-space: normal;
+  }
+
+  .shelf {
+    margin-bottom: 42px;
+  }
+
+  .shelf__head {
+    align-items: end;
+    justify-content: flex-start;
+    gap: 8px;
+    margin-bottom: 18px;
+  }
+
+  .shelf__head h2 {
+    min-width: 0;
+    max-width: calc(100% - 58px);
+    font-size: 34px;
+    line-height: 1;
+    overflow-wrap: anywhere;
+  }
+
+  .shelf__head span {
+    flex: 0 0 auto;
+    padding-bottom: 4px;
+    font-size: 16px;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  .shelf__row {
+    width: 100%;
+    min-width: 0;
+    padding: 0;
+  }
+
+  .shelf__books {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .shelf__glass {
+    display: none;
+  }
+
+  .book-spine {
+    width: 100%;
+    min-height: 140px;
+    display: grid;
+    grid-template-columns: 94px 1fr;
+    gap: 16px;
+    align-items: center;
+    padding: 12px;
+    border: 1px solid var(--line);
+    border-radius: var(--r-md);
+    background: var(--card);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .book-spine:hover {
+    transform: none;
+  }
+
+  .book-spine__cover {
+    width: 94px;
+    height: 124px;
+    border-radius: 8px;
+  }
+
+  .book-spine__meta {
+    min-width: 0;
+    margin-top: 0;
+  }
+
+  .book-spine__title {
+    font-size: 21px;
+  }
+
+  .book-spine__row {
+    width: 100%;
+  }
+
+  .chat__messages,
+  .chat__suggestions,
+  .chat__input {
+    padding-left: 18px;
+    padding-right: 18px;
   }
 }
 

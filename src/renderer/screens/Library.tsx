@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import type { KeyboardEvent } from 'react'
 import { useStore } from '../store/useStore'
 import { GeneratedImage } from '../components/GeneratedImage'
 import { coverKey } from '../lib/imageStyle'
@@ -89,6 +90,12 @@ export function Library() {
     navigate({ name: 'book' })
   }
 
+  function onBookKeyDown(e: KeyboardEvent<HTMLDivElement>, id: string) {
+    if (e.key !== 'Enter' && e.key !== ' ') return
+    e.preventDefault()
+    open(id)
+  }
+
   return (
     <div className="page">
       <div className="page__head">
@@ -146,7 +153,14 @@ export function Library() {
                 const ch = persisted.chapters[b.fanfic.id] || 1
                 const started = (persisted.chapters[b.fanfic.id] || 0) > 0
                 return (
-                  <button key={b.fanfic.id} className="book-spine" onClick={() => open(b.fanfic.id)}>
+                  <div
+                    key={b.fanfic.id}
+                    className="book-spine"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => open(b.fanfic.id)}
+                    onKeyDown={(e) => onBookKeyDown(e, b.fanfic.id)}
+                  >
                     <div className="book-spine__cover">
                       <GeneratedImage
                         cacheKey={coverKey(b.fanfic.id)}
@@ -171,7 +185,7 @@ export function Library() {
                         </span>
                       </div>
                     </div>
-                  </button>
+                  </div>
                 )
               })}
             </div>
