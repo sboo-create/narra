@@ -174,7 +174,14 @@
       "Bash(git branch *)",
       "Bash(git rm *)",
       "Bash(git -c user.name=\"narra\" -c user.email=\"narra@local\" commit -q -m \"Убраны тексты под авторским правом перед публикацией репозитория\")",
-      "Bash(git -c user.name=narra -c user.email=narra@local commit -q -m 'Narra — иммерсивная AI-читалка \\(публичный релиз\\) *)"
+      "Bash(git -c user.name=narra -c user.email=narra@local commit -q -m 'Narra — иммерсивная AI-читалка \\(публичный релиз\\) *)",
+      "Bash(git credential-osxkeychain *)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('private:', d.get\\('private'\\), '| url:', d.get\\('html_url'\\), d.get\\('message',''\\)\\)\")",
+      "Bash(curl -sS https://api.github.com/repos/sboo-create/narra)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('публичный доступ:', 'да' if d.get\\('full_name'\\) else 'нет', '| коммитов в истории: смотрим…'\\)\")",
+      "Bash(curl -sS \"https://api.github.com/repos/sboo-create/narra/commits\")",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('коммитов:', len\\(d\\)\\)\")",
+      "Bash(curl -sS \"https://api.github.com/repos/sboo-create/narra/contents/content\")"
     ]
   }
 }

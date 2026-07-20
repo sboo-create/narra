@@ -25,6 +25,7 @@ Electron (main / preload / renderer React+Vite+TS)
 
 ```bash
 npm install
+npm run fetch-content   # докачивает книги, которых нет в публичном репо (фанфик и др.)
 # ключи (только для локального сервера; в проде они в Railway Variables):
 cp server/.env.example server/.env   # и заполнить
 node --env-file=server/.env server/index.mjs   # прокси на :8787

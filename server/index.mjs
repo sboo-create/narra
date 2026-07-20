@@ -459,6 +459,8 @@ app.post(
 // --- Генерация изображения: gigachat-image (осн.), Kandinsky (фолбэк) ---
 // --- Автообновление: версия и ссылка на свежий dmg (лежит рядом в updates/) ---
 app.use('/updates', express.static(new URL('./updates', import.meta.url).pathname))
+// контент для команды (тексты, которые нельзя класть в публичный репозиторий)
+app.use('/team/content', express.static(new URL('./team-content', import.meta.url).pathname))
 app.get('/app/latest', (_req, res) => {
   try {
     const j = JSON.parse(readFileSync(new URL('./updates/latest.json', import.meta.url), 'utf-8'))
