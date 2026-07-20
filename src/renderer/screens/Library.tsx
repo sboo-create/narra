@@ -1,0 +1,187 @@
+import { useMemo, useState } from 'react'
+import { useStore } from '../store/useStore'
+import { GeneratedImage } from '../components/GeneratedImage'
+import { coverKey } from '../lib/imageStyle'
+import { buildCharacters } from '../lib/importFlow'
+import { coverPrompt } from '../lib/passport'
+import type { BookContent } from '@shared/types'
+
+type SortKey = 'title' | 'progress'
+
+function categoryOf(b: BookContent): string {
+  if (b.fanfic.tags.some((t) => /мои книги/i.test(t))) return 'Мои книги'
+  return b.fanfic.tags.some((t) => /классика/i.test(t)) ? 'Классика' : 'Фанфики'
+}
+
+const SHELF_TINT: Record<string, string> = {
+  Фанфики: 'var(--glass-amber)',
+  Классика: 'var(--glass-blue)',
+  'Мои книги': 'rgba(217, 74, 43, 0.26)'
+}
+
+export function Library() {
+  const books = useStore((s) => s.books)
+  const persisted = useStore((s) => s.persisted)
+  const setActiveBook = useStore((s) => s.setActiveBook)
+  const navigate = useStore((s) => s.navigate)
+
+  const reloadBooks = useStore((s) => s.reloadBooks)
+  const toast = useStore((s) => s.toast)
+  const [importing, setImporting] = useState(false)
+  const [filter, setFilter] = useState<string>('Все')
+
+  async function importOwnBook() {
+    if (importing) return
+    setImporting(true)
+    const res = await window.narra.importBook()
+    if (!res.ok) {
+      setImporting(false)
+      if (res.error !== 'Отменено') toast({ type: 'error', title: 'Импорт не удался', message: res.error })
+      return
+    }
+    const meta = res.data!
+    toast({ type: 'success', title: `«${meta.title}» загружена`, message: `${meta.chapters} глав · размечаю героев…` })
+    const built = await buildCharacters(meta.title, meta.author, meta.excerpt)
+    if (built.ok) {
+      await window.narra.saveBookCharacters(meta.id, built.characters)
+      toast({ type: 'success', title: `Готово: ${built.characters.map((c) => c.name).join(', ')}` })
+    } else {
+      await window.narra.saveBookCharacters(meta.id, [])
+      toast({ type: 'error', title: 'Герои не разметились', message: `${built.error}. Книга добавлена без героев.` })
+    }
+    await reloadBooks()
+    setImporting(false)
+  }
+  const [sort, setSort] = useState<SortKey>('title')
+
+  const categories = useMemo(() => {
+    const set = new Set(books.map(categoryOf))
+    return ['Все', ...set]
+  }, [books])
+
+  const progressOf = (b: BookContent) =>
+    (persisted.chapters[b.fanfic.id] || 1) / b.fanfic.chapters.length
+
+  const sorted = useMemo(() => {
+    const arr = [...books]
+    if (sort === 'title') arr.sort((a, b) => a.fanfic.title.localeCompare(b.fanfic.title, 'ru'))
+    else arr.sort((a, b) => progressOf(b) - progressOf(a))
+    return arr
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [books, sort, persisted.chapters])
+
+  const shelves = useMemo(() => {
+    const list = filter === 'Все' ? sorted : sorted.filter((b) => categoryOf(b) === filter)
+    const groups = new Map<string, BookContent[]>()
+    for (const b of list) {
+      const c = categoryOf(b)
+      if (!groups.has(c)) groups.set(c, [])
+      groups.get(c)!.push(b)
+    }
+    return [...groups.entries()]
+  }, [sorted, filter])
+
+
+  if (!books.length) return null
+
+  function open(id: string) {
+    setActiveBook(id)
+    navigate({ name: 'book' })
+  }
+
+  return (
+    <div className="page">
+      <div className="page__head">
+        <div className="page__title">Библиотека</div>
+      </div>
+
+
+      {/* фильтры и сортировка */}
+      <div className="toolbar">
+        <div className="toolbar__chips">
+          {categories.map((c) => (
+            <button
+              key={c}
+              className={`chip ${filter === c ? 'chip--on' : ''}`}
+              onClick={() => setFilter(c)}
+            >
+              {c}
+            </button>
+          ))}
+        </div>
+        <div className="toolbar__right">
+          <button className="btn btn--ghost btn--sm" disabled={importing} onClick={importOwnBook}>
+            {importing ? 'загружаю…' : '+ Своя книга'}
+          </button>
+        <div className="toolbar__sort">
+          <button
+            className={`sort-btn ${sort === 'title' ? 'is-active' : ''}`}
+            onClick={() => setSort('title')}
+          >
+            По названию
+          </button>
+          <button
+            className={`sort-btn ${sort === 'progress' ? 'is-active' : ''}`}
+            onClick={() => setSort('progress')}
+          >
+            По прогрессу
+          </button>
+        </div>
+        </div>
+      </div>
+
+      {shelves.map(([cat, list]) => (
+        <section key={cat} className="shelf">
+          <div className="shelf__head">
+            <h2>{cat}</h2>
+            <span>
+              {list.length}{' '}
+              {list.length === 1 ? 'книга' : list.length < 5 ? 'книги' : 'книг'}
+            </span>
+          </div>
+          <div className="shelf__row">
+            <div className="shelf__books">
+              {list.map((b) => {
+                const total = b.fanfic.chapters.length
+                const ch = persisted.chapters[b.fanfic.id] || 1
+                const started = (persisted.chapters[b.fanfic.id] || 0) > 0
+                return (
+                  <button key={b.fanfic.id} className="book-spine" onClick={() => open(b.fanfic.id)}>
+                    <div className="book-spine__cover">
+                      <GeneratedImage
+                        cacheKey={coverKey(b.fanfic.id)}
+                        prompt={coverPrompt(b.fanfic.coverPrompt, b.characters.slice(0, 2))}
+                        className="cover-img"
+                        rounded={6}
+                        lockedHint="обложка"
+                      />
+                    </div>
+                    <div className="book-spine__meta">
+                      <div className="book-spine__title">{b.fanfic.title}</div>
+                      <div className="book-spine__author">{b.fanfic.author}</div>
+                      <div className="book-spine__row">
+                        <div className="progress book-spine__progress">
+                          <div
+                            className="progress__fill"
+                            style={{ width: `${Math.round((ch / total) * 100)}%` }}
+                          />
+                        </div>
+                        <span className="book-spine__cta">
+                          {started ? `гл. ${ch}/${total}` : 'читать'}
+                        </span>
+                      </div>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+            <div className="shelf__glass" style={{ background: SHELF_TINT[cat] || 'var(--glass-amber)' }}>
+              <i className="shelf__screw" />
+              <i className="shelf__screw shelf__screw--r" />
+            </div>
+          </div>
+        </section>
+      ))}
+    </div>
+  )
+}

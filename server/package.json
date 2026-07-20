@@ -1,0 +1,19 @@
+{
+  "name": "narra-proxy",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Narra key-holding proxy for Sber GigaChat / SaluteSpeech / FusionBrain",
+  "main": "index.mjs",
+  "scripts": {
+    "start": "node index.mjs",
+    "dev": "node --env-file=.env index.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2"
+  }
+}

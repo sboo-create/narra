@@ -1,0 +1,88 @@
+import { useState } from 'react'
+import { useStore } from '../store/useStore'
+
+export function Settings() {
+  const settings = useStore((s) => s.settings)
+  const health = useStore((s) => s.health)
+  const checkingHealth = useStore((s) => s.checkingHealth)
+  const reloadSettings = useStore((s) => s.reloadSettings)
+  const checkHealth = useStore((s) => s.checkHealth)
+  const toast = useStore((s) => s.toast)
+
+  const [proxyUrl, setProxyUrl] = useState(settings?.proxyUrl || '')
+  const [saved, setSaved] = useState(false)
+
+  async function save() {
+    await window.narra.setSettings({ proxyUrl: proxyUrl.trim() })
+    await reloadSettings()
+    setSaved(true)
+    setTimeout(() => setSaved(false), 1600)
+  }
+
+  async function test() {
+    await save()
+    await checkHealth()
+    const h = useStore.getState().health
+    if (h) toast({ type: 'success', title: 'Сервер отвечает' })
+    else toast({ type: 'error', title: 'Нет связи с сервером', message: 'Проверь URL и что прокси запущен.' })
+  }
+
+  const services = [
+    { key: 'gigachat', label: 'GigaChat — чат и разметка', on: !!health?.gigachat },
+    { key: 'salutespeech', label: 'SaluteSpeech — эмоциональная озвучка', on: !!health?.salutespeech },
+    { key: 'kandinsky', label: 'Kandinsky — изображения', on: !!health?.kandinsky }
+  ]
+
+  return (
+    <div className="page" style={{ maxWidth: 780 }}>
+      <div className="page__head">
+        <div className="page__title">Настройки</div>
+        <div className="page__subtitle">
+          Ключи хранятся на сервере (прокси), не в приложении. Здесь — только адрес сервера.
+        </div>
+      </div>
+
+      <div className="card settings-block">
+        <div className="settings-block__head">
+          <h3>Сервер (прокси)</h3>
+          <span className={`chip ${health ? 'chip--accent' : ''}`}>
+            {checkingHealth ? 'проверка…' : health ? <><span className="dot-online" /> подключён</> : 'не подключён'}
+          </span>
+        </div>
+        <label className="field">
+          <span>URL прокси-сервера</span>
+          <input
+            type="text"
+            value={proxyUrl}
+            placeholder="http://localhost:8787 или https://…railway.app"
+            onChange={(e) => setProxyUrl(e.target.value)}
+          />
+        </label>
+        <div className="settings-block__actions">
+          <button className="btn btn--primary btn--sm" onClick={test} disabled={checkingHealth}>
+            {checkingHealth ? 'Проверяем…' : 'Проверить подключение'}
+          </button>
+          <button className="btn btn--ghost btn--sm" onClick={save}>
+            {saved ? '✓ Сохранено' : 'Сохранить'}
+          </button>
+        </div>
+
+        <div className="services">
+          {services.map((s) => (
+            <div key={s.key} className="service-row">
+              <span className={`dot-online ${s.on ? '' : 'dot-online--off'}`} />
+              <span className={s.on ? '' : 'service-off'}>{s.label}</span>
+              <span className="service-state">{s.on ? 'вкл' : 'выкл'}</span>
+            </div>
+          ))}
+        </div>
+
+        <div className="settings-block__sub" style={{ marginTop: 14 }}>
+          Локально: запусти прокси <code>cd server &amp;&amp; npm run dev</code> и впиши ключи в{' '}
+          <code>server/.env</code>. Для раздачи приложения задеплой <code>server/</code> на Railway
+          и укажи здесь его URL — тогда у всех получателей всё работает без ключей.
+        </div>
+      </div>
+    </div>
+  )
+}

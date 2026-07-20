@@ -1,0 +1,14 @@
+node_modules/
+out/
+release/
+dist/
+.DS_Store
+*.log
+.env
+server/.env
+server/updates/*.dmg
+# тексты под авторским правом — только для локальной сборки, в публичный репо не попадают
+content/fanfic.json
+content/characters.json
+content/gwtw.json
+content/gwtw-characters.json
