@@ -1,3 +1,5 @@
+import { App as CapacitorApp } from '@capacitor/app'
+import { Capacitor } from '@capacitor/core'
 import { useEffect, useState } from 'react'
 import { useStore } from './store/useStore'
 import { Sidebar } from './components/Sidebar'
@@ -17,6 +19,7 @@ export default function App() {
   const route = useStore((s) => s.route)
   const init = useStore((s) => s.init)
   const toast = useStore((s) => s.toast)
+  const goBack = useStore((s) => s.goBack)
 
   useEffect(() => {
     init()
@@ -25,6 +28,23 @@ export default function App() {
   useEffect(() => {
     setSidebarOpen(false)
   }, [route])
+
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return
+    let remove: (() => void) | undefined
+    CapacitorApp.addListener('backButton', () => {
+      if (sidebarOpen) {
+        setSidebarOpen(false)
+        return
+      }
+      if (!goBack()) {
+        CapacitorApp.exitApp()
+      }
+    }).then((handle) => {
+      remove = () => handle.remove()
+    })
+    return () => remove?.()
+  }, [goBack, sidebarOpen])
 
   // проверка обновления: раз при запуске, ненавязчивый тост со ссылкой
   useEffect(() => {

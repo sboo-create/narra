@@ -62,10 +62,12 @@ interface StoreState {
   checkingHealth: boolean
   persisted: Persisted
   route: Route
+  routeHistory: Route[]
   toasts: Toast[]
 
   init: () => Promise<void>
   navigate: (r: Route) => void
+  goBack: () => boolean
   setActiveBook: (id: string) => void
   reloadSettings: () => Promise<void>
   reloadBooks: () => Promise<void>
@@ -114,6 +116,15 @@ function persist(p: Persisted) {
   }, 350)
 }
 
+function sameRoute(a: Route, b: Route): boolean {
+  return (
+    a.name === b.name &&
+    ('id' in a ? a.id : '') === ('id' in b ? b.id : '') &&
+    ('sceneContext' in a ? a.sceneContext : '') === ('sceneContext' in b ? b.sceneContext : '') &&
+    ('autoAsk' in a ? a.autoAsk : '') === ('autoAsk' in b ? b.autoAsk : '')
+  )
+}
+
 export const useStore = create<StoreState>((set, get) => ({
   ready: false,
   books: [],
@@ -127,6 +138,7 @@ export const useStore = create<StoreState>((set, get) => ({
   checkingHealth: false,
   persisted: emptyPersisted,
   route: { name: 'library' },
+  routeHistory: [],
   toasts: [],
 
   init: async () => {
@@ -159,7 +171,22 @@ export const useStore = create<StoreState>((set, get) => ({
     }
   },
 
-  navigate: (r) => set({ route: r }),
+  navigate: (r) => {
+    const current = get().route
+    if (sameRoute(current, r)) return
+    set({
+      route: r,
+      routeHistory: [...get().routeHistory.slice(-24), current]
+    })
+  },
+
+  goBack: () => {
+    const history = get().routeHistory
+    const prev = history[history.length - 1]
+    if (!prev) return false
+    set({ route: prev, routeHistory: history.slice(0, -1) })
+    return true
+  },
 
   setActiveBook: (id) => {
     const book = get().books.find((b) => b.fanfic.id === id)
