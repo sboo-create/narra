@@ -30,7 +30,9 @@ export default function App() {
         toast({
           type: 'info',
           title: `Доступна новая версия ${r.data!.version}`,
-          message: 'Скачай свежий установщик и перетащи Narra в «Программы» поверх старой.',
+          message:
+            'Проще всего — команда в Терминале: curl -fsSL ' +
+            'https://narra-proxy-production.up.railway.app/updates/install.sh | bash — она сама всё установит.',
           actionLabel: '⬇ Скачать',
           onRetry: () => window.open(r.data!.url)
         })
