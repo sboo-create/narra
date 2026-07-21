@@ -459,8 +459,15 @@ app.post(
 // --- Генерация изображения: gigachat-image (осн.), Kandinsky (фолбэк) ---
 // --- Автообновление: версия и ссылка на свежий dmg (лежит рядом в updates/) ---
 app.use('/updates', express.static(new URL('./updates', import.meta.url).pathname))
-// контент для команды (тексты, которые нельзя класть в публичный репозиторий)
-app.use('/team/content', express.static(new URL('./team-content', import.meta.url).pathname))
+// контент для команды (тексты, которые нельзя класть в публичный репозиторий);
+// файлы лежат в updates/ с префиксом tc- — эта папка гарантированно доезжает до Railway
+app.get('/team/content/:file', (req, res) => {
+  const f = String(req.params.file)
+  if (!/^[a-z0-9-]+\.json$/.test(f)) return res.status(400).end()
+  res.sendFile(new URL(`./updates/tc-${f}`, import.meta.url).pathname, (err) => {
+    if (err) res.status(404).json({ error: 'нет такого файла' })
+  })
+})
 app.get('/app/latest', (_req, res) => {
   try {
     const j = JSON.parse(readFileSync(new URL('./updates/latest.json', import.meta.url), 'utf-8'))

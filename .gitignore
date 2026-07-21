@@ -13,3 +13,4 @@ content/characters.json
 content/gwtw.json
 content/gwtw-characters.json
 server/team-content/
+server/updates/tc-*.json
