@@ -2403,3 +2403,299 @@
   line-height: 1.65;
   color: var(--ink-soft, #444);
 }
+
+/* ============ Small Android screens ============ */
+@media (max-width: 760px) {
+  .toolbar__right {
+    display: grid;
+    grid-template-columns: 1fr;
+    align-items: stretch;
+    width: 100%;
+    gap: 8px;
+  }
+
+  .toolbar__right > .btn,
+  .toolbar__sort,
+  .toolbar__sort .sort-btn {
+    width: 100%;
+  }
+
+  .chat {
+    min-height: 100dvh;
+    height: 100dvh;
+  }
+
+  .chat__head {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    min-width: 0;
+    gap: 10px;
+    padding-right: 14px;
+  }
+
+  .chat__who {
+    min-width: 0;
+  }
+
+  .chat__banner {
+    padding-left: 18px;
+    padding-right: 18px;
+    flex-wrap: wrap;
+  }
+
+  .chat__stage {
+    grid-template-columns: minmax(88px, 34vw) 1fr;
+    gap: 14px;
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+
+  .chat__stage-name {
+    font-size: 22px;
+    overflow-wrap: anywhere;
+  }
+
+  .msg {
+    max-width: 94%;
+  }
+
+  .msg__bubble {
+    overflow-wrap: anywhere;
+  }
+
+  .chat__input {
+    gap: 8px;
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+  }
+
+  .chat__input .btn {
+    padding-inline: 16px;
+  }
+
+  .book-hero2,
+  .cardv2__panel,
+  .stat-row,
+  .path-books,
+  .path-chars {
+    min-width: 0;
+  }
+
+  .book-hero2__title,
+  .cardv2__name,
+  .path-book__title,
+  .path-char__name,
+  .chapter-row__title,
+  .tl-title {
+    overflow-wrap: anywhere;
+  }
+
+  .book-hero2__actions,
+  .cardv2__actions {
+    flex-wrap: wrap;
+  }
+
+  .book-hero2__actions .btn,
+  .cardv2__actions .btn {
+    width: 100%;
+  }
+}
+
+@media (max-width: 420px) {
+  .page {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  .page__title {
+    font-size: 30px;
+    overflow-wrap: anywhere;
+  }
+
+  .mobile-menu-button {
+    left: 10px;
+    width: 38px;
+    height: 38px;
+  }
+
+  .reader__bar,
+  .chat__head {
+    padding-left: 56px;
+  }
+
+  .reader__bar {
+    padding-right: 12px;
+  }
+
+  .reader__back {
+    font-size: 0;
+  }
+
+  .reader__back::first-letter {
+    font-size: 17px;
+  }
+
+  .reader__voice {
+    padding-inline: 10px;
+    font-size: 12.5px;
+  }
+
+  .reader__page {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .reader__title {
+    font-size: 30px;
+    letter-spacing: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .reader__prose {
+    font-size: 17px;
+    line-height: 1.68;
+  }
+
+  .reader__nav {
+    gap: 10px;
+  }
+
+  .reader__nav .btn {
+    min-width: 0;
+    padding-inline: 14px;
+  }
+
+  .toolbar__chips {
+    gap: 6px;
+  }
+
+  .toolbar__chips .chip {
+    padding: 7px 12px;
+    font-size: 12.5px;
+  }
+
+  .shelf__head h2 {
+    font-size: 30px;
+  }
+
+  .book-spine {
+    grid-template-columns: 78px 1fr;
+    gap: 12px;
+    min-height: 118px;
+    padding: 10px;
+  }
+
+  .book-spine__cover {
+    width: 78px;
+    height: 104px;
+  }
+
+  .book-spine__title {
+    font-size: 18px;
+  }
+
+  .book-spine__author {
+    overflow-wrap: anywhere;
+  }
+
+  .chat__avatar,
+  .chat__who .avatar {
+    width: 34px;
+    height: 34px;
+  }
+
+  .chat__role {
+    -webkit-line-clamp: 1;
+  }
+
+  .chat__stage {
+    grid-template-columns: 1fr;
+  }
+
+  .chat__stage-portrait {
+    width: min(190px, 62vw);
+    justify-self: center;
+  }
+
+  .chat__suggestions {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 10px;
+  }
+
+  .chat__suggestions .chip {
+    flex: 0 0 auto;
+  }
+
+  .chat__input textarea {
+    min-width: 0;
+    padding-inline: 12px;
+  }
+
+  .chat__input .btn {
+    padding-inline: 13px;
+  }
+
+  .stat-row {
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+
+  .stat-tile {
+    padding: 14px;
+  }
+
+  .stat-tile__num {
+    font-size: 26px;
+  }
+
+  .path-book {
+    grid-template-columns: 62px 1fr;
+    gap: 12px;
+    padding: 10px;
+  }
+
+  .path-book__cover {
+    width: 62px;
+    height: 82px;
+  }
+
+  .path-chars {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 360px) {
+  .page {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  .page__title,
+  .reader__title,
+  .shelf__head h2 {
+    font-size: 28px;
+  }
+
+  .book-spine {
+    grid-template-columns: 68px 1fr;
+  }
+
+  .book-spine__cover {
+    width: 68px;
+    height: 92px;
+  }
+
+  .book-spine__title {
+    font-size: 16.5px;
+  }
+
+  .sort-btn {
+    font-size: 12px;
+  }
+
+  .chat__input {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+}
