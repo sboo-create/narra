@@ -32,7 +32,7 @@ export interface ReaderPrefs {
   fontSize: number // 15..26
   lineHeight: number // 1.4..2.2
   font: 'serif' | 'sans'
-  theme: 'paper' | 'sepia' | 'night'
+  theme: 'original' | 'quiet' | 'paper' | 'accent' | 'calm' | 'focus'
   width: 'narrow' | 'normal' | 'wide'
   paged: boolean // постранично vs лента
 }
@@ -41,7 +41,7 @@ export const defaultReaderPrefs: ReaderPrefs = {
   fontSize: 19,
   lineHeight: 1.75,
   font: 'serif',
-  theme: 'paper',
+  theme: 'original',
   width: 'normal',
   paged: false
 }
@@ -151,6 +151,15 @@ const emptyPersisted: Persisted = {
   readerPrefs: defaultReaderPrefs
 }
 
+/** Старые темы (paper/sepia/night) → новые пресеты. */
+function migratePrefs(saved?: Partial<ReaderPrefs>): ReaderPrefs {
+  const legacy: Record<string, ReaderPrefs['theme']> = { sepia: 'calm', night: 'quiet', paper: 'original' }
+  const p = { ...defaultReaderPrefs, ...(saved || {}) }
+  const known = ['original', 'quiet', 'paper', 'accent', 'calm', 'focus']
+  if (!known.includes(p.theme)) p.theme = legacy[p.theme as string] || 'original'
+  return p
+}
+
 function uid(): string {
   return Math.random().toString(36).slice(2, 10)
 }
@@ -190,7 +199,7 @@ export const useStore = create<StoreState>((set, get) => ({
       const persisted: Persisted = {
         ...emptyPersisted,
         ...saved,
-        readerPrefs: { ...defaultReaderPrefs, ...(saved.readerPrefs || {}) }
+        readerPrefs: migratePrefs(saved.readerPrefs)
       }
       const hidden = new Set(persisted.hiddenBooks || [])
       const books = (booksRes.ok ? booksRes.data! : []).filter((b) => !hidden.has(b.fanfic.id))

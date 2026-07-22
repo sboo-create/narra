@@ -140,6 +140,7 @@ export function installDevShim(): void {
     saveCachedVideo: async () => ({ ok: true, data: { ok: true } }),
     checkAppUpdate: async () => ({ ok: true, data: { hasUpdate: false, version: '', url: '' } }),
     deleteBook: async () => ({ ok: true, data: { builtin: true } }),
+    bookExcerpt: async () => ({ ok: false, error: 'только в приложении', code: 'UNKNOWN' }),
     importBookFromUrl: async () => ({ ok: false, error: 'импорт по ссылке доступен только в приложении', code: 'UNKNOWN' }),
     recognize: async (base64: string, mime: string) => {
       try {

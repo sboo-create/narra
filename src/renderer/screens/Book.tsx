@@ -1,3 +1,5 @@
+import { useState } from 'react'
+import { buildCharacters } from '../lib/importFlow'
 import { useStore } from '../store/useStore'
 import { GeneratedImage } from '../components/GeneratedImage'
 import { CharAvatar } from '../components/CharAvatar'
@@ -11,6 +13,10 @@ export function Book() {
   const chapter = useStore((s) => s.chapter)
   const setChapter = useStore((s) => s.setChapter)
   const deleteBook = useStore((s) => s.deleteBook)
+  const reloadBooks = useStore((s) => s.reloadBooks)
+  const toast = useStore((s) => s.toast)
+  const [menu, setMenu] = useState(false)
+  const [remarking, setRemarking] = useState(false)
   const navigate = useStore((s) => s.navigate)
 
   if (!fanfic) return null
@@ -54,15 +60,56 @@ export function Book() {
             <button className="btn btn--primary" onClick={() => navigate({ name: 'reader' })}>
               {chapter > 1 ? 'Продолжить чтение' : 'Начать читать'}
             </button>
-            <button
-              className="btn btn--ghost btn--danger"
-              onClick={() => {
-                if (!window.confirm(`Убрать «${fanfic.title}» из библиотеки?\n\nПрогресс чтения, закладки и заметки по книге будут удалены.`)) return
-                deleteBook(fanfic.id).then(() => navigate({ name: 'library' }))
-              }}
-            >
-              Удалить книгу
-            </button>
+            <div className="book-menu">
+              <button className="book-menu__btn" title="Ещё" onClick={() => setMenu(!menu)}>
+                ⋯
+              </button>
+              {menu && (
+                <>
+                  <div className="panel-scrim" onClick={() => setMenu(false)} />
+                  <div className="book-menu__pop">
+                    <button
+                      disabled={remarking}
+                      onClick={async () => {
+                        setMenu(false)
+                        setRemarking(true)
+                        const ex = await window.narra.bookExcerpt(fanfic.id)
+                        if (!ex.ok) {
+                          setRemarking(false)
+                          toast({ type: 'error', title: 'Только для загруженных книг', message: ex.error })
+                          return
+                        }
+                        const built = await buildCharacters(ex.data!.title, ex.data!.author, ex.data!.excerpt)
+                        if (built.ok) {
+                          await window.narra.saveBookCharacters(fanfic.id, built.characters)
+                          await reloadBooks()
+                          toast({
+                            type: 'success',
+                            title: 'Герои перерисованы',
+                            message: built.characters.map((c) => c.name).join(', ')
+                          })
+                        } else {
+                          toast({ type: 'error', title: 'Не удалось', message: built.error })
+                        }
+                        setRemarking(false)
+                      }}
+                    >
+                      ✦ Разметить героев заново
+                    </button>
+                    <button
+                      className="is-danger"
+                      onClick={() => {
+                        setMenu(false)
+                        if (!window.confirm(`Убрать «${fanfic.title}» из библиотеки?\n\nПрогресс чтения, закладки и заметки по книге будут удалены.`)) return
+                        deleteBook(fanfic.id).then(() => navigate({ name: 'library' }))
+                      }}
+                    >
+                      Удалить книгу
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
       </div>

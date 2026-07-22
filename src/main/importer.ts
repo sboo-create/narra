@@ -14,6 +14,10 @@ export function userBooksDir(): string {
 
 // ---------- декодирование ----------
 // Выбираем кодировку по качеству результата: считаем кириллицу и знаки замены.
+function normalizeEol(t: string): string {
+  return t.replace(/\r\n?/g, '\n')
+}
+
 function decode(buf: Buffer): string {
   const head = buf.subarray(0, 300).toString('utf8')
   if (/windows-1251/i.test(head)) return new TextDecoder('windows-1251').decode(buf)
@@ -22,7 +26,7 @@ function decode(buf: Buffer): string {
   // строгую проверку, а вот кракозябры «РµСЂ…» формально тоже кириллица —
   // поэтому НЕ сравниваем счётчиком, а проверяем валидность
   try {
-    return new TextDecoder('utf-8', { fatal: true }).decode(buf)
+    return normalizeEol(new TextDecoder('utf-8', { fatal: true }).decode(buf))
   } catch {
     /* не utf-8 — выбираем из однобайтовых */
   }
@@ -37,7 +41,7 @@ function decode(buf: Buffer): string {
       best = enc
     }
   }
-  return new TextDecoder(best).decode(buf)
+  return normalizeEol(new TextDecoder(best).decode(buf))
 }
 
 // ---------- FB2 ----------
@@ -49,6 +53,8 @@ function stripTags(t: string): string {
     .replace(/&amp;/g, '&')
     .replace(/&quot;/g, '"')
     .replace(/&apos;/g, "'")
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&#(\d+);/g, (_m, c: string) => String.fromCharCode(Number(c)))
     .replace(/[ \t]+/g, ' ')
     .trim()
 }
@@ -194,6 +200,42 @@ async function parsePdf(filePath: string): Promise<{ title: string; author: stri
   return parsed
 }
 
+/** Часто упоминаемые имена — подсказка LLM, чтобы главный герой не потерялся. */
+function topNames(chapters: Chapter[]): string {
+  const STOP = new Set([
+    'Глава','Часть','Автор','Примечание','Комментарий','Но','И','А','Он','Она','Они','Мы','Ты','Вы','Я','Это','Как',
+    'Когда','Что','Если','Так','Все','Всё','Да','Нет','Потом','После','Перед','Может','Только','Ещё','Еще','Просто','Затем'
+  ])
+  const freq = new Map<string, number>()
+  for (const ch of chapters) {
+    // слово с заглавной, НЕ в начале предложения — почти всегда имя собственное
+    for (const m of ch.text.matchAll(/(?:[^.!?…\n]\s+)([А-ЯЁ][а-яё]{3,})/g)) {
+      const w = m[1]
+      if (STOP.has(w)) continue
+      freq.set(w, (freq.get(w) || 0) + 1)
+    }
+  }
+  return [...freq.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 14)
+    .map(([w, n]) => `${w} (${n})`)
+    .join(', ')
+}
+
+/** Выборка для разметки героев: начало + середина + конец, а не только первые главы. */
+function buildExcerpt(chapters: Chapter[]): string {
+  const pick = (ch: Chapter, n: number) => `[${ch.title}]\n${ch.text.slice(0, n)}`
+  const mid = chapters[Math.floor(chapters.length / 2)]
+  const last = chapters[chapters.length - 1]
+  const parts = [
+    `Часто упоминаемые имена во всей книге (имя и число упоминаний): ${topNames(chapters)}`,
+    pick(chapters[0], 5000),
+    chapters.length > 1 && mid ? pick(mid, 3500) : '',
+    chapters.length > 2 && last ? pick(last, 2500) : ''
+  ].filter(Boolean)
+  return parts.join('\n\n')
+}
+
 // ---------- импорт по ссылке (AO3 / Фикбук) ----------
 import { getSettings } from './store'
 
@@ -249,8 +291,16 @@ async function importFromFicbook(rawUrl: string): Promise<{ title: string; autho
       page.match(/<div[^>]*id="content"[^>]*>([\s\S]*?)<\/div>\s*<div/) ||
       page.match(/<div[^>]*id="content"[^>]*>([\s\S]*?)$/)
     if (!m) return ''
-    const body = m[1].replace(/<(p|div|br)[^>]*>/gi, '\n')
-    return stripTags(body).replace(/\n{3,}/g, '\n\n').trim()
+    // на Фикбуке абзацы разделены <br>, а не <p> — каждый перенос делаем абзацным,
+    // иначе весь текст (и диалоги) слипается в один блок
+    const body = m[1]
+      .replace(/<br\s*\/?>/gi, '\n\n')
+      .replace(/<\/(p|div)>/gi, '\n\n')
+      .replace(/<(p|div)[^>]*>/gi, '\n')
+    return stripTags(body)
+      .replace(/\n[ \t]+/g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim()
   }
   const chapters: Chapter[] = []
   if (partIds.length === 0) {
@@ -302,7 +352,7 @@ export async function importBookFromUrl(url: string): Promise<ApiResult<Imported
     }
     await fs.mkdir(userBooksDir(), { recursive: true })
     await fs.writeFile(path.join(userBooksDir(), `${id}.json`), JSON.stringify(book), 'utf8')
-    const excerpt = parsed.chapters.slice(0, 2).map((c) => c.text).join('\n\n').slice(0, 9000)
+    const excerpt = buildExcerpt(parsed.chapters)
     return { ok: true, data: { id, title: parsed.title, author: parsed.author, chapters: parsed.chapters.length, words, excerpt } }
   } catch (e) {
     return { ok: false, error: `Импорт по ссылке не удался: ${(e as Error).message}`, code: 'UNKNOWN' }
@@ -369,10 +419,21 @@ export async function importBook(): Promise<ApiResult<ImportedBookMeta>> {
     await fs.mkdir(userBooksDir(), { recursive: true })
     await fs.writeFile(path.join(userBooksDir(), `${id}.json`), JSON.stringify(book), 'utf8')
 
-    const excerpt = parsed.chapters.slice(0, 2).map((c) => c.text).join('\n\n').slice(0, 9000)
+    const excerpt = buildExcerpt(parsed.chapters)
     return { ok: true, data: { id, title: parsed.title, author: parsed.author, chapters: parsed.chapters.length, words, excerpt } }
   } catch (e) {
     return { ok: false, error: `Импорт не удался: ${(e as Error).message}`, code: 'UNKNOWN' }
+  }
+}
+
+/** Выборка текста уже импортированной книги — для повторной разметки героев. */
+export async function bookExcerpt(bookId: string): Promise<ApiResult<{ title: string; author: string; excerpt: string }>> {
+  try {
+    const raw = await fs.readFile(path.join(userBooksDir(), `${bookId}.json`), 'utf8')
+    const book = JSON.parse(raw) as Fanfic
+    return { ok: true, data: { title: book.title, author: book.author, excerpt: buildExcerpt(book.chapters) } }
+  } catch (e) {
+    return { ok: false, error: (e as Error).message, code: 'UNKNOWN' }
   }
 }
 

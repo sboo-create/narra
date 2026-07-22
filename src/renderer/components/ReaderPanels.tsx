@@ -4,27 +4,34 @@ import type { Bookmark, Note, ReaderPrefs } from '../store/useStore'
 import type { Fanfic } from '@shared/types'
 import { proseOnly } from '../lib/blocks'
 
-/* Панели читалки: настройки вида (АА) и навигация (оглавление/закладки/заметки/поиск). */
+/* Панели читалки: «Темы и настройки» (АА) и навигация (оглавление/закладки/поиск). */
 
 interface SettingsProps {
   onClose: () => void
 }
 
-const THEMES: { id: ReaderPrefs['theme']; label: string }[] = [
-  { id: 'paper', label: 'Бумага' },
-  { id: 'sepia', label: 'Сепия' },
-  { id: 'night', label: 'Ночь' }
+/** Темы-пресеты: плитка показывает, как будет выглядеть страница. */
+const THEMES: { id: ReaderPrefs['theme']; label: string; bg: string; ink: string; bold?: boolean }[] = [
+  { id: 'original', label: 'Оригинал', bg: '#ffffff', ink: '#1a1a17' },
+  { id: 'quiet', label: 'Тишина', bg: '#3a3a3c', ink: '#c9c7c2' },
+  { id: 'paper', label: 'Бумага', bg: '#e9e9ea', ink: '#22221f' },
+  { id: 'accent', label: 'Акцент', bg: '#ffffff', ink: '#111', bold: true },
+  { id: 'calm', label: 'Покой', bg: '#efe1c6', ink: '#3b3125' },
+  { id: 'focus', label: 'Фокус', bg: '#fbf7ef', ink: '#2b2822' }
 ]
 
 export function ReaderSettings({ onClose }: SettingsProps) {
   const prefs = useStore((s) => s.persisted.readerPrefs)
   const set = useStore((s) => s.setReaderPrefs)
+  const [more, setMore] = useState(false)
 
   return (
     <>
       <div className="panel-scrim" onClick={onClose} />
       <div className="reader-panel reader-panel--settings">
-        <div className="rp-row">
+        <div className="rp-head">Темы и настройки</div>
+
+        <div className="rp-sizerow">
           <button
             className="rp-size"
             disabled={prefs.fontSize <= 15}
@@ -32,7 +39,7 @@ export function ReaderSettings({ onClose }: SettingsProps) {
           >
             A
           </button>
-          <div className="rp-size-value">{prefs.fontSize} pt</div>
+          <span className="rp-size-sep" />
           <button
             className="rp-size rp-size--big"
             disabled={prefs.fontSize >= 26}
@@ -40,71 +47,85 @@ export function ReaderSettings({ onClose }: SettingsProps) {
           >
             A
           </button>
+          <span className="rp-size-value">{prefs.fontSize} pt</span>
         </div>
 
-        <div className="rp-seg">
+        <div className="rp-themes">
           {THEMES.map((t) => (
             <button
               key={t.id}
-              className={`rp-seg__btn rp-theme rp-theme--${t.id} ${prefs.theme === t.id ? 'is-on' : ''}`}
+              className={`rp-tile ${prefs.theme === t.id ? 'is-on' : ''}`}
+              style={{ background: t.bg, color: t.ink }}
               onClick={() => set({ theme: t.id })}
             >
-              {t.label}
+              <span className="rp-tile__aa" style={{ fontWeight: t.bold ? 800 : 500 }}>
+                Aa
+              </span>
+              <span className="rp-tile__label">{t.label}</span>
             </button>
           ))}
         </div>
 
-        <div className="rp-seg">
-          <button
-            className={`rp-seg__btn ${prefs.font === 'serif' ? 'is-on' : ''}`}
-            style={{ fontFamily: 'var(--font-serif)' }}
-            onClick={() => set({ font: 'serif' })}
-          >
-            С засечками
-          </button>
-          <button
-            className={`rp-seg__btn ${prefs.font === 'sans' ? 'is-on' : ''}`}
-            onClick={() => set({ font: 'sans' })}
-          >
-            Гротеск
-          </button>
-        </div>
+        <button className={`rp-more ${more ? 'is-on' : ''}`} onClick={() => setMore(!more)}>
+          ⚙ Настроить
+        </button>
 
-        <div className="rp-label">Ширина колонки</div>
-        <div className="rp-seg">
-          {(['narrow', 'normal', 'wide'] as const).map((w) => (
-            <button
-              key={w}
-              className={`rp-seg__btn ${prefs.width === w ? 'is-on' : ''}`}
-              onClick={() => set({ width: w })}
-            >
-              {w === 'narrow' ? 'Узкая' : w === 'normal' ? 'Обычная' : 'Широкая'}
-            </button>
-          ))}
-        </div>
+        {more && (
+          <div className="rp-more-body">
+            <div className="rp-label">Шрифт</div>
+            <div className="rp-seg">
+              <button
+                className={`rp-seg__btn ${prefs.font === 'serif' ? 'is-on' : ''}`}
+                style={{ fontFamily: 'var(--font-book)' }}
+                onClick={() => set({ font: 'serif' })}
+              >
+                С засечками
+              </button>
+              <button
+                className={`rp-seg__btn ${prefs.font === 'sans' ? 'is-on' : ''}`}
+                onClick={() => set({ font: 'sans' })}
+              >
+                Гротеск
+              </button>
+            </div>
 
-        <div className="rp-label">Межстрочный интервал</div>
-        <div className="rp-seg">
-          {([1.5, 1.75, 2.0] as const).map((lh) => (
-            <button
-              key={lh}
-              className={`rp-seg__btn ${prefs.lineHeight === lh ? 'is-on' : ''}`}
-              onClick={() => set({ lineHeight: lh })}
-            >
-              {lh === 1.5 ? 'Плотно' : lh === 1.75 ? 'Обычно' : 'Свободно'}
-            </button>
-          ))}
-        </div>
+            <div className="rp-label">Ширина колонки</div>
+            <div className="rp-seg">
+              {(['narrow', 'normal', 'wide'] as const).map((w) => (
+                <button
+                  key={w}
+                  className={`rp-seg__btn ${prefs.width === w ? 'is-on' : ''}`}
+                  onClick={() => set({ width: w })}
+                >
+                  {w === 'narrow' ? 'Узкая' : w === 'normal' ? 'Обычная' : 'Широкая'}
+                </button>
+              ))}
+            </div>
 
-        <div className="rp-label">Прокрутка</div>
-        <div className="rp-seg">
-          <button className={`rp-seg__btn ${!prefs.paged ? 'is-on' : ''}`} onClick={() => set({ paged: false })}>
-            Лента
-          </button>
-          <button className={`rp-seg__btn ${prefs.paged ? 'is-on' : ''}`} onClick={() => set({ paged: true })}>
-            Постранично
-          </button>
-        </div>
+            <div className="rp-label">Межстрочный интервал</div>
+            <div className="rp-seg">
+              {([1.5, 1.75, 2.0] as const).map((lh) => (
+                <button
+                  key={lh}
+                  className={`rp-seg__btn ${prefs.lineHeight === lh ? 'is-on' : ''}`}
+                  onClick={() => set({ lineHeight: lh })}
+                >
+                  {lh === 1.5 ? 'Плотно' : lh === 1.75 ? 'Обычно' : 'Свободно'}
+                </button>
+              ))}
+            </div>
+
+            <div className="rp-label">Прокрутка</div>
+            <div className="rp-seg">
+              <button className={`rp-seg__btn ${!prefs.paged ? 'is-on' : ''}`} onClick={() => set({ paged: false })}>
+                Лента
+              </button>
+              <button className={`rp-seg__btn ${prefs.paged ? 'is-on' : ''}`} onClick={() => set({ paged: true })}>
+                Постранично
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </>
   )

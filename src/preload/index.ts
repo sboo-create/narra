@@ -74,6 +74,8 @@ const api = {
     ipcRenderer.invoke(IPC.checkAppUpdate),
   deleteBook: (bookId: string): Promise<ApiResult<{ builtin: boolean }>> =>
     ipcRenderer.invoke(IPC.deleteBook, bookId),
+  bookExcerpt: (bookId: string): Promise<ApiResult<{ title: string; author: string; excerpt: string }>> =>
+    ipcRenderer.invoke(IPC.bookExcerpt, bookId),
   importBookFromUrl: (
     url: string
   ): Promise<ApiResult<{ id: string; title: string; author: string; chapters: number; words: number; excerpt: string }>> =>

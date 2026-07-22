@@ -47,7 +47,8 @@ export const IPC = {
   // импорт своих книг
   importBook: 'books:import',
   saveBookCharacters: 'books:saveCharacters',
-  deleteBook: 'books:delete'
+  deleteBook: 'books:delete',
+  bookExcerpt: 'books:excerpt'
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]
