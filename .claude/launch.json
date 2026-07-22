@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "aiwa-webapp",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [".claude/aiwa-serve.js"],
+      "port": 8901
+    }
+  ]
+}

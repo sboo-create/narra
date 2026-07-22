@@ -192,6 +192,109 @@ async function parsePdf(filePath: string): Promise<{ title: string; author: stri
   return parsed
 }
 
+// ---------- импорт по ссылке (AO3 / Фикбук) ----------
+import { getSettings } from './store'
+
+function proxyFetchUrl(target: string): string {
+  const base = getSettings().proxyUrl.replace(/\/+$/, '')
+  return `${base}/import/fetch?url=${encodeURIComponent(target)}`
+}
+
+async function fetchViaProxy(target: string): Promise<Buffer> {
+  const r = await fetch(proxyFetchUrl(target))
+  if (!r.ok) {
+    let msg = `загрузка не удалась (${r.status})`
+    try {
+      msg = ((await r.json()) as { error?: string }).error || msg
+    } catch {
+      /* не json */
+    }
+    throw new Error(msg)
+  }
+  return Buffer.from(await r.arrayBuffer())
+}
+
+async function importFromAo3(workId: string): Promise<{ title: string; author: string; chapters: Chapter[] }> {
+  // AO3 официально отдаёт epub — качаем его и разбираем готовым парсером
+  const buf = await fetchViaProxy(`https://archiveofourown.org/downloads/${workId}/work.epub`)
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'narra-ao3-'))
+  const file = path.join(tmp, 'work.epub')
+  await fs.writeFile(file, buf)
+  return parseEpub(file)
+}
+
+async function importFromFicbook(url: string): Promise<{ title: string; author: string; chapters: Chapter[] }> {
+  const html = decode(await fetchViaProxy(url))
+  const title = stripTags(html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/)?.[1] || 'Без названия')
+  const author =
+    stripTags(html.match(/class="creator-username"[^>]*>([\s\S]*?)<\/a>/)?.[1] || '') ||
+    stripTags(html.match(/itemprop="author"[^>]*>([\s\S]*?)<\/(a|span)>/)?.[1] || '') ||
+    'Автор с Фикбука'
+  const fidM = url.match(/readfic\/(\d+)/)
+  if (!fidM) throw new Error('Не понял ссылку Фикбука')
+  // список частей: /readfic/<id>/<part>
+  const partIds: string[] = []
+  for (const m of html.matchAll(new RegExp(`href="/readfic/${fidM[1]}/(\\d+)[#"]`, 'g'))) {
+    if (!partIds.includes(m[1])) partIds.push(m[1])
+  }
+  const grabContent = (page: string) => {
+    const m =
+      page.match(/<div[^>]*id="content"[^>]*>([\s\S]*?)<\/div>\s*<div/) ||
+      page.match(/<div[^>]*id="content"[^>]*>([\s\S]*?)$/)
+    if (!m) return ''
+    const body = m[1].replace(/<(p|div|br)[^>]*>/gi, '\n')
+    return stripTags(body).replace(/\n{3,}/g, '\n\n').trim()
+  }
+  const chapters: Chapter[] = []
+  if (partIds.length === 0) {
+    const text = grabContent(html)
+    if (!text) throw new Error('Не нашёл текст — возможно, работа скрыта или сайт поменял разметку')
+    chapters.push({ number: 1, title: title.slice(0, 80), summary: '', characters: [], text })
+  } else {
+    for (const pid of partIds) {
+      const page = decode(await fetchViaProxy(`https://ficbook.net/readfic/${fidM[1]}/${pid}`))
+      const chTitle = stripTags(page.match(/<h2[^>]*>([\s\S]*?)<\/h2>/)?.[1] || `Глава ${chapters.length + 1}`)
+      const text = grabContent(page)
+      if (text.split(/\s+/).length >= 30) {
+        chapters.push({ number: chapters.length + 1, title: chTitle.slice(0, 80), summary: '', characters: [], text })
+      }
+      await new Promise((r) => setTimeout(r, 800)) // вежливая пауза между главами
+    }
+  }
+  return { title, author, chapters }
+}
+
+export async function importBookFromUrl(url: string): Promise<ApiResult<ImportedBookMeta>> {
+  try {
+    const clean = url.trim()
+    const ao3 = clean.match(/archiveofourown\.org\/works\/(\d+)/)
+    const fb = clean.match(/ficbook\.net\/readfic\/\d+/)
+    if (!ao3 && !fb) {
+      return { ok: false, error: 'Поддерживаются ссылки AO3 (archiveofourown.org/works/…) и Фикбука (ficbook.net/readfic/…)', code: 'PARSE' }
+    }
+    const parsed = ao3 ? await importFromAo3(ao3[1]) : await importFromFicbook(clean)
+    if (parsed.chapters.length === 0) return { ok: false, error: 'Не удалось найти главы по ссылке', code: 'PARSE' }
+    const id = `u-${Date.now().toString(36)}`
+    const words = parsed.chapters.reduce((n, c) => n + c.text.split(/\s+/).length, 0)
+    const book: Fanfic = {
+      id,
+      title: parsed.title,
+      author: parsed.author,
+      pairing: 'Загруженная книга',
+      tags: ['Мои книги'],
+      description: `${parsed.title} — ${parsed.author}. ${parsed.chapters.length} глав.`,
+      coverPrompt: `обложка книги «${parsed.title}» (${parsed.author}), атмосферная, по духу произведения`,
+      chapters: parsed.chapters
+    }
+    await fs.mkdir(userBooksDir(), { recursive: true })
+    await fs.writeFile(path.join(userBooksDir(), `${id}.json`), JSON.stringify(book), 'utf8')
+    const excerpt = parsed.chapters.slice(0, 2).map((c) => c.text).join('\n\n').slice(0, 9000)
+    return { ok: true, data: { id, title: parsed.title, author: parsed.author, chapters: parsed.chapters.length, words, excerpt } }
+  } catch (e) {
+    return { ok: false, error: `Импорт по ссылке не удался: ${(e as Error).message}`, code: 'UNKNOWN' }
+  }
+}
+
 // ---------- импорт ----------
 export interface ImportedBookMeta {
   id: string

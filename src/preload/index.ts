@@ -72,6 +72,10 @@ const api = {
     ipcRenderer.invoke(IPC.saveCachedVideo, cacheKey, dataUrl),
   checkAppUpdate: (): Promise<ApiResult<{ hasUpdate: boolean; version: string; url: string }>> =>
     ipcRenderer.invoke(IPC.checkAppUpdate),
+  importBookFromUrl: (
+    url: string
+  ): Promise<ApiResult<{ id: string; title: string; author: string; chapters: number; words: number; excerpt: string }>> =>
+    ipcRenderer.invoke(IPC.importBookFromUrl, url),
   recognize: (base64: string, mime: string): Promise<ApiResult<{ text: string }>> =>
     ipcRenderer.invoke(IPC.recognize, base64, mime),
   importBook: (): Promise<ApiResult<{ id: string; title: string; author: string; chapters: number; words: number; excerpt: string }>> =>

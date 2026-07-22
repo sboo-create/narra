@@ -4,7 +4,7 @@ import { IPC } from '../shared/ipc'
 import type { LlmMessage, Settings } from '../shared/types'
 import { getSettings, setSettings, getAppState, setAppState } from './store'
 import { loadBooks } from './content'
-import { importBook, saveBookCharacters } from './importer'
+import { importBook, importBookFromUrl, saveBookCharacters } from './importer'
 import {
   testProxy,
   chatStream,
@@ -111,6 +111,7 @@ function registerIpc(): void {
   ipcMain.handle(IPC.deleteCachedVideo, (_e, cacheKey: string) => deleteCachedVideo(cacheKey))
   ipcMain.handle(IPC.saveCachedVideo, (_e, cacheKey: string, dataUrl: string) => saveCachedVideo(cacheKey, dataUrl))
   ipcMain.handle(IPC.checkAppUpdate, () => checkAppUpdate(app.getVersion()))
+  ipcMain.handle(IPC.importBookFromUrl, (_e, url: string) => importBookFromUrl(url))
   ipcMain.handle(IPC.recognize, (_e, base64: string, mime: string) => recognize(base64, mime))
   ipcMain.handle(IPC.importBook, () => importBook())
   ipcMain.handle(IPC.saveBookCharacters, (_e, bookId: string, characters: unknown) =>

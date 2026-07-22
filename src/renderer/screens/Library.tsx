@@ -30,16 +30,10 @@ export function Library() {
   const [importing, setImporting] = useState(false)
   const [filter, setFilter] = useState<string>('Все')
 
-  async function importOwnBook() {
-    if (importing) return
-    setImporting(true)
-    const res = await window.narra.importBook()
-    if (!res.ok) {
-      setImporting(false)
-      if (res.error !== 'Отменено') toast({ type: 'error', title: 'Импорт не удался', message: res.error })
-      return
-    }
-    const meta = res.data!
+  const [urlOpen, setUrlOpen] = useState(false)
+  const [bookUrl, setBookUrl] = useState('')
+
+  async function afterImport(meta: { id: string; title: string; author: string; chapters: number; excerpt: string }) {
     toast({ type: 'success', title: `«${meta.title}» загружена`, message: `${meta.chapters} глав · размечаю героев…` })
     const built = await buildCharacters(meta.title, meta.author, meta.excerpt)
     if (built.ok) {
@@ -50,6 +44,35 @@ export function Library() {
       toast({ type: 'error', title: 'Герои не разметились', message: `${built.error}. Книга добавлена без героев.` })
     }
     await reloadBooks()
+  }
+
+  async function importOwnBook() {
+    if (importing) return
+    setImporting(true)
+    const res = await window.narra.importBook()
+    if (!res.ok) {
+      setImporting(false)
+      if (res.error !== 'Отменено') toast({ type: 'error', title: 'Импорт не удался', message: res.error })
+      return
+    }
+    await afterImport(res.data!)
+    setImporting(false)
+  }
+
+  async function importByUrl() {
+    const url = bookUrl.trim()
+    if (!url || importing) return
+    setImporting(true)
+    setUrlOpen(false)
+    toast({ type: 'info', title: 'Качаю по ссылке…', message: 'Главы тянутся по одной — может занять пару минут.' })
+    const res = await window.narra.importBookFromUrl(url)
+    if (!res.ok) {
+      setImporting(false)
+      toast({ type: 'error', title: 'Импорт не удался', message: res.error })
+      return
+    }
+    setBookUrl('')
+    await afterImport(res.data!)
     setImporting(false)
   }
   const [sort, setSort] = useState<SortKey>('title')
@@ -113,6 +136,23 @@ export function Library() {
           <button className="btn btn--ghost btn--sm" disabled={importing} onClick={importOwnBook}>
             {importing ? 'загружаю…' : '+ Своя книга'}
           </button>
+          <button className="chip" disabled={importing} onClick={() => setUrlOpen((v) => !v)}>
+            + По ссылке
+          </button>
+          {urlOpen && (
+            <span className="url-import">
+              <input
+                autoFocus
+                placeholder="Ссылка на AO3 или Фикбук"
+                value={bookUrl}
+                onChange={(e) => setBookUrl(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && importByUrl()}
+              />
+              <button className="chip chip--accent" disabled={!bookUrl.trim() || importing} onClick={importByUrl}>
+                Загрузить
+              </button>
+            </span>
+          )}
         <div className="toolbar__sort">
           <button
             className={`sort-btn ${sort === 'title' ? 'is-active' : ''}`}

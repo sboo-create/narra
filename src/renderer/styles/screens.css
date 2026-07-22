@@ -2242,3 +2242,22 @@
   line-height: 1.65;
   color: var(--ink-soft, #444);
 }
+
+/* Импорт книги по ссылке */
+.url-import {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+}
+.url-import input {
+  width: 320px;
+  padding: 10px 16px;
+  border: 1px solid var(--line, #e2ded6);
+  border-radius: 999px;
+  font-size: 14px;
+  outline: none;
+  background: #fff;
+}
+.url-import input:focus {
+  border-color: var(--accent, #c73e2e);
+}

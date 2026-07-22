@@ -468,6 +468,32 @@ app.get('/team/content/:file', (req, res) => {
     if (err) res.status(404).json({ error: 'нет такого файла' })
   })
 })
+// Загрузка книг по ссылке (AO3 заблокирован в РФ — качаем сервером).
+// Строгий белый список хостов, только https, лимит 30 МБ.
+const IMPORT_HOSTS = new Set(['archiveofourown.org', 'download.archiveofourown.org', 'ficbook.net', 'www.ficbook.net'])
+app.get('/import/fetch', async (req, res) => {
+  try {
+    const u = new URL(String(req.query.url || ''))
+    if (u.protocol !== 'https:' || !IMPORT_HOSTS.has(u.hostname)) {
+      return res.status(400).json({ error: 'Хост не поддерживается', code: 'UNKNOWN' })
+    }
+    const r = await fetch(u, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
+        Accept: 'text/html,application/xhtml+xml,application/epub+zip,*/*'
+      },
+      redirect: 'follow'
+    })
+    if (!r.ok) return res.status(502).json({ error: `Источник ответил ${r.status}`, code: 'NETWORK' })
+    const buf = Buffer.from(await r.arrayBuffer())
+    if (buf.length > 30 * 1024 * 1024) return res.status(413).json({ error: 'Файл больше 30 МБ', code: 'UNKNOWN' })
+    res.setHeader('Content-Type', r.headers.get('content-type') || 'application/octet-stream')
+    res.send(buf)
+  } catch (e) {
+    res.status(502).json({ error: String(e.message), code: 'NETWORK' })
+  }
+})
+
 app.get('/app/latest', (_req, res) => {
   try {
     const j = JSON.parse(readFileSync(new URL('./updates/latest.json', import.meta.url), 'utf-8'))

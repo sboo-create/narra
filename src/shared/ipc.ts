@@ -41,6 +41,7 @@ export const IPC = {
   deleteCachedVideo: 'avatar:deleteCached',
   saveCachedVideo: 'avatar:saveCached',
   checkAppUpdate: 'app:checkUpdate',
+  importBookFromUrl: 'books:importUrl',
   // распознавание речи
   recognize: 'asr:recognize',
   // импорт своих книг
