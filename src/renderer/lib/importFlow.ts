@@ -5,6 +5,22 @@ import type { Character, Gender, LlmMessage, SaluteVoice } from '@shared/types'
  * с паспортами внешности; голоса назначаются по полу; unlockChapter считает main.
  */
 
+/** Латинский id из имени: русские имена иначе схлопывались в c0/c1. */
+const TRANSLIT: Record<string, string> = {
+  а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z', и: 'i', й: 'y', к: 'k',
+  л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'h', ц: 'c',
+  ч: 'ch', ш: 'sh', щ: 'sch', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya'
+}
+function slugify(s: string): string {
+  return s
+    .toLowerCase()
+    .split('')
+    .map((ch) => TRANSLIT[ch] ?? ch)
+    .join('')
+    .replace(/[^a-z0-9]+/g, '')
+    .slice(0, 24)
+}
+
 const MALE: SaluteVoice[] = ['Bys', 'Tur', 'Pon']
 const FEMALE: SaluteVoice[] = ['Ost', 'May', 'Nec']
 
@@ -21,7 +37,7 @@ function markupPrompt(title: string, author: string, excerpt: string): LlmMessag
 - если герой сам не знает, кто он (амнезия, скрытая личность, чужое имя) — так и описывай: он не знает, и читатель пока тоже;
 - в role пиши, кем он выглядит в первых главах и чего хочет, а не кем окажется потом;
 - в speechStyle и traits — характер и манера, без раскрытия сюжета.
-[{"id":"латиницей","name":"Имя точно как в тексте (именительный падеж)","fullName":"полное имя","role":"кто в истории, 1 предложение","gender":"male|female","traits":["5 черт по-русски"],"speechStyle":"манера речи, 1-2 предложения","speechExamples":["3 реплики в духе героя"],"passport":{"age":число,"build":"телосложение","hair":"волосы","eyes":"глаза","face":"черты лица","outfit":"одежда по эпохе"},"expression":"выражение лица из характера","greeting":"приветствие в характере","exampleDialogue":[{"user":"вопрос","char":"ответ"},{"user":"...","char":"..."},{"user":"...","char":"..."}],"idleAnimation":"small facial motion in english, no smile if stern"}]
+[{"id":"латиницей","name":"Имя точно как в тексте (именительный падеж)","fullName":"полное имя","role":"кто в истории, 1 предложение","gender":"male|female","traits":["5 черт по-русски"],"speechStyle":"манера речи, 1-2 предложения","speechExamples":["3 реплики в духе героя"],"passport":{"age":число,"build":"телосложение","hair":"волосы","eyes":"глаза","face":"черты лица","outfit":"одежда по эпохе"},"expression":"выражение лица из характера","greeting":"приветствие в характере","exampleDialogue":[{"user":"вопрос","char":"ответ"},{"user":"...","char":"..."},{"user":"...","char":"..."}],"idleAnimation":"живое движение лица по-английски, 6-12 слов: наклон головы, движение бровей, взгляд. ГЛАЗА ОТКРЫТЫ, рот закрыт. Без слов speak/talk/breathing/sleep/eyes closed"}]
 Паспорт: чего нет в тексте — зафиксируй правдоподобно для эпохи. Возраст ЧИСЛОМ.`
     },
     { role: 'user', content: `Книга: «${title}», ${author}.\n\nФрагменты:\n${excerpt}\n\nJSON:` }
@@ -91,7 +107,7 @@ export async function buildCharacters(
       : undefined
     const g = gender === 'female' ? 'женщина' : 'мужчина'
     chars.push({
-      id: String(raw.id || raw.name).toLowerCase().replace(/[^a-z0-9]+/g, '') || `c${chars.length}`,
+      id: slugify(String(raw.id || '')) || slugify(first) || `c${chars.length}`,
       name: String(raw.name).split(/\s+/)[0],
       fullName: String(raw.fullName || raw.name),
       role: String(raw.role || ''),

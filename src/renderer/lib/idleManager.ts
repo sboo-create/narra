@@ -11,6 +11,20 @@ import { portraitPrompt } from './passport'
 const inFlight = new Set<string>()
 let chain: Promise<void> = Promise.resolve()
 
+/**
+ * Чистит описание движения: убирает всё, из-за чего портрет «засыпает» или «говорит».
+ * («slow breathing» модель понимает как сон с закрытыми глазами, «lips»/«speaks» — как речь.)
+ */
+function safeMotion(raw?: string): string {
+  const bad = /(speak|talk|whisper|say|mutter|mouth|lips?|breath|sleep|asleep|closed? eyes|eyes closed|yawn)/i
+  const cleaned = (raw || '')
+    .split(/,\s*/)
+    .filter((part) => part.trim() && !bad.test(part))
+    .join(', ')
+    .trim()
+  return cleaned.length >= 12 ? cleaned : 'slight head tilt, attentive alive gaze, subtle eyebrow movement'
+}
+
 export function idleVideoKey(id: string): string {
   return `idle-${id}-${IMAGE_VERSION}`
 }
@@ -44,8 +58,12 @@ export async function ensureIdleAnimation(char: Character, auto = false): Promis
       // ВАЖНО: только мимика. Съёмочные слова (camera, tripod, framing, zoom) модель
       // понимает буквально и дорисовывает в кадр камеру со штативом и посторонних людей.
       // Съёмочные слова «camera»/«tripod» модель рисует как предметы в кадре — их нельзя.
-      // Но зум запретить надо, иначе к концу ролика наезжает на лицо: пишем это без «камеры».
-      const motion = `${char.idleAnimation || 'slight head movement'}, mouth closed, calm breathing, same framing and same distance all the time, no zoom, no scale change, plain background`
+      // Зум запрещаем без слова «камера»; глаза открыты и губы неподвижны — иначе портрет
+      // «засыпает» или начинает беззвучно говорить.
+      const motion =
+        `${safeMotion(char.idleAnimation)}, eyes wide open looking straight at the viewer, ` +
+        `lips closed and completely still, no talking, no mouth movement, awake and alert, ` +
+        `same framing and same distance all the time, no zoom, no scale change, plain background`
       await window.narra.animatePortrait(img.data!.dataUrl, motion, idleVideoKey(id))
       // результат уже в кэше main-процесса
     } finally {
