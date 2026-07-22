@@ -222,16 +222,19 @@ function topNames(chapters: Chapter[]): string {
     .join(', ')
 }
 
-/** Выборка для разметки героев: начало + середина + конец, а не только первые главы. */
-function buildExcerpt(chapters: Chapter[]): string {
+/**
+ * Выборка для разметки героев. Частотность имён — по всей книге (чтобы главный герой
+ * не потерялся), а сами ТЕКСТЫ — только из первых глав: иначе профили героев
+ * пересказывают финал и спойлерят читателю.
+ */
+function buildExcerpt(chapters: Chapter[], description?: string): string {
   const pick = (ch: Chapter, n: number) => `[${ch.title}]\n${ch.text.slice(0, n)}`
-  const mid = chapters[Math.floor(chapters.length / 2)]
-  const last = chapters[chapters.length - 1]
   const parts = [
+    description ? `Авторская аннотация: ${description}` : '',
     `Часто упоминаемые имена во всей книге (имя и число упоминаний): ${topNames(chapters)}`,
-    pick(chapters[0], 5000),
-    chapters.length > 1 && mid ? pick(mid, 3500) : '',
-    chapters.length > 2 && last ? pick(last, 2500) : ''
+    pick(chapters[0], 6000),
+    chapters[1] ? pick(chapters[1], 4000) : '',
+    chapters[2] ? pick(chapters[2], 3000) : ''
   ].filter(Boolean)
   return parts.join('\n\n')
 }
@@ -267,7 +270,9 @@ async function importFromAo3(workId: string): Promise<{ title: string; author: s
   return parseEpub(file)
 }
 
-async function importFromFicbook(rawUrl: string): Promise<{ title: string; author: string; chapters: Chapter[] }> {
+async function importFromFicbook(
+  rawUrl: string
+): Promise<{ title: string; author: string; chapters: Chapter[]; description?: string; pairing?: string; tags?: string[] }> {
   const idM = rawUrl.match(/readfic\/([0-9a-zA-Z-]+)/)
   const url = idM ? `https://ficbook.net/readfic/${idM[1]}` : rawUrl
   const html = decode(await fetchViaProxy(url))
@@ -325,7 +330,17 @@ async function importFromFicbook(rawUrl: string): Promise<{ title: string; autho
       await new Promise((r) => setTimeout(r, 800)) // вежливая пауза между главами
     }
   }
-  return { title, author, chapters }
+  // описание работы и шапка — берём авторские, а не выдуманные
+  const descM = html.match(/js-public-beta-description[^>]*>([\s\S]*?)<\/div>/)
+  const description = descM ? stripTags(descM[1]).replace(/\n{2,}/g, ' ').trim() : ''
+  const fandomM = html.match(/href="\/fanfiction\/[^"]*"[^>]*>([^<]{3,60})<\/a>/)
+  const pairM = html.match(/Пэйринг и персонажи:[\s\S]{0,600}?<div[^>]*>([\s\S]*?)<\/div>/)
+  const pairing = pairM ? stripTags(pairM[1]).slice(0, 120) : fandomM ? stripTags(fandomM[1]) : 'Фанфик'
+  const tags = [...html.matchAll(/class="tag[^"]*"[^>]*>([^<]{2,40})</g)]
+    .map((m) => stripTags(m[1]))
+    .filter(Boolean)
+    .slice(0, 6)
+  return { title, author, chapters, description, pairing, tags }
 }
 
 export async function importBookFromUrl(url: string): Promise<ApiResult<ImportedBookMeta>> {
@@ -336,7 +351,14 @@ export async function importBookFromUrl(url: string): Promise<ApiResult<Imported
     if (!ao3 && !fb) {
       return { ok: false, error: 'Поддерживаются ссылки AO3 (archiveofourown.org/works/…) и Фикбука (ficbook.net/readfic/…)', code: 'PARSE' }
     }
-    const parsed = ao3 ? await importFromAo3(ao3[1]) : await importFromFicbook(clean)
+    const parsed = (ao3 ? await importFromAo3(ao3[1]) : await importFromFicbook(clean)) as {
+      title: string
+      author: string
+      chapters: Chapter[]
+      description?: string
+      pairing?: string
+      tags?: string[]
+    }
     if (parsed.chapters.length === 0) return { ok: false, error: 'Не удалось найти главы по ссылке', code: 'PARSE' }
     const id = `u-${Date.now().toString(36)}`
     const words = parsed.chapters.reduce((n, c) => n + c.text.split(/\s+/).length, 0)
@@ -344,15 +366,16 @@ export async function importBookFromUrl(url: string): Promise<ApiResult<Imported
       id,
       title: parsed.title,
       author: parsed.author,
-      pairing: 'Загруженная книга',
-      tags: ['Мои книги'],
-      description: `${parsed.title} — ${parsed.author}. ${parsed.chapters.length} глав.`,
+      source: clean,
+      pairing: parsed.pairing || 'Загруженная книга',
+      tags: ['Мои книги', ...(parsed.tags || [])],
+      description: parsed.description || `${parsed.title} — ${parsed.author}. ${parsed.chapters.length} глав.`,
       coverPrompt: `обложка книги «${parsed.title}» (${parsed.author}), атмосферная, по духу произведения`,
       chapters: parsed.chapters
     }
     await fs.mkdir(userBooksDir(), { recursive: true })
     await fs.writeFile(path.join(userBooksDir(), `${id}.json`), JSON.stringify(book), 'utf8')
-    const excerpt = buildExcerpt(parsed.chapters)
+    const excerpt = buildExcerpt(parsed.chapters, book.description)
     return { ok: true, data: { id, title: parsed.title, author: parsed.author, chapters: parsed.chapters.length, words, excerpt } }
   } catch (e) {
     return { ok: false, error: `Импорт по ссылке не удался: ${(e as Error).message}`, code: 'UNKNOWN' }
@@ -431,7 +454,7 @@ export async function bookExcerpt(bookId: string): Promise<ApiResult<{ title: st
   try {
     const raw = await fs.readFile(path.join(userBooksDir(), `${bookId}.json`), 'utf8')
     const book = JSON.parse(raw) as Fanfic
-    return { ok: true, data: { title: book.title, author: book.author, excerpt: buildExcerpt(book.chapters) } }
+    return { ok: true, data: { title: book.title, author: book.author, excerpt: buildExcerpt(book.chapters, book.description) } }
   } catch (e) {
     return { ok: false, error: (e as Error).message, code: 'UNKNOWN' }
   }
