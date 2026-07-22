@@ -55,6 +55,7 @@ export function SceneImage({
     // 1) LLM-разбор фрагмента: что происходит + кто РЕАЛЬНО в кадре, позы, одежда из текста
     let ctx = chapterSummary
     let present: ScenePerson[] = presentIn(chapterText, characters).map((c) => ({ char: c }))
+    let extras: { name: string; look?: string }[] = []
     if (gcReady) {
       setStatus('thinking')
       const roster = characters.map((c) => ({ id: c.id, name: c.name, fullName: c.fullName }))
@@ -65,6 +66,7 @@ export function SceneImage({
           const j = JSON.parse(m ? m[0] : p.data!.text) as {
             scene?: string
             people?: { id: string; action?: string; outfit?: string | null }[]
+            extras?: { name?: string; look?: string }[]
           }
           if (j.scene?.trim()) ctx = j.scene.trim()
           if (Array.isArray(j.people)) {
@@ -74,12 +76,19 @@ export function SceneImage({
               .map((pp) => ({ char: byId.get(pp.id)!, action: pp.action, outfit: pp.outfit }))
             present = parsed // пусто — значит в кадре правда никого из героев
           }
+          // герои вне ростера (эпизодические) — с описанием внешности, иначе модель рисует «кого-то»
+          if (Array.isArray(j.extras)) {
+            extras = j.extras
+              .filter((e) => e?.name)
+              .slice(0, 2)
+              .map((e) => ({ name: String(e.name), look: e.look ? String(e.look) : undefined }))
+          }
         } catch {
           /* кривой JSON — остаёмся на presentIn-фолбэке */
         }
       }
     }
-    const prompt = scenePrompt(ctx, present)
+    const prompt = scenePrompt(ctx, present, extras)
     setLastPrompt(prompt)
     // 2) генерация — сцены рисует Kandinsky: он точнее следует составу кадра и одежде
     setStatus('drawing')

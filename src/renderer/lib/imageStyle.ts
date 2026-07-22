@@ -9,7 +9,7 @@ export function coverKey(bookId: string): string {
   return `cover-${bookId}-${IMAGE_VERSION}c`
 }
 // Версия только сцен: промпты сцен поменялись, а портреты/обложки/анимации сохраняем.
-const SCENE_VERSION = 'v12'
+const SCENE_VERSION = 'v13'
 export function sceneKey(bookId: string, chapter: number): string {
   return `scene-${bookId}-c${chapter}-${SCENE_VERSION}`
 }
