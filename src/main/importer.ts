@@ -222,6 +222,28 @@ function topNames(chapters: Chapter[]): string {
     .join(', ')
 }
 
+/** Цитаты о внешности: в фанфиках внешность упоминается мельком, и модель без них выдумывает. */
+function appearanceQuotes(chapters: Chapter[], names: string[]): string {
+  const LOOK =
+    /(волос|локон|кудр|блонд|брюнет|рыж|седин|седой|глаз|взгляд|кожа|бледн|смугл|рост|худ|плеч|фигур|одет|мантия|платье|костюм|рубашк|шрам|веснушк)/i
+  const out: string[] = []
+  for (const name of names) {
+    const stem = name.toLowerCase().replace(/[аяйь]$/, '')
+    const found: string[] = []
+    for (const ch of chapters) {
+      for (const sent of ch.text.split(/(?<=[.!?…])\s+/)) {
+        if (sent.length < 25 || sent.length > 320) continue
+        if (!sent.toLowerCase().includes(stem) || !LOOK.test(sent)) continue
+        found.push(sent.trim())
+        if (found.length >= 3) break
+      }
+      if (found.length >= 3) break
+    }
+    if (found.length) out.push(`${name}: ${found.join(' | ')}`)
+  }
+  return out.join('\n')
+}
+
 /**
  * Выборка для разметки героев. Частотность имён — по всей книге (чтобы главный герой
  * не потерялся), а сами ТЕКСТЫ — только из первых глав: иначе профили героев
@@ -229,9 +251,15 @@ function topNames(chapters: Chapter[]): string {
  */
 function buildExcerpt(chapters: Chapter[], description?: string): string {
   const pick = (ch: Chapter, n: number) => `[${ch.title}]\n${ch.text.slice(0, n)}`
+  const names = topNames(chapters)
+    .split(', ')
+    .map((x) => x.replace(/\s*\(\d+\)$/, ''))
+    .slice(0, 8)
+  const looks = appearanceQuotes(chapters, names)
   const parts = [
     description ? `Авторская аннотация: ${description}` : '',
     `Часто упоминаемые имена во всей книге (имя и число упоминаний): ${topNames(chapters)}`,
+    looks ? `Упоминания внешности в тексте (используй их дословно):\n${looks}` : '',
     pick(chapters[0], 6000),
     chapters[1] ? pick(chapters[1], 4000) : '',
     chapters[2] ? pick(chapters[2], 3000) : ''
