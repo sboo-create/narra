@@ -20,6 +20,7 @@ import {
   deleteCachedVideo,
   saveCachedVideo,
   checkAppUpdate,
+  installUpdate,
   recognize
 } from './api/proxy'
 
@@ -111,6 +112,11 @@ function registerIpc(): void {
   ipcMain.handle(IPC.deleteCachedVideo, (_e, cacheKey: string) => deleteCachedVideo(cacheKey))
   ipcMain.handle(IPC.saveCachedVideo, (_e, cacheKey: string, dataUrl: string) => saveCachedVideo(cacheKey, dataUrl))
   ipcMain.handle(IPC.checkAppUpdate, () => checkAppUpdate(app.getVersion()))
+  ipcMain.handle(IPC.installUpdate, async (_e, url: string) => {
+    const r = await installUpdate(url)
+    if (r.ok) setTimeout(() => app.quit(), 400) // скрипт дождётся выхода и подменит приложение
+    return r
+  })
   ipcMain.handle(IPC.importBookFromUrl, (_e, url: string) => importBookFromUrl(url))
   ipcMain.handle(IPC.deleteBook, (_e, bookId: string) => deleteBook(bookId))
   ipcMain.handle(IPC.bookExcerpt, (_e, bookId: string) => bookExcerpt(bookId))

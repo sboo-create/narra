@@ -446,3 +446,39 @@ export async function checkAppUpdate(
     return netErr(e)
   }
 }
+
+/**
+ * Обновление в один клик: качаем dmg, отдаём его внешнему скрипту (он ждёт выхода
+ * приложения, подменяет .app в «Программах», снимает карантин и запускает снова).
+ */
+export async function installUpdate(url: string): Promise<ApiResult<{ started: true }>> {
+  try {
+    const { tmpdir } = await import('node:os')
+    const { spawn } = await import('node:child_process')
+    const dmg = path.join(tmpdir(), `narra-update-${Date.now()}.dmg`)
+    const res = await fetch(url)
+    if (!res.ok) return { ok: false, error: `Не удалось скачать (${res.status})`, code: 'NETWORK' }
+    await fs.writeFile(dmg, Buffer.from(await res.arrayBuffer()))
+
+    const sh = path.join(tmpdir(), `narra-update-${Date.now()}.sh`)
+    await fs.writeFile(
+      sh,
+      `#!/bin/bash
+sleep 2
+MNT=$(hdiutil attach -nobrowse -readonly "${dmg}" | awk -F'\t' '/\/Volumes\//{print $NF; exit}')
+[ -z "$MNT" ] && exit 1
+rm -rf "/Applications/Narra.app"
+cp -R "$MNT/Narra.app" /Applications/
+hdiutil detach "$MNT" -quiet
+xattr -cr "/Applications/Narra.app"
+rm -f "${dmg}" "${sh}"
+open "/Applications/Narra.app"
+`,
+      { mode: 0o755 }
+    )
+    spawn('/bin/bash', [sh], { detached: true, stdio: 'ignore' }).unref()
+    return { ok: true, data: { started: true } }
+  } catch (e) {
+    return { ok: false, error: (e as Error).message, code: 'UNKNOWN' }
+  }
+}

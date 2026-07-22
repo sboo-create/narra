@@ -29,12 +29,16 @@ export default function App() {
       if (r.ok && r.data!.hasUpdate) {
         toast({
           type: 'info',
-          title: `Доступна новая версия ${r.data!.version}`,
-          message:
-            'Проще всего — команда в Терминале: curl -fsSL ' +
-            'https://narra-proxy-production.up.railway.app/updates/install.sh | bash — она сама всё установит.',
-          actionLabel: '⬇ Скачать',
-          onRetry: () => window.open(r.data!.url)
+          title: `Доступна версия ${r.data!.version}`,
+          message: 'Нажми «Обновить» — приложение само скачает и установит её, затем перезапустится.',
+          actionLabel: '⬇ Обновить',
+          onRetry: async () => {
+            toast({ type: 'info', title: 'Качаю обновление…', message: 'Приложение перезапустится само.' })
+            const res = await window.narra.installUpdate(r.data!.url)
+            if (!res.ok) {
+              toast({ type: 'error', title: 'Не удалось обновить', message: res.error })
+            }
+          }
         })
       }
     }, 4000)
