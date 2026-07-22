@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { useStore, canChat, canTts, canImage } from '../store/useStore'
+import { useStore, canChat, canTts, canImage, charKey } from '../store/useStore'
 import { Locker } from '../components/Locker'
 import { chatMessages, summaryRequest, memoryUpdateRequest, emotionRequest } from '../lib/prompts'
 import { buildSsml, EMOTION_LABEL } from '../lib/ttsEmotion'
@@ -45,7 +45,8 @@ export function Chat({ id, sceneContext, autoAsk }: Props) {
   const char = characters.find((c) => c.id === id)!
   const readChapter = useStore((s) => s.chapter)
 
-  const [messages, setMessages] = useState<ChatMessage[]>(persisted.chats[id] || [])
+  const ckey = charKey(fanfic.id, id)
+  const [messages, setMessages] = useState<ChatMessage[]>(persisted.chats[ckey] || [])
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState(false)
   const [speakingId, setSpeakingId] = useState<string | null>(null)
@@ -101,7 +102,7 @@ export function Chat({ id, sceneContext, autoAsk }: Props) {
   }
 
   useEffect(() => {
-    const existing = persisted.chats[id] || []
+    const existing = persisted.chats[ckey] || []
     if (existing.length === 0 && char.greeting) {
       // приветствие персонажа как первая реплика
       const greet: ChatMessage = { id: uid(), role: 'assistant', content: char.greeting, ts: Date.now() }
@@ -184,7 +185,7 @@ export function Chat({ id, sceneContext, autoAsk }: Props) {
       fanfic,
       readChapter,
       bookSummaries,
-      persisted.memories[id],
+      persisted.memories[ckey],
       history,
       clean,
       sceneContext,
@@ -255,7 +256,7 @@ export function Chat({ id, sceneContext, autoAsk }: Props) {
     memoryBusy.current = true
     const recent = all.slice(-12).map((m) => ({ role: m.role, content: m.content }))
     const res = await window.narra.llmText(
-      memoryUpdateRequest(char.name, recent, persisted.memories[id] || ''),
+      memoryUpdateRequest(char.name, recent, persisted.memories[ckey] || ''),
       0.3
     )
     memoryBusy.current = false

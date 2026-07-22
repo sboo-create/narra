@@ -160,6 +160,44 @@ function migratePrefs(saved?: Partial<ReaderPrefs>): ReaderPrefs {
   return p
 }
 
+/**
+ * Ключ данных героя. ВАЖНО: включает книгу — Гермиона из школьного фанфика
+ * и Гермиона из другой книги это разные люди со своей перепиской и памятью.
+ */
+export function charKey(bookId: string, charId: string): string {
+  return `${bookId}:${charId}`
+}
+
+/** Разовая миграция старых ключей (без книги) — чтобы не потерять уже накопленные чаты. */
+function migrateCharKeys(p: Persisted, books: BookContent[]): Persisted {
+  const owner = (charId: string): string | null => {
+    const found = books.filter((b) => b.characters.some((c) => c.id === charId))
+    if (found.length === 0) return null
+    // при совпадении имени в разных книгах старые чаты принадлежат встроенной книге
+    const builtin = found.find((b) => !b.fanfic.id.startsWith('u-'))
+    return (builtin || found[0]).fanfic.id
+  }
+  const fix = <T,>(rec: Record<string, T>): Record<string, T> => {
+    const out: Record<string, T> = {}
+    for (const [k, v] of Object.entries(rec)) {
+      if (k.includes(':')) {
+        out[k] = v
+        continue
+      }
+      const bookId = owner(k)
+      out[bookId ? charKey(bookId, k) : k] = v
+    }
+    return out
+  }
+  return {
+    ...p,
+    chats: fix(p.chats),
+    memories: fix(p.memories),
+    stats: fix(p.stats),
+    voiceOverrides: fix(p.voiceOverrides)
+  }
+}
+
 function uid(): string {
   return Math.random().toString(36).slice(2, 10)
 }
@@ -203,6 +241,7 @@ export const useStore = create<StoreState>((set, get) => ({
       }
       const hidden = new Set(persisted.hiddenBooks || [])
       const books = (booksRes.ok ? booksRes.data! : []).filter((b) => !hidden.has(b.fanfic.id))
+      const migrated = migrateCharKeys(persisted, books)
       const active = books[0]
       set({
         ready: true,
@@ -213,7 +252,7 @@ export const useStore = create<StoreState>((set, get) => ({
         narratorVoice: active?.narratorVoice || 'Pon',
         chapter: active ? persisted.chapters[active.fanfic.id] || 1 : 1,
         settings,
-        persisted
+        persisted: migrated
       })
       if (!booksRes.ok) get().toast({ type: 'error', title: 'Книги не загрузились', message: booksRes.error })
       get().checkHealth()
@@ -263,14 +302,16 @@ export const useStore = create<StoreState>((set, get) => ({
     persist(p)
   },
   setChats: (charId, msgs) => {
-    const p = { ...get().persisted, chats: { ...get().persisted.chats, [charId]: msgs } }
+    const k = charKey(get().activeBookId, charId)
+    const p = { ...get().persisted, chats: { ...get().persisted.chats, [k]: msgs } }
     set({ persisted: p })
     persist(p)
   },
   recordAsk: (charId, topic, readChapter) => {
-    const prev = get().persisted.stats[charId] || { asked: 0, lastTopic: '', lastReadChapter: readChapter }
+    const k = charKey(get().activeBookId, charId)
+    const prev = get().persisted.stats[k] || { asked: 0, lastTopic: '', lastReadChapter: readChapter }
     const stat: CharStat = { asked: prev.asked + 1, lastTopic: topic, lastReadChapter: readChapter }
-    const p = { ...get().persisted, stats: { ...get().persisted.stats, [charId]: stat } }
+    const p = { ...get().persisted, stats: { ...get().persisted.stats, [k]: stat } }
     set({ persisted: p })
     persist(p)
   },
@@ -295,12 +336,14 @@ export const useStore = create<StoreState>((set, get) => ({
     persist(p)
   },
   setVoiceOverride: (charId, voice) => {
-    const p = { ...get().persisted, voiceOverrides: { ...get().persisted.voiceOverrides, [charId]: voice } }
+    const k = charKey(get().activeBookId, charId)
+    const p = { ...get().persisted, voiceOverrides: { ...get().persisted.voiceOverrides, [k]: voice } }
     set({ persisted: p })
     persist(p)
   },
   setMemory: (charId, text) => {
-    const p = { ...get().persisted, memories: { ...get().persisted.memories, [charId]: text } }
+    const k = charKey(get().activeBookId, charId)
+    const p = { ...get().persisted, memories: { ...get().persisted.memories, [k]: text } }
     set({ persisted: p })
     persist(p)
   },
@@ -356,12 +399,13 @@ export const useStore = create<StoreState>((set, get) => ({
     persist(p)
   },
   clearChat: (charId) => {
+    const k = charKey(get().activeBookId, charId)
     const chats = { ...get().persisted.chats }
-    delete chats[charId]
+    delete chats[k]
     const memories = { ...get().persisted.memories }
-    delete memories[charId]
+    delete memories[k]
     const stats = { ...get().persisted.stats }
-    delete stats[charId]
+    delete stats[k]
     const p = { ...get().persisted, chats, memories, stats }
     set({ persisted: p })
     persist(p)
@@ -400,7 +444,7 @@ export const useStore = create<StoreState>((set, get) => ({
   voiceFor: (charId) => {
     const st = get()
     if (!charId) return st.narratorVoice
-    const override = st.persisted.voiceOverrides[charId]
+    const override = st.persisted.voiceOverrides[charKey(st.activeBookId, charId)]
     if (override) return override
     const c = st.characters.find((x) => x.id === charId)
     return c?.voice || st.narratorVoice

@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { useStore } from '../store/useStore'
+import { useStore, charKey } from '../store/useStore'
 import { GeneratedImage } from '../components/GeneratedImage'
 import { CharAvatar } from '../components/CharAvatar'
 import { coverKey, portraitKey } from '../lib/imageStyle'
@@ -106,8 +106,8 @@ export function Profile() {
           <div className="path-chars">
             {b.characters.map((c0) => {
               const c = { ...c0, bookId: b.fanfic.id }
-              const msgs = persisted.chats[c.id]?.filter((m) => m.role === 'user').length || 0
-              const met = (persisted.chats[c.id]?.length || 0) > 0
+              const msgs = persisted.chats[charKey(c.bookId, c.id)]?.filter((m) => m.role === 'user').length || 0
+              const met = (persisted.chats[charKey(c.bookId, c.id)]?.length || 0) > 0
               return (
                 <button
                   key={c.id}
@@ -130,8 +130,8 @@ export function Profile() {
       ))}
       <div style={{ display: 'none' }}>
         {allCharacters.map((c) => {
-          const msgs = persisted.chats[c.id]?.filter((m) => m.role === 'user').length || 0
-          const met = (persisted.chats[c.id]?.length || 0) > 0
+          const msgs = persisted.chats[charKey(c.bookId, c.id)]?.filter((m) => m.role === 'user').length || 0
+          const met = (persisted.chats[charKey(c.bookId, c.id)]?.length || 0) > 0
           return (
             <button
               key={c.id}
