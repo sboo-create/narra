@@ -12,7 +12,8 @@
     "dist": "electron-vite build && electron-builder --mac",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
-    "fetch-content": "node scripts/fetch-content.mjs"
+    "fetch-content": "node scripts/fetch-content.mjs",
+    "push": "bash scripts/push.sh"
   },
   "dependencies": {
     "electron-store": "^8.2.0",
