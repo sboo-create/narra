@@ -34,6 +34,7 @@ export function Chat({ id, sceneContext, autoAsk }: Props) {
   const health = useStore((s) => s.health)
   const persisted = useStore((s) => s.persisted)
   const setChats = useStore((s) => s.setChats)
+  const clearChat = useStore((s) => s.clearChat)
   const recordAsk = useStore((s) => s.recordAsk)
   const setSummary = useStore((s) => s.setSummary)
   const setMemory = useStore((s) => s.setMemory)
@@ -376,6 +377,21 @@ export function Chat({ id, sceneContext, autoAsk }: Props) {
             <div className="chat__role">{char.role}</div>
           </div>
         </div>
+        <button
+          className="chat__clear"
+          title="Очистить переписку"
+          disabled={messages.length === 0}
+          onClick={() => {
+            if (!window.confirm(`Удалить переписку с ${char.name}?\n\nОн забудет и разговор, и всё, что узнал о тебе.`)) return
+            clearChat(id)
+            setMessages([])
+            speechRef.current?.stop()
+            audioRef.current?.pause()
+            toast({ type: 'success', title: 'Переписка удалена' })
+          }}
+        >
+          🗑
+        </button>
       </header>
 
       <div className="chat__banner">

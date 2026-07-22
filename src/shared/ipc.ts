@@ -46,7 +46,8 @@ export const IPC = {
   recognize: 'asr:recognize',
   // импорт своих книг
   importBook: 'books:import',
-  saveBookCharacters: 'books:saveCharacters'
+  saveBookCharacters: 'books:saveCharacters',
+  deleteBook: 'books:delete'
 } as const
 
 export type IpcChannel = (typeof IPC)[keyof typeof IPC]

@@ -72,6 +72,8 @@ const api = {
     ipcRenderer.invoke(IPC.saveCachedVideo, cacheKey, dataUrl),
   checkAppUpdate: (): Promise<ApiResult<{ hasUpdate: boolean; version: string; url: string }>> =>
     ipcRenderer.invoke(IPC.checkAppUpdate),
+  deleteBook: (bookId: string): Promise<ApiResult<{ builtin: boolean }>> =>
+    ipcRenderer.invoke(IPC.deleteBook, bookId),
   importBookFromUrl: (
     url: string
   ): Promise<ApiResult<{ id: string; title: string; author: string; chapters: number; words: number; excerpt: string }>> =>

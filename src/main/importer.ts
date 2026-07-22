@@ -376,6 +376,29 @@ export async function importBook(): Promise<ApiResult<ImportedBookMeta>> {
   }
 }
 
+/** Удалить книгу пользователя с диска. Встроенные книги удалить нельзя — их прячет renderer. */
+export async function deleteBook(bookId: string): Promise<ApiResult<{ builtin: boolean }>> {
+  try {
+    const base = userBooksDir()
+    const main = path.join(base, `${bookId}.json`)
+    let existed = false
+    try {
+      await fs.unlink(main)
+      existed = true
+    } catch {
+      /* не пользовательская книга */
+    }
+    try {
+      await fs.unlink(path.join(base, `${bookId}-characters.json`))
+    } catch {
+      /* героев могло не быть */
+    }
+    return { ok: true, data: { builtin: !existed } }
+  } catch (e) {
+    return { ok: false, error: (e as Error).message, code: 'UNKNOWN' }
+  }
+}
+
 /** Сохранить персонажей импортированной книги; unlockChapter считается по тексту. */
 export async function saveBookCharacters(bookId: string, characters: Character[]): Promise<ApiResult<{ ok: true }>> {
   try {

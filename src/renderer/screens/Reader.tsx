@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore, canTts, canChat } from '../store/useStore'
 import { renderRich, linkifyPlain } from '../lib/rich'
 import { SceneImage } from '../components/SceneImage'
+import { ReaderSettings, ReaderNav } from '../components/ReaderPanels'
 import { CharAvatar } from '../components/CharAvatar'
 import { portraitKey } from '../lib/imageStyle'
 import { markupChapter, fallbackScenario } from '../lib/scenario'
@@ -74,6 +75,10 @@ export function Reader() {
   const health = useStore((s) => s.health)
   const persisted = useStore((s) => s.persisted)
   const setSummary = useStore((s) => s.setSummary)
+  const prefs = useStore((s) => s.persisted.readerPrefs)
+  const toggleBookmark = useStore((s) => s.toggleBookmark)
+  const addNote = useStore((s) => s.addNote)
+  const [panel, setPanel] = useState<'none' | 'settings' | 'nav'>('none')
   const [chapSummary, setChapSummary] = useState<string | null>(null)
   const [summaryBusy, setSummaryBusy] = useState(false)
   const setChapter = useStore((s) => s.setChapter)
@@ -215,6 +220,83 @@ export function Reader() {
   const progress = Math.round((chapterNo / total) * 100)
   const audioActive = audioStatus !== 'idle' || !!scenario
 
+  // постранично: листаем колонки колесом, стрелками и кликами по краям
+  const proseRef = useRef<HTMLDivElement | null>(null)
+  const [page, setPage] = useState({ cur: 1, total: 1 })
+
+  function flip(dir: 1 | -1) {
+    const el = proseRef.current
+    if (!el) return
+    el.scrollLeft += dir * el.clientWidth
+  }
+
+  useEffect(() => {
+    const el = proseRef.current
+    if (!prefs.paged || !el) return
+    const step = () => {
+      const per = el.clientWidth || 1
+      setPage({
+        cur: Math.round(el.scrollLeft / per) + 1,
+        total: Math.max(1, Math.round(el.scrollWidth / per))
+      })
+    }
+    const onWheel = (e: WheelEvent) => {
+      if (Math.abs(e.deltaY) < 8) return
+      e.preventDefault()
+      flip(e.deltaY > 0 ? 1 : -1)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+      if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') {
+        e.preventDefault()
+        flip(1)
+      }
+      if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+        e.preventDefault()
+        flip(-1)
+      }
+    }
+    el.addEventListener('wheel', onWheel, { passive: false })
+    el.addEventListener('scroll', step)
+    window.addEventListener('keydown', onKey)
+    step()
+    return () => {
+      el.removeEventListener('wheel', onWheel)
+      el.removeEventListener('scroll', step)
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [prefs.paged, chapterNo, prefs.fontSize, prefs.width, prefs.lineHeight, prefs.font])
+
+  // переход из оглавления, закладок и поиска
+  function jumpTo(n: number, block?: number) {
+    if (n !== chapterNo) setChapter(n)
+    setTimeout(
+      () => {
+        if (block === undefined) {
+          scrollRef.current?.scrollTo({ top: 0 })
+          return
+        }
+        const el = document.querySelector(`[data-pi="${block}"]`)
+        el?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        el?.classList.add('prose-p--flash')
+        setTimeout(() => el?.classList.remove('prose-p--flash'), 1600)
+      },
+      n !== chapterNo ? 220 : 0
+    )
+  }
+
+  // закладка на первый видимый абзац главы
+  function onBookmark() {
+    const els = [...document.querySelectorAll('[data-pi]')] as HTMLElement[]
+    const visible = els.find((el) => el.getBoundingClientRect().top > 90) || els[0]
+    const block = visible ? Number(visible.getAttribute('data-pi')) : 0
+    toggleBookmark(fanfic.id, {
+      chapter: chapterNo,
+      block,
+      quote: (visible?.textContent || chapter.title).trim().slice(0, 120)
+    })
+  }
+
   function goPrev() {
     if (chapterNo > 1) setChapter(chapterNo - 1)
   }
@@ -302,6 +384,7 @@ export function Reader() {
     setPopover({ charId, x, y })
   }
 
+  const bookmarked = (persisted.bookmarks[fanfic.id] || []).some((b) => b.chapter === chapterNo)
   const popChar = popover ? characters.find((c) => c.id === popover.charId) : null
   const listenLabel = preparing
     ? '⏹ Отменить'
@@ -312,18 +395,52 @@ export function Reader() {
         : '🎧 Слушать'
 
   return (
-    <div className="reader" ref={scrollRef}>
+    <div
+      className={`reader reader--${prefs.theme} reader--w-${prefs.width} reader--${prefs.font}${
+        prefs.paged ? ' reader--paged' : ''
+      }`}
+      ref={scrollRef}
+      style={
+        {
+          '--reader-fs': `${prefs.fontSize}px`,
+          '--reader-lh': String(prefs.lineHeight)
+        } as React.CSSProperties
+      }
+    >
       <div className="reader__bar">
         <button className="reader__back" onClick={() => navigate({ name: 'book' })}>
           ‹ К книге
         </button>
         <div className="reader__bar-title">{fanfic.title}</div>
-        <button
-          className={`reader__voice ${audioStatus !== 'idle' || preparing ? 'is-playing' : ''}`}
-          onClick={onListen}
-        >
-          {listenLabel}
-        </button>
+        <div className="reader__tools">
+          <button
+            className={`reader__tool ${bookmarked ? 'is-on' : ''}`}
+            title={bookmarked ? 'Убрать закладку' : 'Поставить закладку'}
+            onClick={onBookmark}
+          >
+            {bookmarked ? '🔖' : '🏷'}
+          </button>
+          <button
+            className={`reader__tool ${panel === 'settings' ? 'is-on' : ''}`}
+            title="Вид: шрифт, тема, прокрутка"
+            onClick={() => setPanel(panel === 'settings' ? 'none' : 'settings')}
+          >
+            <span className="reader__tool-aa">AA</span>
+          </button>
+          <button
+            className={`reader__tool ${panel === 'nav' ? 'is-on' : ''}`}
+            title="Оглавление, закладки, поиск"
+            onClick={() => setPanel(panel === 'nav' ? 'none' : 'nav')}
+          >
+            ☰
+          </button>
+          <button
+            className={`reader__voice ${audioStatus !== 'idle' || preparing ? 'is-playing' : ''}`}
+            onClick={onListen}
+          >
+            {listenLabel}
+          </button>
+        </div>
       </div>
       <div className="reader__progress">
         <div className="reader__progress-fill" style={{ width: `${progress}%` }} />
@@ -339,7 +456,7 @@ export function Reader() {
           </div>
         )}
 
-        <div className="reader__prose" onMouseUp={onProseMouseUp}>
+        <div className="reader__prose" ref={proseRef} onMouseUp={onProseMouseUp}>
           {audioActive && scenario ? (
             // режим озвучки: рендер по сегментам с подсветкой
             scenario.segments.map((seg, i) => (
@@ -382,6 +499,20 @@ export function Reader() {
             ))
           )}
         </div>
+
+        {prefs.paged && (
+          <div className="pager">
+            <button className="pager__btn" onClick={() => flip(-1)} title="Предыдущая страница">
+              ‹
+            </button>
+            <span className="pager__label">
+              стр. {page.cur} из {page.total}
+            </span>
+            <button className="pager__btn" onClick={() => flip(1)} title="Следующая страница">
+              ›
+            </button>
+          </div>
+        )}
 
         <div className="chapter-end">
           <div className="chapter-end__title">Итоги главы</div>
@@ -449,6 +580,11 @@ export function Reader() {
           )}
         </div>
 
+        {panel === 'settings' && <ReaderSettings onClose={() => setPanel('none')} />}
+        {panel === 'nav' && (
+          <ReaderNav fanfic={fanfic} chapterNo={chapterNo} onClose={() => setPanel('none')} onJump={jumpTo} />
+        )}
+
         {selBtn && (
           <div className="sel-menu" style={{ left: selBtn.x, top: selBtn.y }}>
             <button
@@ -475,6 +611,20 @@ export function Reader() {
               }}
             >
               Спросить героя
+            </button>
+            <button
+              onClick={() => {
+                const quote = selBtn.text.slice(0, 300)
+                const idx = selBtn.idx
+                window.getSelection()?.removeAllRanges()
+                setSelBtn(null)
+                const note = window.prompt('Заметка к фрагменту (можно оставить пустой):', '')
+                if (note === null) return
+                addNote(fanfic.id, { chapter: chapterNo, block: idx, quote, note: note.trim() })
+                toast({ type: 'success', title: 'Заметка сохранена' })
+              }}
+            >
+              Заметка
             </button>
           </div>
         )}

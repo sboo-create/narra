@@ -46,6 +46,13 @@ export function Library() {
     await reloadBooks()
   }
 
+  const deleteBook = useStore((s) => s.deleteBook)
+
+  function askDelete(id: string, title: string) {
+    if (!window.confirm(`Убрать «${title}» из библиотеки?\n\nПрогресс чтения и заметки по этой книге будут удалены. Загруженные книги удаляются с диска, встроенные — можно вернуть переустановкой.`)) return
+    deleteBook(id).then(() => toast({ type: 'success', title: `«${title}» убрана` }))
+  }
+
   async function importOwnBook() {
     if (importing) return
     setImporting(true)
@@ -186,7 +193,18 @@ export function Library() {
                 const ch = persisted.chapters[b.fanfic.id] || 1
                 const started = (persisted.chapters[b.fanfic.id] || 0) > 0
                 return (
-                  <button key={b.fanfic.id} className="book-spine" onClick={() => open(b.fanfic.id)}>
+                  <div key={b.fanfic.id} className="book-spine-wrap">
+                  <button
+                    className="book-spine__del"
+                    title="Убрать книгу"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      askDelete(b.fanfic.id, b.fanfic.title)
+                    }}
+                  >
+                    ✕
+                  </button>
+                  <button className="book-spine" onClick={() => open(b.fanfic.id)}>
                     <div className="book-spine__cover">
                       <GeneratedImage
                         cacheKey={coverKey(b.fanfic.id)}
@@ -212,6 +230,7 @@ export function Library() {
                       </div>
                     </div>
                   </button>
+                  </div>
                 )
               })}
             </div>

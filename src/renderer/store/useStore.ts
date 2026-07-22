@@ -16,6 +16,36 @@ export interface CharStat {
   lastReadChapter: number
 }
 
+export interface Bookmark {
+  id: string
+  chapter: number
+  block: number
+  quote: string
+  ts: number
+}
+
+export interface Note extends Bookmark {
+  note: string
+}
+
+export interface ReaderPrefs {
+  fontSize: number // 15..26
+  lineHeight: number // 1.4..2.2
+  font: 'serif' | 'sans'
+  theme: 'paper' | 'sepia' | 'night'
+  width: 'narrow' | 'normal' | 'wide'
+  paged: boolean // постранично vs лента
+}
+
+export const defaultReaderPrefs: ReaderPrefs = {
+  fontSize: 19,
+  lineHeight: 1.75,
+  font: 'serif',
+  theme: 'paper',
+  width: 'normal',
+  paged: false
+}
+
 export interface Persisted {
   chapters: Record<string, number> // bookId -> текущая глава
   chats: Record<string, ChatMessage[]>
@@ -29,6 +59,10 @@ export interface Persisted {
   sceneAnchors: Record<string, number> // ключ `${bookId}-${chapter}`
   extraScenes: Record<string, number[]> // доп. иллюстрации по выделению: ключ `${bookId}-${chapter}`
   anchorLists: Record<string, number[]> // точки сцен в главе (индексы блоков): ключ `${bookId}-${chapter}`
+  bookmarks: Record<string, Bookmark[]> // ключ bookId
+  notes: Record<string, Note[]> // ключ bookId
+  hiddenBooks: string[] // встроенные книги, убранные пользователем с полки
+  readerPrefs: ReaderPrefs
 }
 
 export interface Toast {
@@ -83,6 +117,13 @@ interface StoreState {
   setSceneAnchor: (key: string, index: number) => void
   addExtraScene: (key: string, index: number) => void
   setAnchorList: (key: string, list: number[]) => void
+  setReaderPrefs: (patch: Partial<ReaderPrefs>) => void
+  toggleBookmark: (bookId: string, b: Omit<Bookmark, 'id' | 'ts'>) => void
+  removeBookmark: (bookId: string, id: string) => void
+  addNote: (bookId: string, n: Omit<Note, 'id' | 'ts'>) => void
+  removeNote: (bookId: string, id: string) => void
+  clearChat: (charId: string) => void
+  deleteBook: (bookId: string) => Promise<void>
 
   voiceFor: (charId: string | null) => SaluteVoice
   chapterOf: (bookId: string) => number
@@ -103,7 +144,15 @@ const emptyPersisted: Persisted = {
   memories: {},
   sceneAnchors: {},
   extraScenes: {},
-  anchorLists: {}
+  anchorLists: {},
+  bookmarks: {},
+  notes: {},
+  hiddenBooks: [],
+  readerPrefs: defaultReaderPrefs
+}
+
+function uid(): string {
+  return Math.random().toString(36).slice(2, 10)
 }
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null
@@ -137,8 +186,14 @@ export const useStore = create<StoreState>((set, get) => ({
         window.narra.getSettings(),
         window.narra.getState()
       ])
-      const persisted: Persisted = { ...emptyPersisted, ...(state as Partial<Persisted>) }
-      const books = booksRes.ok ? booksRes.data! : []
+      const saved = (state || {}) as Partial<Persisted>
+      const persisted: Persisted = {
+        ...emptyPersisted,
+        ...saved,
+        readerPrefs: { ...defaultReaderPrefs, ...(saved.readerPrefs || {}) }
+      }
+      const hidden = new Set(persisted.hiddenBooks || [])
+      const books = (booksRes.ok ? booksRes.data! : []).filter((b) => !hidden.has(b.fanfic.id))
       const active = books[0]
       set({
         ready: true,
@@ -180,7 +235,10 @@ export const useStore = create<StoreState>((set, get) => ({
 
   reloadBooks: async () => {
     const res = await window.narra.loadBooks()
-    if (res.ok) set({ books: res.data! })
+    if (res.ok) {
+      const hidden = new Set(get().persisted.hiddenBooks || [])
+      set({ books: res.data!.filter((b) => !hidden.has(b.fanfic.id)) })
+    }
   },
 
   checkHealth: async () => {
@@ -253,6 +311,81 @@ export const useStore = create<StoreState>((set, get) => ({
     const p = { ...get().persisted, extraScenes: { ...get().persisted.extraScenes, [key]: [...prev, index] } }
     set({ persisted: p })
     persist(p)
+  },
+
+  setReaderPrefs: (patch) => {
+    const p = { ...get().persisted, readerPrefs: { ...get().persisted.readerPrefs, ...patch } }
+    set({ persisted: p })
+    persist(p)
+  },
+  toggleBookmark: (bookId, b) => {
+    const list = get().persisted.bookmarks[bookId] || []
+    const same = list.find((x) => x.chapter === b.chapter && x.block === b.block)
+    const next = same
+      ? list.filter((x) => x.id !== same.id)
+      : [...list, { ...b, id: uid(), ts: Date.now() }]
+    const p = { ...get().persisted, bookmarks: { ...get().persisted.bookmarks, [bookId]: next } }
+    set({ persisted: p })
+    persist(p)
+  },
+  removeBookmark: (bookId, id) => {
+    const next = (get().persisted.bookmarks[bookId] || []).filter((x) => x.id !== id)
+    const p = { ...get().persisted, bookmarks: { ...get().persisted.bookmarks, [bookId]: next } }
+    set({ persisted: p })
+    persist(p)
+  },
+  addNote: (bookId, n) => {
+    const next = [...(get().persisted.notes[bookId] || []), { ...n, id: uid(), ts: Date.now() }]
+    const p = { ...get().persisted, notes: { ...get().persisted.notes, [bookId]: next } }
+    set({ persisted: p })
+    persist(p)
+  },
+  removeNote: (bookId, id) => {
+    const next = (get().persisted.notes[bookId] || []).filter((x) => x.id !== id)
+    const p = { ...get().persisted, notes: { ...get().persisted.notes, [bookId]: next } }
+    set({ persisted: p })
+    persist(p)
+  },
+  clearChat: (charId) => {
+    const chats = { ...get().persisted.chats }
+    delete chats[charId]
+    const memories = { ...get().persisted.memories }
+    delete memories[charId]
+    const stats = { ...get().persisted.stats }
+    delete stats[charId]
+    const p = { ...get().persisted, chats, memories, stats }
+    set({ persisted: p })
+    persist(p)
+  },
+  deleteBook: async (bookId) => {
+    const res = await window.narra.deleteBook(bookId)
+    const st = get().persisted
+    // подчищаем всё, что связано с книгой (прогресс, саммари, сценарии, закладки)
+    const dropByPrefix = <T,>(rec: Record<string, T>) =>
+      Object.fromEntries(Object.entries(rec).filter(([k]) => !k.startsWith(`${bookId}-`)))
+    const chapters = { ...st.chapters }
+    delete chapters[bookId]
+    const bookmarks = { ...st.bookmarks }
+    delete bookmarks[bookId]
+    const notes = { ...st.notes }
+    delete notes[bookId]
+    const p: Persisted = {
+      ...st,
+      chapters,
+      bookmarks,
+      notes,
+      summaries: dropByPrefix(st.summaries),
+      scenarios: dropByPrefix(st.scenarios),
+      sceneAnchors: dropByPrefix(st.sceneAnchors),
+      extraScenes: dropByPrefix(st.extraScenes),
+      anchorLists: dropByPrefix(st.anchorLists),
+      // встроенную книгу удалить с диска нельзя — прячем её с полки
+      hiddenBooks:
+        res.ok && res.data!.builtin ? [...new Set([...st.hiddenBooks, bookId])] : st.hiddenBooks
+    }
+    set({ persisted: p })
+    persist(p)
+    await get().reloadBooks()
   },
 
   voiceFor: (charId) => {

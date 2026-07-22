@@ -10,6 +10,7 @@ export function Book() {
   const persisted = useStore((s) => s.persisted)
   const chapter = useStore((s) => s.chapter)
   const setChapter = useStore((s) => s.setChapter)
+  const deleteBook = useStore((s) => s.deleteBook)
   const navigate = useStore((s) => s.navigate)
 
   if (!fanfic) return null
@@ -52,6 +53,15 @@ export function Book() {
           <div className="book-hero2__actions">
             <button className="btn btn--primary" onClick={() => navigate({ name: 'reader' })}>
               {chapter > 1 ? 'Продолжить чтение' : 'Начать читать'}
+            </button>
+            <button
+              className="btn btn--ghost btn--danger"
+              onClick={() => {
+                if (!window.confirm(`Убрать «${fanfic.title}» из библиотеки?\n\nПрогресс чтения, закладки и заметки по книге будут удалены.`)) return
+                deleteBook(fanfic.id).then(() => navigate({ name: 'library' }))
+              }}
+            >
+              Удалить книгу
             </button>
           </div>
         </div>
