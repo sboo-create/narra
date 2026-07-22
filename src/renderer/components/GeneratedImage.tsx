@@ -14,6 +14,8 @@ interface Props {
   rounded?: number
   /** движок генерации: 'kandinsky' — рисованный стиль (портреты, обложки, сцены) */
   engine?: 'kandinsky'
+  /** показывать кнопку «нарисовать заново» */
+  regenerable?: boolean
 }
 
 type Status = 'idle' | 'checking' | 'generating' | 'done' | 'error' | 'locked'
@@ -27,7 +29,8 @@ export function GeneratedImage({
   auto = true,
   lockedHint = 'Генерация картинок недоступна',
   rounded,
-  engine
+  engine,
+  regenerable = false
 }: Props) {
   const health = useStore((s) => s.health)
   const markGenerated = useStore((s) => s.markGenerated)
@@ -38,10 +41,10 @@ export function GeneratedImage({
 
   const keys = canImage(health)
 
-  async function generate() {
+  async function generate(force = false) {
     setStatus('generating')
     setErr('')
-    const res = await window.narra.generateImage(prompt, cacheKey, width, height, false, engine)
+    const res = await window.narra.generateImage(prompt, cacheKey, width, height, force, engine)
     if (res.ok) {
       setSrc(res.data!.dataUrl)
       setStatus('done')
@@ -83,7 +86,22 @@ export function GeneratedImage({
   const style = rounded ? { borderRadius: rounded } : undefined
 
   if (status === 'done' && src) {
-    return <img src={src} className={className} style={style} alt="" />
+    if (!regenerable) return <img src={src} className={className} style={style} alt="" />
+    return (
+      <span className="genimg">
+        <img src={src} className={className} style={style} alt="" />
+        <button
+          className="genimg__redraw"
+          title="Нарисовать заново"
+          onClick={(e) => {
+            e.stopPropagation()
+            generate(true)
+          }}
+        >
+          ↻
+        </button>
+      </span>
+    )
   }
 
   return (
@@ -108,7 +126,7 @@ export function GeneratedImage({
       )}
       {status === 'idle' && (
         <div className="skeleton-note" style={{ position: 'absolute', inset: 0 }}>
-          <button className="btn btn--ghost btn--sm" onClick={generate}>
+          <button className="btn btn--ghost btn--sm" onClick={() => generate()}>
             ✦ Сгенерировать
           </button>
         </div>
@@ -117,7 +135,7 @@ export function GeneratedImage({
         <div className="skeleton-note" style={{ position: 'absolute', inset: 0 }}>
           <span className="spark" style={{ opacity: 0.6 }}>⚠️</span>
           <span style={{ fontSize: 12 }}>{err}</span>
-          <button className="btn btn--ghost btn--sm" onClick={generate}>
+          <button className="btn btn--ghost btn--sm" onClick={() => generate()}>
             ↻ Повторить
           </button>
         </div>

@@ -2511,3 +2511,14 @@
 .book-menu__pop button.is-danger { color: var(--danger); }
 .book-menu__pop button.is-danger:hover { background: rgba(204, 74, 46, 0.08); }
 .book-menu__pop button:disabled { opacity: 0.5; cursor: default; }
+
+/* Кнопка «нарисовать заново» на обложке */
+.genimg { position: relative; display: inline-block; line-height: 0; }
+.genimg__redraw {
+  position: absolute; right: 8px; bottom: 8px;
+  width: 34px; height: 34px; border-radius: 999px; cursor: pointer;
+  border: none; background: rgba(20, 20, 16, 0.55); color: #fff; font-size: 15px;
+  backdrop-filter: blur(6px); opacity: 0; transition: opacity 0.15s ease;
+}
+.genimg:hover .genimg__redraw { opacity: 1; }
+.genimg__redraw:hover { background: rgba(20, 20, 16, 0.75); }
