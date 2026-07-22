@@ -117,7 +117,7 @@ export function Profile() {
                     navigate({ name: 'character', id: c.id })
                   }}
                 >
-                  <CharAvatar cacheKey={portraitKey(c.id)} name={c.name} size={44} />
+                  <CharAvatar cacheKey={portraitKey(c.bookId, c.id)} name={c.name} size={44} />
                   <div className="path-char__body">
                     <div className="path-char__name">{c.name}</div>
                     <div className="path-char__meta">{met ? `${msgs} сообщ.` : 'ещё не знакомы'}</div>
@@ -141,7 +141,7 @@ export function Profile() {
                 navigate({ name: 'character', id: c.id })
               }}
             >
-              <CharAvatar cacheKey={portraitKey(c.id)} name={c.name} size={44} />
+              <CharAvatar cacheKey={portraitKey(c.bookId, c.id)} name={c.name} size={44} />
               <div className="path-char__body">
                 <div className="path-char__name">{c.name}</div>
                 <div className="path-char__meta">

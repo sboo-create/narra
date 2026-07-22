@@ -67,7 +67,7 @@ export function Chat({ id, sceneContext, autoAsk }: Props) {
 
   async function animateReply(m: ChatMessage) {
     if (avatarBusy) return
-    const imgRes = await window.narra.getCachedImage(portraitKey(id))
+    const imgRes = await window.narra.getCachedImage(portraitKey(fanfic.id, id))
     if (!imgRes.ok) {
       toast({ type: 'info', title: 'Сначала портрет', message: 'Открой карточку персонажа — портрет сгенерится, потом оживим.' })
       return
@@ -371,7 +371,7 @@ export function Chat({ id, sceneContext, autoAsk }: Props) {
           ‹
         </button>
         <div className="chat__who" onClick={() => navigate({ name: 'character', id })} title={char.role}>
-          <CharAvatar cacheKey={portraitKey(id)} name={char.name} size={38} />
+          <CharAvatar cacheKey={portraitKey(fanfic.id, id)} name={char.name} size={38} />
           <div className="chat__who-text">
             <strong>{char.fullName}</strong>
             <div className="chat__role">{char.role}</div>
@@ -417,7 +417,7 @@ export function Chat({ id, sceneContext, autoAsk }: Props) {
             </div>
           ) : (
             <LivingPortrait
-              cacheKey={portraitKey(id)}
+              cacheKey={portraitKey(fanfic.id, id)}
               prompt={portraitPrompt(char)}
               speaking={streaming || !!speakingId}
               emotion={emotion}
@@ -477,7 +477,7 @@ export function Chat({ id, sceneContext, autoAsk }: Props) {
                 >
                   {isA && (
                     <div className="msg__avatar-slot">
-                      {lastOfGroup && <CharAvatar cacheKey={portraitKey(id)} name={char.name} size={34} />}
+                      {lastOfGroup && <CharAvatar cacheKey={portraitKey(fanfic.id, id)} name={char.name} size={34} />}
                     </div>
                   )}
                   <div className="msg__col">

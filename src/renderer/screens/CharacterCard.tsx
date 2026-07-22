@@ -33,7 +33,7 @@ export function CharacterCard({ id }: Props) {
   const [portraitBump, setPortraitBump] = useState(0)
   const [idleVideo, setIdleVideo] = useState<string | null>(null)
 
-  const idleKey = idleVideoKey(id)
+  const idleKey = idleVideoKey(fanfic.id, id)
 
   useEffect(() => {
     setIdleVideo(null)
@@ -54,7 +54,7 @@ export function CharacterCard({ id }: Props) {
       const done = await check()
       if (done || !imgReady) return
       // фоновое оживление — живёт вне компонента, выход из карточки его не убивает
-      ensureIdleAnimation(char, true)
+      ensureIdleAnimation(fanfic.id, char, true)
       setReviving(isIdleInFlight(id))
       const iv = setInterval(async () => {
         if (!alive) {
@@ -71,7 +71,7 @@ export function CharacterCard({ id }: Props) {
   }, [id, imgReady])
 
   function revive() {
-    ensureIdleAnimation(char)
+    ensureIdleAnimation(fanfic.id, char)
     setReviving(true)
     toast({ type: 'info', title: 'Оживает в фоне', message: 'Можно уйти с карточки — герой оживёт сам (~2 мин).' })
   }
@@ -80,10 +80,10 @@ export function CharacterCard({ id }: Props) {
   async function redraw() {
     if (redrawing) return
     setRedrawing(true)
-    const res = await window.narra.generateImage(portraitPrompt(char), portraitKey(id), 1024, 1024, true, 'kandinsky')
+    const res = await window.narra.generateImage(portraitPrompt(char), portraitKey(fanfic.id, id), 1024, 1024, true, 'kandinsky')
     setRedrawing(false)
     if (res.ok) {
-      await window.narra.deleteCachedVideo(idleVideoKey(id)) // видео от старого портрета больше не валидно
+      await window.narra.deleteCachedVideo(idleVideoKey(fanfic.id, id)) // видео от старого портрета больше не валидно
       setIdleVideo(null)
       setPortraitBump((x) => x + 1)
       toast({ type: 'success', title: 'Портрет перерисован' })
@@ -153,7 +153,7 @@ export function CharacterCard({ id }: Props) {
           ) : (
             <LivingPortrait
               key={portraitBump}
-              cacheKey={portraitKey(id)}
+              cacheKey={portraitKey(fanfic.id, id)}
               prompt={portraitPrompt(char)}
               width={1024}
               height={1024}

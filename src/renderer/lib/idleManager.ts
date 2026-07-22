@@ -25,18 +25,19 @@ function safeMotion(raw?: string): string {
   return cleaned.length >= 12 ? cleaned : 'slight head tilt, attentive alive gaze, subtle eyebrow movement'
 }
 
-export function idleVideoKey(id: string): string {
-  return `idle-${id}-${IMAGE_VERSION}`
+/** Ключ ролика оживления — тоже с id книги (см. portraitKey). */
+export function idleVideoKey(bookId: string, id: string): string {
+  return `idle-${bookId}-${id}-${IMAGE_VERSION}`
 }
 
 export function isIdleInFlight(id: string): boolean {
   return inFlight.has(id)
 }
 
-export async function ensureIdleAnimation(char: Character, auto = false): Promise<void> {
+export async function ensureIdleAnimation(bookId: string, char: Character, auto = false): Promise<void> {
   const id = char.id
   if (inFlight.has(id)) return
-  const cached = await window.narra.getCachedVideo(idleVideoKey(id))
+  const cached = await window.narra.getCachedVideo(idleVideoKey(bookId, id))
   if (cached.ok) return
   // авто-прегенерация не создаёт толпу: если кто-то уже генерится — пропускаем,
   // сгенерится при следующем открытии карточки
@@ -49,9 +50,9 @@ export async function ensureIdleAnimation(char: Character, auto = false): Promis
   async function job() {
     try {
       // ждём портрет (или рисуем его сами)
-      let img = await window.narra.getCachedImage(portraitKey(id))
+      let img = await window.narra.getCachedImage(portraitKey(bookId, id))
       if (!img.ok) {
-        const gen = await window.narra.generateImage(portraitPrompt(char), portraitKey(id), 1024, 1024, false, 'kandinsky')
+        const gen = await window.narra.generateImage(portraitPrompt(char), portraitKey(bookId, id), 1024, 1024, false, 'kandinsky')
         if (!gen.ok) return
         img = { ok: true, data: { dataUrl: gen.data!.dataUrl } }
       }
@@ -61,7 +62,7 @@ export async function ensureIdleAnimation(char: Character, auto = false): Promis
       // Единственное дополнение — санитайзер описания движения (иначе «slow breathing»
       // от LLM превращает портрет в спящего с закрытыми глазами).
       const motion = `${safeMotion(char.idleAnimation)}, mouth closed, not speaking, no talking, locked camera on tripod, absolutely fixed framing and scale, no zoom, no pan`
-      await window.narra.animatePortrait(img.data!.dataUrl, motion, idleVideoKey(id))
+      await window.narra.animatePortrait(img.data!.dataUrl, motion, idleVideoKey(bookId, id))
       // результат уже в кэше main-процесса
     } finally {
       inFlight.delete(id)

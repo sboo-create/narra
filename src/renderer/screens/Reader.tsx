@@ -676,7 +676,7 @@ export function Reader() {
           <div className="popover-backdrop" onClick={() => setPopover(null)} />
           <div className="popover" style={{ left: popover.x, top: popover.y }}>
             <div className="popover__char">
-              <CharAvatar cacheKey={portraitKey(popChar.id)} name={popChar.name} size={44} />
+              <CharAvatar cacheKey={portraitKey(fanfic.id, popChar.id)} name={popChar.name} size={44} />
               <div>
                 <strong>{popChar.fullName}</strong>
                 <div className="popover__role">{popChar.role}</div>

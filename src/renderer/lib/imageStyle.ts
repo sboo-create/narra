@@ -2,9 +2,11 @@
 // IMAGE_VERSION поднимать ТОЛЬКО при смене промптов (всё перегенерируется).
 export const IMAGE_VERSION = 'v10'
 
-// суффикс 'k' — портреты рисует Kandinsky, единым стилем со сценами и обложками
-export function portraitKey(id: string): string {
-  return `portrait-${id}-${IMAGE_VERSION}k`
+/** Ключ портрета. ВАЖНО: включает id книги — иначе одноимённые герои разных книг
+ *  (Драко 17 лет из школьного фанфика и Драко 28 лет из другого) делят один портрет.
+ *  Суффикс 'k' — портреты рисует Kandinsky, единым стилем со сценами и обложками. */
+export function portraitKey(bookId: string, id: string): string {
+  return `portrait-${bookId}-${id}-${IMAGE_VERSION}k`
 }
 export function coverKey(bookId: string): string {
   return `cover-${bookId}-${IMAGE_VERSION}c`

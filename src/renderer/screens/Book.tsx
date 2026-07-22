@@ -125,7 +125,7 @@ export function Book() {
               className={`book-char ${locked ? 'book-char--locked' : ''}`}
               onClick={() => navigate({ name: 'character', id: c.id })}
             >
-              <CharAvatar cacheKey={portraitKey(c.id)} name={c.name} size={62} />
+              <CharAvatar cacheKey={portraitKey(fanfic.id, c.id)} name={c.name} size={62} />
               <span>{c.name}</span>
               {locked && <em>гл. {c.unlockChapter}</em>}
             </button>
