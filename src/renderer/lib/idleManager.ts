@@ -41,7 +41,11 @@ export async function ensureIdleAnimation(char: Character, auto = false): Promis
         if (!gen.ok) return
         img = { ok: true, data: { dataUrl: gen.data!.dataUrl } }
       }
-      const motion = `${char.idleAnimation || 'stays still'}, mouth closed, not speaking, no talking, locked camera on tripod, absolutely fixed framing and scale, no zoom, no pan`
+      // ВАЖНО: только мимика. Съёмочные слова (camera, tripod, framing, zoom) модель
+      // понимает буквально и дорисовывает в кадр камеру со штативом и посторонних людей.
+      // Съёмочные слова «camera»/«tripod» модель рисует как предметы в кадре — их нельзя.
+      // Но зум запретить надо, иначе к концу ролика наезжает на лицо: пишем это без «камеры».
+      const motion = `${char.idleAnimation || 'slight head movement'}, mouth closed, calm breathing, same framing and same distance all the time, no zoom, no scale change, plain background`
       await window.narra.animatePortrait(img.data!.dataUrl, motion, idleVideoKey(id))
       // результат уже в кэше main-процесса
     } finally {

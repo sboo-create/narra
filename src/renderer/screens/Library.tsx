@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store/useStore'
 import { GeneratedImage } from '../components/GeneratedImage'
 import { coverKey } from '../lib/imageStyle'
@@ -17,6 +17,56 @@ const SHELF_TINT: Record<string, string> = {
   Фанфики: 'var(--glass-amber)',
   Классика: 'var(--glass-blue)',
   'Мои книги': 'rgba(217, 74, 43, 0.26)'
+}
+
+const CARD_W = 168
+const CARD_GAP = 44
+
+/** Сколько книг помещается в ряд — чтобы под каждым рядом была своя полка. */
+function useColumns(ref: React.RefObject<HTMLDivElement>): number {
+  const [cols, setCols] = useState(4)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const measure = () => {
+      const w = el.clientWidth
+      setCols(Math.max(1, Math.floor((w + CARD_GAP) / (CARD_W + CARD_GAP))))
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [ref])
+  return cols
+}
+
+/** Полка с книгами: ряд карточек + стеклянная планка под ними. */
+function Shelf({
+  list,
+  tint,
+  children
+}: {
+  list: BookContent[]
+  tint: string
+  children: (b: BookContent) => React.ReactNode
+}) {
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const cols = useColumns(wrapRef)
+  const rows: BookContent[][] = []
+  for (let i = 0; i < list.length; i += cols) rows.push(list.slice(i, i + cols))
+  return (
+    <div className="shelf__rows" ref={wrapRef}>
+      {rows.map((row, i) => (
+        <div className="shelf__row" key={i}>
+          <div className="shelf__books">{row.map(children)}</div>
+          <div className="shelf__glass" style={{ background: tint }}>
+            <i className="shelf__screw" />
+            <i className="shelf__screw shelf__screw--r" />
+          </div>
+        </div>
+      ))}
+    </div>
+  )
 }
 
 export function Library() {
@@ -186,12 +236,8 @@ export function Library() {
               {list.length === 1 ? 'книга' : list.length < 5 ? 'книги' : 'книг'}
             </span>
           </div>
-          <div className="shelf__row">
-            <div
-              className="shelf__books"
-              style={{ '--shelf-tint': SHELF_TINT[cat] || 'var(--glass-amber)' } as React.CSSProperties}
-            >
-              {list.map((b) => {
+          <Shelf list={list} tint={SHELF_TINT[cat] || 'var(--glass-amber)'}>
+            {(b) => {
                 const total = b.fanfic.chapters.length
                 const ch = persisted.chapters[b.fanfic.id] || 1
                 const started = (persisted.chapters[b.fanfic.id] || 0) > 0
@@ -235,13 +281,8 @@ export function Library() {
                   </button>
                   </div>
                 )
-              })}
-            </div>
-            <div className="shelf__glass" style={{ background: SHELF_TINT[cat] || 'var(--glass-amber)' }}>
-              <i className="shelf__screw" />
-              <i className="shelf__screw shelf__screw--r" />
-            </div>
-          </div>
+              }}
+          </Shelf>
         </section>
       ))}
     </div>
