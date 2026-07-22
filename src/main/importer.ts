@@ -18,24 +18,26 @@ function decode(buf: Buffer): string {
   const head = buf.subarray(0, 300).toString('utf8')
   if (/windows-1251/i.test(head)) return new TextDecoder('windows-1251').decode(buf)
   if (/koi8-r/i.test(head)) return new TextDecoder('koi8-r').decode(buf)
+  // валидный UTF-8 — это UTF-8: случайный текст в 1251 почти никогда не проходит
+  // строгую проверку, а вот кракозябры «РµСЂ…» формально тоже кириллица —
+  // поэтому НЕ сравниваем счётчиком, а проверяем валидность
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(buf)
+  } catch {
+    /* не utf-8 — выбираем из однобайтовых */
+  }
   const sample = buf.subarray(0, 60000)
-  const score = (t: string) =>
-    (t.match(/[а-яёА-ЯЁ]/g)?.length || 0) - 10 * (t.match(/\uFFFD/g)?.length || 0)
-  let best = ''
-  let bestScore = -Infinity
-  for (const enc of ['utf8', 'windows-1251', 'koi8-r'] as const) {
-    try {
-      const t = new TextDecoder(enc, { fatal: false }).decode(sample)
-      const sc = score(t)
-      if (sc > bestScore) {
-        bestScore = sc
-        best = enc
-      }
-    } catch {
-      /* кодировка недоступна */
+  const score = (t: string) => t.match(/[а-яёА-ЯЁ]/g)?.length || 0
+  let best = 'windows-1251'
+  let bestScore = -1
+  for (const enc of ['windows-1251', 'koi8-r'] as const) {
+    const sc = score(new TextDecoder(enc).decode(sample))
+    if (sc > bestScore) {
+      bestScore = sc
+      best = enc
     }
   }
-  return new TextDecoder(best || 'utf8').decode(buf)
+  return new TextDecoder(best).decode(buf)
 }
 
 // ---------- FB2 ----------
