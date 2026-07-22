@@ -80,7 +80,7 @@ export function CharacterCard({ id }: Props) {
   async function redraw() {
     if (redrawing) return
     setRedrawing(true)
-    const res = await window.narra.generateImage(portraitPrompt(char), portraitKey(id), 1024, 1024, true)
+    const res = await window.narra.generateImage(portraitPrompt(char), portraitKey(id), 1024, 1024, true, 'kandinsky')
     setRedrawing(false)
     if (res.ok) {
       await window.narra.deleteCachedVideo(idleVideoKey(id)) // видео от старого портрета больше не валидно

@@ -51,7 +51,7 @@ export async function ensureIdleAnimation(char: Character, auto = false): Promis
       // ждём портрет (или рисуем его сами)
       let img = await window.narra.getCachedImage(portraitKey(id))
       if (!img.ok) {
-        const gen = await window.narra.generateImage(portraitPrompt(char), portraitKey(id), 1024, 1024)
+        const gen = await window.narra.generateImage(portraitPrompt(char), portraitKey(id), 1024, 1024, false, 'kandinsky')
         if (!gen.ok) return
         img = { ok: true, data: { dataUrl: gen.data!.dataUrl } }
       }

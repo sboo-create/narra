@@ -12,6 +12,8 @@ interface Props {
   /** подпись-плейсхолдер без ключей */
   lockedHint?: string
   rounded?: number
+  /** движок генерации: 'kandinsky' — рисованный стиль (портреты, обложки, сцены) */
+  engine?: 'kandinsky'
 }
 
 type Status = 'idle' | 'checking' | 'generating' | 'done' | 'error' | 'locked'
@@ -24,7 +26,8 @@ export function GeneratedImage({
   className,
   auto = true,
   lockedHint = 'Генерация картинок недоступна',
-  rounded
+  rounded,
+  engine
 }: Props) {
   const health = useStore((s) => s.health)
   const markGenerated = useStore((s) => s.markGenerated)
@@ -38,7 +41,7 @@ export function GeneratedImage({
   async function generate() {
     setStatus('generating')
     setErr('')
-    const res = await window.narra.generateImage(prompt, cacheKey, width, height)
+    const res = await window.narra.generateImage(prompt, cacheKey, width, height, false, engine)
     if (res.ok) {
       setSrc(res.data!.dataUrl)
       setStatus('done')
