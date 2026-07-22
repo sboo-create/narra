@@ -2071,6 +2071,11 @@
 }
 .book-hero2__actions {
   margin-top: 22px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: nowrap; /* ширина контейнера нулевая — с wrap «⋯» уезжала под кнопку */
+  width: fit-content;
 }
 .book-chars,
 .lib-chars__row {
