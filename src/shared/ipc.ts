@@ -28,6 +28,7 @@ export const IPC = {
   // изображения
   generateImage: 'image:generate',
   getCachedImage: 'image:getCached',
+  deleteCachedImage: 'image:deleteCached',
 
   // озвучка
   synthesize: 'tts:synthesize',

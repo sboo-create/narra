@@ -258,6 +258,15 @@ function videoPath(key: string): string {
   return path.join(videoDir(), `${key}.mp4`)
 }
 
+export async function deleteCachedImage(cacheKey: string): Promise<ApiResult<{ ok: true }>> {
+  try {
+    await fs.unlink(imgPath(cacheKey))
+  } catch {
+    /* нет файла — ок */
+  }
+  return { ok: true, data: { ok: true } }
+}
+
 export async function saveCachedVideo(cacheKey: string, dataUrl: string): Promise<ApiResult<{ ok: true }>> {
   try {
     await fs.mkdir(videoDir(), { recursive: true })

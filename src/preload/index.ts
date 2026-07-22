@@ -66,6 +66,8 @@ const api = {
     quality?: 'lite' | 'hd'
   ): Promise<ApiResult<{ dataUrl: string; cached: boolean }>> =>
     ipcRenderer.invoke(IPC.animatePortrait, imageDataUrl, query, cacheKey, quality),
+  deleteCachedImage: (cacheKey: string): Promise<ApiResult<{ ok: true }>> =>
+    ipcRenderer.invoke(IPC.deleteCachedImage, cacheKey),
   deleteCachedVideo: (cacheKey: string): Promise<ApiResult<{ ok: true }>> =>
     ipcRenderer.invoke(IPC.deleteCachedVideo, cacheKey),
   saveCachedVideo: (cacheKey: string, dataUrl: string): Promise<ApiResult<{ ok: true }>> =>

@@ -18,6 +18,7 @@ import {
   getCachedVideo,
   animatePortrait,
   deleteCachedVideo,
+  deleteCachedImage,
   saveCachedVideo,
   checkAppUpdate,
   installUpdate,
@@ -109,6 +110,7 @@ function registerIpc(): void {
     (_e, imageDataUrl: string, query: string, cacheKey?: string, quality?: 'lite' | 'hd') =>
       animatePortrait(imageDataUrl, query, cacheKey, quality)
   )
+  ipcMain.handle(IPC.deleteCachedImage, (_e, cacheKey: string) => deleteCachedImage(cacheKey))
   ipcMain.handle(IPC.deleteCachedVideo, (_e, cacheKey: string) => deleteCachedVideo(cacheKey))
   ipcMain.handle(IPC.saveCachedVideo, (_e, cacheKey: string, dataUrl: string) => saveCachedVideo(cacheKey, dataUrl))
   ipcMain.handle(IPC.checkAppUpdate, () => checkAppUpdate(app.getVersion()))

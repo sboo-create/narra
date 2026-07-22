@@ -136,6 +136,7 @@ export function installDevShim(): void {
     generateAvatar: async () => ({ ok: false, error: 'видео недоступно в браузерном превью', code: 'UNKNOWN' }),
     getCachedVideo: async () => ({ ok: false, error: 'not cached', code: 'UNKNOWN' }),
     animatePortrait: async () => ({ ok: false, error: 'видео недоступно в браузерном превью', code: 'UNKNOWN' }),
+    deleteCachedImage: async () => ({ ok: true, data: { ok: true } }),
     deleteCachedVideo: async () => ({ ok: true, data: { ok: true } }),
     saveCachedVideo: async () => ({ ok: true, data: { ok: true } }),
     checkAppUpdate: async () => ({ ok: true, data: { hasUpdate: false, version: '', url: '' } }),
