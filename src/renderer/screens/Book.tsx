@@ -42,7 +42,6 @@ export function Book() {
             prompt={coverPrompt(fanfic.coverPrompt, characters.slice(0, 2))}
             rounded={10}
             lockedHint="обложка"
-            engine="kandinsky"
             regenerable
           />
         </div>

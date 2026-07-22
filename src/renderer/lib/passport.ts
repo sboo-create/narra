@@ -62,48 +62,30 @@ function passportShort(c: Character, outfitOverride?: string | null): string {
  *  ВАЖНО: Кандинский обрезает промпт на 950 знаках — стиль стоит В НАЧАЛЕ,
  *  а при 3+ героях паспорта сокращаются, иначе «НЕ фотореализм» отлетает
  *  и получаются фотоколлажи с киноактёрами. */
-export function scenePrompt(
-  sceneContext: string,
-  present: ScenePerson[],
-  extras: { name: string; look?: string }[] = []
-): string {
-  // ПРАВИЛО: стиль (ART_STYLE) идёт в промпт ЦЕЛИКОМ и никогда не сокращается —
-  // именно он держит единую манеру рисунка во всех книгах. При нехватке места
-  // (Кандинский режет на 950 знаках) ужимаются паспорта, а не стиль.
-  const scene = `Сцена: ${sceneContext}. Единая сцена в одном пространстве, персонажи взаимодействуют — НЕ коллаж, НЕ отдельные панели.`
-  const style = ` Стиль: ${ART_STYLE}.`
-  if (!present.length && !extras.length) {
-    return `${scene} Без людей крупным планом, широкая композиция.${style}`
-  }
-  const names = [...present.map((p) => p.char.name), ...extras.map((e) => e.name)].join(' и ')
-  const total = present.length + extras.length
+export function scenePrompt(sceneContext: string, present: ScenePerson[]): string {
+  const head =
+    'Рисованная книжная иллюстрация, цифровая живопись, НЕ фотореализм, НЕ кадр из фильма, НЕ фото. '
+  const tail = ' Мягкий рассеянный свет, сдержанная палитра, лёгкая текстура бумаги, без текста и надписей.'
+  if (!present.length)
+    return `${head}Сцена: ${sceneContext}. Без людей крупным планом, широкая композиция.${tail}`
+  const names = present.map((p) => p.char.name).join(' и ')
   // цензор Кандинского иногда принимает андрогинных героев за однополую пару — проговариваем пол явно
   const genders = present.map((p) => p.char.passport?.gender)
   const pairNote =
-    total === 2 && genders.includes('male') && genders.includes('female') ? 'это пара — мужчина и женщина, ' : ''
-  const extrasText = extras.map((e) => `${e.name} (${e.look || 'внешность по книге'})`).join('; ')
-  const build = (short: boolean) => {
-    const who = present
+    present.length === 2 && genders.includes('male') && genders.includes('female')
+      ? 'это пара — мужчина и женщина, '
+      : ''
+  const build = (short: boolean) =>
+    `${head}Сцена: ${sceneContext}. Единая сцена в одном пространстве, персонажи взаимодействуют — НЕ коллаж, НЕ отдельные панели и портреты. ` +
+    `В кадре РОВНО ${present.length} ${present.length === 1 ? 'человек' : 'человека'} — ${pairNote}только ${names}, никаких других людей и лиц. ` +
+    `Внешность СТРОГО: ${present
       .map(
         (p) =>
           `${p.char.name} (${(short ? passportShort : passportText)(p.char, p.outfit)})${p.action ? ` — ${p.action}` : ''}`
       )
-      .join('; ')
-    return (
-      `${scene} В кадре РОВНО ${total} ${total === 1 ? 'человек' : 'человека'} — ${pairNote}только ${names}, ` +
-      `никаких других людей и лиц. Внешность СТРОГО: ${[who, extrasText].filter(Boolean).join('; ')}.${style}`
-    )
-  }
-  // Кандинский режет промпт на 950 знаках. Стиль — святое: считаем бюджет от него,
-  // и если не влезаем даже с короткими паспортами, режем описание сцены, а не стиль.
-  const LIMIT = 940
+      .join('; ')}.${tail}`
   const full = build(false)
-  if (full.length <= LIMIT) return full
-  const short = build(true)
-  if (short.length <= LIMIT) return short
-  const over = short.length - LIMIT
-  const trimmedScene = sceneContext.slice(0, Math.max(30, sceneContext.length - over - 3)) + '…'
-  return build(true).replace(sceneContext, trimmedScene)
+  return full.length <= 930 ? full : build(true)
 }
 
 /** Промпт обложки: описание + паспорта главных героев. */

@@ -3,7 +3,7 @@ import { canImage } from '../store/useStore'
 import { useStore, canTts } from '../store/useStore'
 import { LivingPortrait } from '../components/LivingPortrait'
 import { portraitKey } from '../lib/imageStyle'
-import { ensureIdleAnimation, idleVideoKey, isIdleInFlight, isIdleFailed } from '../lib/idleManager'
+import { ensureIdleAnimation, idleVideoKey, isIdleInFlight } from '../lib/idleManager'
 import { portraitPrompt } from '../lib/passport'
 import { buildSsml } from '../lib/ttsEmotion'
 
@@ -47,10 +47,6 @@ export function CharacterCard({ id }: Props) {
         setReviving(false)
         return true
       }
-      if (isIdleFailed(id)) {
-        setReviving(false)
-        return true // перестаём ждать: покажем кнопку «Оживить» для повторной попытки
-      }
       setReviving(isIdleInFlight(id))
       return false
     }
@@ -84,7 +80,7 @@ export function CharacterCard({ id }: Props) {
   async function redraw() {
     if (redrawing) return
     setRedrawing(true)
-    const res = await window.narra.generateImage(portraitPrompt(char), portraitKey(fanfic.id, id), 1024, 1024, true, 'kandinsky')
+    const res = await window.narra.generateImage(portraitPrompt(char), portraitKey(fanfic.id, id), 1024, 1024, true)
     setRedrawing(false)
     if (res.ok) {
       await window.narra.deleteCachedVideo(idleVideoKey(fanfic.id, id)) // видео от старого портрета больше не валидно
