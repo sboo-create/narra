@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import React, { useMemo, useState } from 'react'
 import { useStore } from '../store/useStore'
 import { GeneratedImage } from '../components/GeneratedImage'
 import { coverKey } from '../lib/imageStyle'
@@ -187,7 +187,10 @@ export function Library() {
             </span>
           </div>
           <div className="shelf__row">
-            <div className="shelf__books">
+            <div
+              className="shelf__books"
+              style={{ '--shelf-tint': SHELF_TINT[cat] || 'var(--glass-amber)' } as React.CSSProperties}
+            >
               {list.map((b) => {
                 const total = b.fanfic.chapters.length
                 const ch = persisted.chapters[b.fanfic.id] || 1

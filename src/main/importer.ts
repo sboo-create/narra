@@ -247,18 +247,37 @@ function proxyFetchUrl(target: string): string {
   return `${base}/import/fetch?url=${encodeURIComponent(target)}`
 }
 
+const BROWSER_HEADERS = {
+  'User-Agent':
+    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
+  Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,application/epub+zip,*/*;q=0.8',
+  'Accept-Language': 'ru-RU,ru;q=0.9,en;q=0.8'
+}
+
+/**
+ * Тянем страницу через прокси, а если тот упёрся в антифлуд — пробуем напрямую
+ * с компьютера пользователя (у него другой IP, часто это спасает) и наоборот.
+ */
 async function fetchViaProxy(target: string): Promise<Buffer> {
-  const r = await fetch(proxyFetchUrl(target))
-  if (!r.ok) {
-    let msg = `загрузка не удалась (${r.status})`
+  let proxyErr = ''
+  try {
+    const r = await fetch(proxyFetchUrl(target))
+    if (r.ok) return Buffer.from(await r.arrayBuffer())
     try {
-      msg = ((await r.json()) as { error?: string }).error || msg
+      proxyErr = ((await r.json()) as { error?: string }).error || `ошибка ${r.status}`
     } catch {
-      /* не json */
+      proxyErr = `ошибка ${r.status}`
     }
-    throw new Error(msg)
+  } catch (e) {
+    proxyErr = (e as Error).message
   }
-  return Buffer.from(await r.arrayBuffer())
+  try {
+    const direct = await fetch(target, { headers: BROWSER_HEADERS, redirect: 'follow' })
+    if (direct.ok) return Buffer.from(await direct.arrayBuffer())
+  } catch {
+    /* прямой доступ тоже не вышел (например, сайт заблокирован) */
+  }
+  throw new Error(proxyErr || 'загрузка не удалась')
 }
 
 async function importFromAo3(workId: string): Promise<{ title: string; author: string; chapters: Chapter[] }> {
@@ -327,7 +346,7 @@ async function importFromFicbook(
       if (text.split(/\s+/).length >= 30) {
         chapters.push({ number: chapters.length + 1, title: chTitle.slice(0, 80), summary: '', characters: [], text })
       }
-      await new Promise((r) => setTimeout(r, 800)) // вежливая пауза между главами
+      await new Promise((r) => setTimeout(r, 1500)) // вежливая пауза: иначе Фикбук включает антифлуд
     }
   }
   // описание работы и шапка — берём авторские, а не выдуманные

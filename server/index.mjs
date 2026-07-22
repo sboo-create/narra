@@ -477,14 +477,30 @@ app.get('/import/fetch', async (req, res) => {
     if (u.protocol !== 'https:' || !IMPORT_HOSTS.has(u.hostname)) {
       return res.status(400).json({ error: 'Хост не поддерживается', code: 'UNKNOWN' })
     }
-    const r = await fetch(u, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
-        Accept: 'text/html,application/xhtml+xml,application/epub+zip,*/*'
-      },
-      redirect: 'follow'
-    })
-    if (!r.ok) return res.status(502).json({ error: `Источник ответил ${r.status}`, code: 'NETWORK' })
+    const headers = {
+      'User-Agent':
+        'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
+      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,application/epub+zip,*/*;q=0.8',
+      'Accept-Language': 'ru-RU,ru;q=0.9,en;q=0.8',
+      'Cache-Control': 'no-cache',
+      Referer: `${u.protocol}//${u.hostname}/`
+    }
+    // сайты фанфиков режут частые запросы (403/429) — ждём и пробуем ещё
+    let r = null
+    for (let attempt = 0; attempt < 3; attempt++) {
+      r = await fetch(u, { headers, redirect: 'follow' })
+      if (r.ok || (r.status !== 403 && r.status !== 429 && r.status < 500)) break
+      if (attempt < 2) await new Promise((ok) => setTimeout(ok, 4000 * (attempt + 1)))
+    }
+    if (!r.ok) {
+      const limited = r.status === 403 || r.status === 429
+      return res.status(502).json({
+        error: limited
+          ? 'Сайт временно ограничил загрузку (антифлуд). Подожди пару минут и попробуй снова.'
+          : `Источник ответил ${r.status}`,
+        code: limited ? 'RATE' : 'NETWORK'
+      })
+    }
     const buf = Buffer.from(await r.arrayBuffer())
     if (buf.length > 30 * 1024 * 1024) return res.status(413).json({ error: 'Файл больше 30 МБ', code: 'UNKNOWN' })
     res.setHeader('Content-Type', r.headers.get('content-type') || 'application/octet-stream')
