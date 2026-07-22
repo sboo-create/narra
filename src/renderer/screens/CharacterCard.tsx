@@ -149,19 +149,7 @@ export function CharacterCard({ id }: Props) {
       <div className="cardv2__panel">
         <div className="cardv2__portrait">
           {idleVideo ? (
-            <video
-              className="portrait-video"
-              src={idleVideo}
-              autoPlay
-              loop
-              muted
-              playsInline
-              // модель к концу ролика начинает наезжать на лицо — крутим стабильное начало
-              onTimeUpdate={(e) => {
-                const v = e.currentTarget
-                if (v.currentTime > 2.6) v.currentTime = 0.05
-              }}
-            />
+            <video className="portrait-video" src={idleVideo} autoPlay loop muted playsInline />
           ) : (
             <LivingPortrait
               key={portraitBump}

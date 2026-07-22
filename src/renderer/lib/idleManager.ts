@@ -57,13 +57,10 @@ export async function ensureIdleAnimation(char: Character, auto = false): Promis
       }
       // ВАЖНО: только мимика. Съёмочные слова (camera, tripod, framing, zoom) модель
       // понимает буквально и дорисовывает в кадр камеру со штативом и посторонних людей.
-      // Съёмочные слова «camera»/«tripod» модель рисует как предметы в кадре — их нельзя.
-      // Зум запрещаем без слова «камера»; глаза открыты и губы неподвижны — иначе портрет
-      // «засыпает» или начинает беззвучно говорить.
-      const motion =
-        `${safeMotion(char.idleAnimation)}, eyes wide open looking straight at the viewer, ` +
-        `lips closed and completely still, no talking, no mouth movement, awake and alert, ` +
-        `same framing and same distance all the time, no zoom, no scale change, plain background`
+      // Проверенная формулировка: именно с ней получились хорошие ролики в первых книгах.
+      // Единственное дополнение — санитайзер описания движения (иначе «slow breathing»
+      // от LLM превращает портрет в спящего с закрытыми глазами).
+      const motion = `${safeMotion(char.idleAnimation)}, mouth closed, not speaking, no talking, locked camera on tripod, absolutely fixed framing and scale, no zoom, no pan`
       await window.narra.animatePortrait(img.data!.dataUrl, motion, idleVideoKey(id))
       // результат уже в кэше main-процесса
     } finally {
