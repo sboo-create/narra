@@ -3,7 +3,7 @@ import { canImage } from '../store/useStore'
 import { useStore, canTts } from '../store/useStore'
 import { LivingPortrait } from '../components/LivingPortrait'
 import { portraitKey } from '../lib/imageStyle'
-import { ensureIdleAnimation, frameKey, framePhases, isIdleInFlight } from '../lib/idleManager'
+import { ensureIdleAnimation, idleVideoKey, isIdleInFlight, isIdleFailed } from '../lib/idleManager'
 import { portraitPrompt } from '../lib/passport'
 import { buildSsml } from '../lib/ttsEmotion'
 
@@ -31,23 +31,25 @@ export function CharacterCard({ id }: Props) {
   const [reviving, setReviving] = useState(false)
   const [redrawing, setRedrawing] = useState(false)
   const [portraitBump, setPortraitBump] = useState(0)
-  // кадры оживления: портрет живёт за счёт мягкого перехода между выражениями
-  const [frames, setFrames] = useState<string[]>([])
+  const [idleVideo, setIdleVideo] = useState<string | null>(null)
+
+  const idleKey = idleVideoKey(fanfic.id, id)
 
   useEffect(() => {
-    setFrames([])
+    setIdleVideo(null)
     setReviving(false)
     let alive = true
     async function check() {
-      const got = await Promise.all(
-        framePhases(char).map((p) => window.narra.getCachedImage(frameKey(fanfic.id, id, p.key)))
-      )
+      const r = await window.narra.getCachedVideo(idleKey)
       if (!alive) return false
-      const urls = got.filter((r) => r.ok).map((r) => r.data!.dataUrl)
-      if (urls.length === framePhases(char).length) {
-        setFrames(urls)
+      if (r.ok) {
+        setIdleVideo(r.data!.dataUrl)
         setReviving(false)
         return true
+      }
+      if (isIdleFailed(id)) {
+        setReviving(false)
+        return true // перестаём ждать: покажем кнопку «Оживить» для повторной попытки
       }
       setReviving(isIdleInFlight(id))
       return false
@@ -75,7 +77,7 @@ export function CharacterCard({ id }: Props) {
   function revive() {
     ensureIdleAnimation(fanfic.id, char)
     setReviving(true)
-    toast({ type: 'info', title: 'Оживает в фоне', message: 'Можно уйти с карточки — герой оживёт сам (~1 мин).' })
+    toast({ type: 'info', title: 'Оживает в фоне', message: 'Можно уйти с карточки — герой оживёт сам (~2 мин).' })
   }
 
   // Перерисовать портрет из паспорта (сбрасывает анимацию).
@@ -85,9 +87,8 @@ export function CharacterCard({ id }: Props) {
     const res = await window.narra.generateImage(portraitPrompt(char), portraitKey(fanfic.id, id), 1024, 1024, true, 'kandinsky')
     setRedrawing(false)
     if (res.ok) {
-      // кадры оживления рисовались от старого портрета — сбрасываем
-      for (const p of framePhases(char)) await window.narra.deleteCachedImage(frameKey(fanfic.id, id, p.key))
-      setFrames([])
+      await window.narra.deleteCachedVideo(idleVideoKey(fanfic.id, id)) // видео от старого портрета больше не валидно
+      setIdleVideo(null)
       setPortraitBump((x) => x + 1)
       toast({ type: 'success', title: 'Портрет перерисован' })
     } else {
@@ -151,22 +152,8 @@ export function CharacterCard({ id }: Props) {
 
       <div className="cardv2__panel">
         <div className="cardv2__portrait">
-          {frames.length ? (
-            // «живой» портрет: базовый кадр + плавные переходы к другим выражениям
-            <div className="alive-portrait">
-              <LivingPortrait
-                key={portraitBump}
-                cacheKey={portraitKey(fanfic.id, id)}
-                prompt={portraitPrompt(char)}
-                width={1024}
-                height={1024}
-                rounded={16}
-                lockedHint="Портрет появится при подключении"
-              />
-              {frames.map((src, i) => (
-                <img key={i} src={src} className={`alive-portrait__frame alive-portrait__frame--${i + 1}`} alt="" />
-              ))}
-            </div>
+          {idleVideo ? (
+            <video className="portrait-video" src={idleVideo} autoPlay loop muted playsInline />
           ) : (
             <LivingPortrait
               key={portraitBump}
@@ -181,9 +168,9 @@ export function CharacterCard({ id }: Props) {
         </div>
         {imgReady && (
           <div className="portrait-actions">
-            {!frames.length && (
+            {!idleVideo && (
               <button className="portrait-anim-btn" disabled={reviving} onClick={revive}>
-                {reviving ? 'оживает в фоне… (~1 мин)' : '✦ Оживить героя'}
+                {reviving ? 'оживает в фоне… (~2 мин)' : '✦ Оживить героя'}
               </button>
             )}
             <button

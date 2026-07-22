@@ -2524,25 +2524,3 @@
 .genimg__redraw:hover { background: rgba(20, 20, 16, 0.85); }
 .genimg__redraw:hover { background: rgba(20, 20, 16, 0.75); }
 
-/* «Живой» портрет: мягкая смена выражений вместо генеративного видео */
-.alive-portrait { position: relative; width: 100%; height: 100%; overflow: hidden; border-radius: 16px; }
-.alive-portrait > * { width: 100%; height: 100%; }
-.alive-portrait__frame {
-  position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
-  opacity: 0; border-radius: 16px;
-  animation: alive-fade 13s ease-in-out infinite;
-  will-change: opacity, transform;
-}
-.alive-portrait__frame--1 { animation-delay: 3.5s; }
-.alive-portrait__frame--2 { animation-delay: 8.5s; }
-@keyframes alive-fade {
-  0%, 6% { opacity: 0; transform: scale(1); }
-  14%, 26% { opacity: 1; transform: scale(1.008); }
-  34%, 100% { opacity: 0; transform: scale(1); }
-}
-/* едва заметное «дыхание» самого портрета */
-.alive-portrait > :first-child { animation: alive-breathe 9s ease-in-out infinite; }
-@keyframes alive-breathe {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.012); }
-}
