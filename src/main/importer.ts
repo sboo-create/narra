@@ -223,18 +223,23 @@ async function importFromAo3(workId: string): Promise<{ title: string; author: s
   return parseEpub(file)
 }
 
-async function importFromFicbook(url: string): Promise<{ title: string; author: string; chapters: Chapter[] }> {
+async function importFromFicbook(rawUrl: string): Promise<{ title: string; author: string; chapters: Chapter[] }> {
+  const idM = rawUrl.match(/readfic\/([0-9a-zA-Z-]+)/)
+  const url = idM ? `https://ficbook.net/readfic/${idM[1]}` : rawUrl
   const html = decode(await fetchViaProxy(url))
   const title = stripTags(html.match(/<h1[^>]*>([\s\S]*?)<\/h1>/)?.[1] || 'Без названия')
   const author =
     stripTags(html.match(/class="creator-username"[^>]*>([\s\S]*?)<\/a>/)?.[1] || '') ||
     stripTags(html.match(/itemprop="author"[^>]*>([\s\S]*?)<\/(a|span)>/)?.[1] || '') ||
     'Автор с Фикбука'
-  const fidM = url.match(/readfic\/(\d+)/)
+  // id работы: старый числовой ИЛИ новый uuid-слаг; query и якорь отбрасываем
+  const fidM = url.match(/readfic\/([0-9a-zA-Z-]+)/)
   if (!fidM) throw new Error('Не понял ссылку Фикбука')
-  // список частей: /readfic/<id>/<part>
+  const fid = fidM[1]
+  const esc = fid.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  // главы — только ЧИСЛОВЫЕ под-id: служебные /comments и /download отсекаются сами
   const partIds: string[] = []
-  for (const m of html.matchAll(new RegExp(`href="/readfic/${fidM[1]}/(\\d+)[#"]`, 'g'))) {
+  for (const m of html.matchAll(new RegExp(`href="/readfic/${esc}/(\\d+)`, 'g'))) {
     if (!partIds.includes(m[1])) partIds.push(m[1])
   }
   const grabContent = (page: string) => {
@@ -248,11 +253,18 @@ async function importFromFicbook(url: string): Promise<{ title: string; author: 
   const chapters: Chapter[] = []
   if (partIds.length === 0) {
     const text = grabContent(html)
-    if (!text) throw new Error('Не нашёл текст — возможно, работа скрыта или сайт поменял разметку')
+    if (!text) {
+      const adult = /только для зарегистрированных|войдите|18\+/i.test(html)
+      throw new Error(
+        adult
+          ? 'Похоже, работа 18+ — Фикбук отдаёт её только после входа. Скачай fb2 со страницы работы и добавь через «+ Своя книга»'
+          : 'Не нашёл текст — возможно, работа скрыта или сайт поменял разметку'
+      )
+    }
     chapters.push({ number: 1, title: title.slice(0, 80), summary: '', characters: [], text })
   } else {
     for (const pid of partIds) {
-      const page = decode(await fetchViaProxy(`https://ficbook.net/readfic/${fidM[1]}/${pid}`))
+      const page = decode(await fetchViaProxy(`https://ficbook.net/readfic/${fid}/${pid}`))
       const chTitle = stripTags(page.match(/<h2[^>]*>([\s\S]*?)<\/h2>/)?.[1] || `Глава ${chapters.length + 1}`)
       const text = grabContent(page)
       if (text.split(/\s+/).length >= 30) {
