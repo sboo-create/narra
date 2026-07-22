@@ -31,6 +31,53 @@ function safeMotion(raw?: string): string {
  * Ловит и наезд камеры, и появление посторонних предметов (штатив, камера).
  * Возвращает true, если кадр остался прежним.
  */
+function sample(src: string, isVideo: boolean, at = 0.15): Promise<number[] | null> {
+  return new Promise((resolve) => {
+    const S = 32
+    const draw = (el: CanvasImageSource) => {
+      try {
+        const c = document.createElement('canvas')
+        c.width = S
+        c.height = S
+        const ctx = c.getContext('2d')!
+        ctx.drawImage(el, 0, 0, S, S)
+        const d = ctx.getImageData(0, 0, S, S).data
+        const out: number[] = []
+        for (let i = 0; i < d.length; i += 4) out.push((d[i] + d[i + 1] + d[i + 2]) / 3)
+        resolve(out)
+      } catch {
+        resolve(null)
+      }
+    }
+    if (isVideo) {
+      const v = document.createElement('video')
+      v.muted = true
+      v.preload = 'auto'
+      v.src = src
+      v.addEventListener('loadeddata', () => {
+        v.currentTime = at
+      })
+      v.addEventListener('seeked', () => setTimeout(() => draw(v), 120))
+      v.addEventListener('error', () => resolve(null))
+    } else {
+      const im = new Image()
+      im.onload = () => draw(im)
+      im.onerror = () => resolve(null)
+      im.src = src
+    }
+    setTimeout(() => resolve(null), 20000)
+  })
+}
+
+/** Похож ли первый кадр ролика на исходный портрет (модель не подменила сцену). */
+async function matchesPortrait(videoUrl: string, portraitUrl: string): Promise<boolean> {
+  const [a, b] = await Promise.all([sample(videoUrl, true), sample(portraitUrl, false)])
+  if (!a || !b || a.length !== b.length) return true // не смогли сравнить — не бракуем
+  let diff = 0
+  for (let i = 0; i < a.length; i++) diff += Math.abs(a[i] - b[i])
+  return diff / a.length < 34 // средняя разница яркости на пиксель
+}
+
 function isStable(dataUrl: string): Promise<boolean> {
   return new Promise((resolve) => {
     const v = document.createElement('video')
@@ -132,7 +179,9 @@ export async function ensureIdleAnimation(bookId: string, char: Character, auto 
       for (let attempt = 0; attempt < 2; attempt++) {
         const vid = await window.narra.animatePortrait(img.data!.dataUrl, motion, undefined)
         if (!vid.ok) return
-        const ok = attempt === 1 || (await isStable(vid.data!.dataUrl))
+        const ok =
+          attempt === 1 ||
+          ((await matchesPortrait(vid.data!.dataUrl, img.data!.dataUrl)) && (await isStable(vid.data!.dataUrl)))
         if (ok) {
           await window.narra.saveCachedVideo(idleVideoKey(bookId, id), vid.data!.dataUrl)
           return
