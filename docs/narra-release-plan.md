@@ -288,18 +288,26 @@ Railway Gateway
 Разделяем имена:
 
 - `narra-staging.multitool.works` → изолированный Railway staging;
-- `narra.multitool.works` → зарезервирован в Vercel под reviewed production v2.
+- `narra.multitool.works` → предполагаемое production-имя, но текущий target
+  ещё не подтверждён как будущий Narra gateway.
 
-Production-имя сейчас закономерно отвечает Vercel `DEPLOYMENT_NOT_FOUND`; к
-staging его не направляем. Для staging в Vercel DNS нужны записи:
+Production-имя сейчас имеет `A 158.160.163.167`: HTTP отвечает Caddy `308`, а
+HTTPS не проходит TLS handshake. Не считаем этот host готовым или
+принадлежащим будущему production-контуру, пока владелец IP/маршрута не
+подтверждён. К staging его не направляем. 23 июля записи staging уже добавлены
+и видны в authoritative DNS:
 
 | Type | Name | Value |
 |---|---|---|
 | CNAME | `narra-staging` | `eb0cgdqy.up.railway.app` |
 | TXT | `_railway-verify.narra-staging` | `railway-verify=e50d4dec8125f3033c2140416ff008a5db67d600c8a3e1cff8c9bbc9b212b939` |
 
-После propagation Railway автоматически выпускает TLS; затем проверяем
-`HTTPS /health` и убеждаемся, что ответ больше не содержит `server: Vercel`.
+Custom-domain/TLS provisioning завершён: 23 июля
+`https://narra-staging.multitool.works/health` ответил `200`, сертификат принят,
+а health подтвердил SaluteSpeech, Kandinsky, video и все OpenRouter routes.
+Прямой запрос к техническому CNAME target с его собственным Host возвращает
+Railway fallback `Application not found` — это нормально: edge маршрутизирует
+сервис по custom hostname.
 
 Поддомен закрывает TLS только до gateway. Маршрут к video остаётся
 server-to-server HTTP до установки TLS/HMAC/firewall-контролей выше.
@@ -650,16 +658,46 @@ Raw latency rows, мс: `24 kHz = [2095, 1922, 2199, 1939, 1960]`;
 `Che`, `She`, `Erm`, `Gal`, `Ast`, `Ste`, `Tso`, `Bez`, `Ego`, `Izv`, `Chr`,
 `Saf`, `Ksa`, `Bsa`, `Mar`, `Kas`.
 
-Новый скриншот из внутреннего voice picker подтверждает пары
-`Erm→Джой`, `Gal→Галустян`, `Saf→Сафронова`, `Ast→Стерлинг`,
-`Ste→Стремпаржевская`, `Pik→ПИК`, `Boc→Бочаров`, `Kha→Хачатрян`,
-`Kud→Кудряшова`. Первые пять пересекаются с successful API probe; `Pik/Boc/Kha/Kud`
-ещё нужно отдельно проверить на текущем key и в 48 kHz.
+Десять новых скриншотов voice picker вместе с ранее полученным скриншотом Джой
+закрыли mapping целевого библиотечного пула. Все 11 файлов зафиксированы как
+evidence; используем именно YourVoice-варианты там, где picker показывает
+дубликаты:
 
-Код `Get` вернул HTTP 400 и с `24000`, и с `48000`; проверены все варианты
-регистра букв. Это либо опечатка, либо голос ещё не добавлен в key `gigacons`.
-Для остальных нужных фамилий полный `display name → exact code` mapping всё ещё
-не получен; сопоставлять старые отдельные списки по позиции нельзя.
+| Продуктовый голос | Exact base code | Auto-assignment | Проверка на staging key |
+|---|---|---|---|
+| Джой | `Erm` | assistant / narrator / protagonist | `48000` — HTTP 200 |
+| Фокин | `Efo` | library | picker подтверждён; `24000` — gateway HTTP 502, `48000` — HTTP 400 |
+| Стерлинг | `Ast` | library | `48000` — HTTP 200; альтернативный `Gst` не используем |
+| Галустян | `Gal` | library | `48000` — HTTP 200 |
+| Стремпаржевская (в picker: «Стемпаржевская») | `Ste` | library | `48000` — HTTP 200 |
+| Цокаева | `Tso` | library | `48000` — HTTP 200 |
+| Безлепкин | `Bez` | library | `48000` — HTTP 200 |
+| Егоров | `Ego` | library | `48000` — HTTP 200 |
+| Чернышова | `Chr` | library | `48000` — HTTP 200 |
+| Изволов | `Izv` | library | `48000` — HTTP 200 |
+| Сафронова | `Saf` | child-role exception | `48000` — HTTP 200 |
+| Ковалев | `Kov` | library | `24000` — HTTP 200; `48000` — HTTP 400 |
+| Марков | `Mar` | manual-only | `48000` — HTTP 200 |
+| Пират Касперович | `Kas` | manual-only | `48000` — HTTP 200 |
+
+Имена файлов, SHA-256 скриншотов и сырые строки probe-результатов сохранены в
+artifact/HTML как отдельные evidence datasets; таблица выше ссылается на них по
+стабильным evidence ID.
+
+В picker также видны `Gst→Стерлинг`, `Bsa→Сафронова сказки` и
+`Ksa→kid Сафронов`. Это отдельные варианты, а не замены выбранным `Ast`, `Saf`
+и детскому правилу Narra. `Pik/Boc/Kha/Kud` подтверждены как ПИК/Бочаров/
+Хачатрян/Кудряшова, но в утверждённый автоматический пул Сони не входят.
+Для `Ste` сохраняем продуктовое написание Сони «Стремпаржевская», а также
+буквальное provider-display-name из picker «Стемпаржевская», чтобы различие не
+выглядело ошибкой маппинга.
+
+Старый код `Get` больше не считаем незакрытым mapping Фокина: picker однозначно
+показывает `Efo→Фокин`. `Get_24000/Get_48000` и `Efo_48000` возвращают HTTP 400;
+`Efo_24000` возвращает gateway HTTP 502, но причина этого ответа пока не
+установлена. Владельцу SaluteSpeech нужно подтвердить доступность `Efo` на key
+`gigacons` и включить требуемый `Efo_48000`. `Kov_24000` уже работает, но для
+единого 48 kHz registry нужно отдельно включить `Kov_48000`.
 
 ### Детерминированное правило Safronova
 
@@ -676,8 +714,9 @@ Raw latency rows, мс: `24 kHz = [2095, 1922, 2199, 1939, 1960]`;
 
 Перед включением registry оставшаяся проверка:
 
-- exact `display name → provider code` mapping;
-- почему `Get` не provisioned;
+- подтвердить technical codes Афины и Сбера: для `Che/She` API-probe успешен,
+  но display-name mapping на присланных скриншотах отсутствует;
+- provision `Efo_48000` для Фокина и `Kov_48000` для Ковалева;
 - text и текущий SSML;
 - HTTP status/content type;
 - WAV sample rate/duration;
@@ -731,9 +770,9 @@ Raw latency rows, мс: `24 kHz = [2095, 1922, 2199, 1939, 1960]`;
 
 ## Что нужно решить владельцам
 
-1. Нужны оставшиеся пары `display name → technical code`; девять пар со второго
-   скриншота уже зафиксированы без позиционных догадок. Отдельно нужно уточнить,
-   почему `Get` не provisioned на staging key.
+1. Подтвердить, какой из `Che/She` — Афина, а какой — Сбер. Библиотечный mapping
+   уже закрыт скриншотами; у владельца SaluteSpeech нужно provision
+   `Efo_48000` и `Kov_48000`.
 2. Как назначать голос при `Sber narrator + male protagonist`? Рекомендация:
    первый мужской library voice.
 3. Сколько портретов готовить автоматически? Рекомендация: главный герой плюс
