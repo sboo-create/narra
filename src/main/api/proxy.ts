@@ -1,11 +1,76 @@
 import { app } from 'electron'
 import { promises as fs } from 'fs'
 import path from 'path'
-import { getSettings } from '../store'
-import type { ApiResult, LlmMessage, ProxyHealth } from '../../shared/types'
+import { clearGatewayToken, getGatewayIdentity, getSettings, setGatewayToken } from '../store'
+import type { ApiResult, LlmMessage, LlmPurpose, ProxyHealth } from '../../shared/types'
+import type { AnalyticsEvent } from '../../shared/analytics'
 
 function base(): string {
   return getSettings().proxyUrl.replace(/\/+$/, '')
+}
+
+let registration: Promise<string> | null = null
+
+async function gatewayToken(): Promise<string> {
+  const proxyUrl = base()
+  const identity = getGatewayIdentity()
+  if (identity.token && identity.tokenProxyUrl === proxyUrl) return identity.token
+  if (registration) return registration
+  registration = (async () => {
+    const response = await fetch(`${proxyUrl}/v2/installations/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        installation_id: identity.installationId,
+        app_version: app.getVersion(),
+        platform: process.platform,
+        arch: process.arch
+      })
+    })
+    if (!response.ok) throw new Error(`Регистрация gateway: ${response.status}`)
+    const payload = (await response.json()) as { token?: string }
+    if (!payload.token) throw new Error('Gateway не вернул installation token')
+    setGatewayToken(payload.token, proxyUrl)
+    return payload.token
+  })()
+  try {
+    return await registration
+  } finally {
+    registration = null
+  }
+}
+
+export async function gatewayFetch(
+  pathname: string,
+  init: RequestInit = {},
+  retryAuth = true
+): Promise<Response> {
+  const token = await gatewayToken()
+  const headers = new Headers(init.headers)
+  headers.set('Authorization', `Bearer ${token}`)
+  const response = await fetch(`${base()}${pathname}`, { ...init, headers })
+  if (response.status === 401 && retryAuth) {
+    clearGatewayToken()
+    return gatewayFetch(pathname, init, false)
+  }
+  return response
+}
+
+export async function sendTelemetryBatch(
+  events: AnalyticsEvent[]
+): Promise<ApiResult<{ accepted: number }>> {
+  if (!events.length) return { ok: true, data: { accepted: 0 } }
+  try {
+    const response = await gatewayFetch('/v2/events/batch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ events })
+    })
+    if (!response.ok) return parseErr(response)
+    return { ok: true, data: (await response.json()) as { accepted: number } }
+  } catch (error) {
+    return netErr(error)
+  }
 }
 
 function noProxy(): ApiResult<never> {
@@ -58,7 +123,8 @@ export async function chatStream(
   messages: LlmMessage[],
   onChunk: (delta: string) => void,
   signal: { aborted: boolean },
-  temperature = 0.8
+  temperature = 0.8,
+  purpose: LlmPurpose = 'character_chat'
 ): Promise<ApiResult<{ text: string }>> {
   if (!base()) return noProxy()
   const ctrl = new AbortController()
@@ -66,10 +132,10 @@ export async function chatStream(
     if (signal.aborted) ctrl.abort()
   }, 150)
   try {
-    const res = await fetch(`${base()}/gigachat/chat`, {
+    const res = await gatewayFetch('/v2/ai/chat/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages, temperature }),
+      body: JSON.stringify({ messages, temperature, purpose }),
       signal: ctrl.signal
     })
     if (!res.ok || !res.body) {
@@ -111,15 +177,16 @@ export async function chatStream(
 // ================= GigaChat: обычный ответ =================
 export async function chatComplete(
   messages: LlmMessage[],
-  temperature = 0.7
+  temperature = 0.7,
+  purpose: LlmPurpose = 'structured_task'
 ): Promise<ApiResult<{ text: string }>> {
   if (!base()) return noProxy()
   const { signal, done } = withTimeout(120000)
   try {
-    const res = await fetch(`${base()}/gigachat/complete`, {
+    const res = await gatewayFetch('/v2/ai/chat/complete', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages, temperature }),
+      body: JSON.stringify({ messages, temperature, purpose }),
       signal
     })
     done()
@@ -153,8 +220,12 @@ export async function chatJson<T = unknown>(messages: LlmMessage[], attempts = 3
 function imagesDir(): string {
   return path.join(app.getPath('userData'), 'images')
 }
+function safeCacheKey(key: string): string {
+  if (!/^[a-zA-Z0-9_-]{1,180}$/.test(key)) throw new Error('Некорректный ключ кэша')
+  return key
+}
 function imgPath(key: string): string {
-  return path.join(imagesDir(), `${key}.png`)
+  return path.join(imagesDir(), `${safeCacheKey(key)}.png`)
 }
 
 export async function getCachedImage(cacheKey: string): Promise<ApiResult<{ dataUrl: string }>> {
@@ -181,7 +252,7 @@ export async function generateImage(
   if (!base()) return noProxy()
   const { signal, done } = withTimeout(90000)
   try {
-    const res = await fetch(`${base()}/kandinsky/generate`, {
+    const res = await gatewayFetch('/v2/media/images', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt, width, height, engine }),
@@ -207,7 +278,7 @@ function audioDir(): string {
   return path.join(app.getPath('userData'), 'audio')
 }
 function audioPath(key: string): string {
-  return path.join(audioDir(), `${key}.wav`)
+  return path.join(audioDir(), `${safeCacheKey(key)}.wav`)
 }
 
 export async function getCachedAudio(cacheKey: string): Promise<ApiResult<{ dataUrl: string }>> {
@@ -230,7 +301,7 @@ export async function synthesize(
   if (!base()) return noProxy()
   const { signal, done } = withTimeout(60000)
   try {
-    const res = await fetch(`${base()}/salutespeech/synthesize`, {
+    const res = await gatewayFetch('/v2/speech/synthesize', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -255,7 +326,26 @@ function videoDir(): string {
   return path.join(app.getPath('userData'), 'video')
 }
 function videoPath(key: string): string {
-  return path.join(videoDir(), `${key}.mp4`)
+  return path.join(videoDir(), `${safeCacheKey(key)}.mp4`)
+}
+
+export async function deleteBookCache(bookId: string): Promise<void> {
+  safeCacheKey(bookId)
+  const belongsToBook = (filename: string) =>
+    filename.includes(`-${bookId}-`) || filename.startsWith(`${bookId}-`)
+  for (const directory of [imagesDir(), audioDir(), videoDir()]) {
+    let entries: string[] = []
+    try {
+      entries = await fs.readdir(directory)
+    } catch {
+      continue
+    }
+    await Promise.all(
+      entries
+        .filter(belongsToBook)
+        .map((filename) => fs.unlink(path.join(directory, filename)).catch(() => undefined))
+    )
+  }
 }
 
 export async function deleteCachedImage(cacheKey: string): Promise<ApiResult<{ ok: true }>> {
@@ -310,7 +400,7 @@ export async function generateAvatar(
   const audio = audioDataUrl.includes(',') ? audioDataUrl.split(',')[1] : audioDataUrl
   const { signal, done } = withTimeout(540000)
   try {
-    const res = await fetch(`${base()}/avatar/generate`, {
+    const res = await gatewayFetch('/v2/media/avatar', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ image, audio }),
@@ -346,7 +436,7 @@ export async function animatePortrait(
   const image = imageDataUrl.includes(',') ? imageDataUrl.split(',')[1] : imageDataUrl
   const { signal, done } = withTimeout(540000)
   try {
-    const res = await fetch(`${base()}/animate/portrait`, {
+    const res = await gatewayFetch('/v2/media/portrait-animation', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ image, query, quality }),
@@ -373,7 +463,7 @@ export async function recognize(base64: string, mime: string): Promise<ApiResult
   if (!base()) return noProxy()
   const { signal, done } = withTimeout(60000)
   try {
-    const res = await fetch(`${base()}/salutespeech/recognize`, {
+    const res = await gatewayFetch('/v2/speech/recognize', {
       method: 'POST',
       headers: { 'Content-Type': 'application/octet-stream', 'X-Audio-Type': mime },
       body: Buffer.from(base64, 'base64'),
@@ -425,14 +515,14 @@ function extractJson<T>(text: string): T | null {
   return null
 }
 
-/** Проверка обновления приложения: сравнивает версию с ${base()}/app/latest. */
+/** Проверка обновления приложения через авторизованный gateway v2. */
 export async function checkAppUpdate(
   current: string
 ): Promise<ApiResult<{ hasUpdate: boolean; version: string; url: string }>> {
   if (!base()) return noProxy()
   const { signal, done } = withTimeout(15000)
   try {
-    const res = await fetch(`${base()}/app/latest`, { signal })
+    const res = await gatewayFetch('/v2/updates/latest', { signal })
     done()
     if (!res.ok) return parseErr(res)
     const j = (await res.json()) as { version?: string; url?: string }
@@ -461,33 +551,10 @@ export async function checkAppUpdate(
  * приложения, подменяет .app в «Программах», снимает карантин и запускает снова).
  */
 export async function installUpdate(url: string): Promise<ApiResult<{ started: true }>> {
-  try {
-    const { tmpdir } = await import('node:os')
-    const { spawn } = await import('node:child_process')
-    const dmg = path.join(tmpdir(), `narra-update-${Date.now()}.dmg`)
-    const res = await fetch(url)
-    if (!res.ok) return { ok: false, error: `Не удалось скачать (${res.status})`, code: 'NETWORK' }
-    await fs.writeFile(dmg, Buffer.from(await res.arrayBuffer()))
-
-    const sh = path.join(tmpdir(), `narra-update-${Date.now()}.sh`)
-    await fs.writeFile(
-      sh,
-      `#!/bin/bash
-sleep 2
-MNT=$(hdiutil attach -nobrowse -readonly "${dmg}" | awk -F'\t' '/\/Volumes\//{print $NF; exit}')
-[ -z "$MNT" ] && exit 1
-rm -rf "/Applications/Narra.app"
-cp -R "$MNT/Narra.app" /Applications/
-hdiutil detach "$MNT" -quiet
-xattr -cr "/Applications/Narra.app"
-rm -f "${dmg}" "${sh}"
-open "/Applications/Narra.app"
-`,
-      { mode: 0o755 }
-    )
-    spawn('/bin/bash', [sh], { detached: true, stdio: 'ignore' }).unref()
-    return { ok: true, data: { started: true } }
-  } catch (e) {
-    return { ok: false, error: (e as Error).message, code: 'UNKNOWN' }
+  void url
+  return {
+    ok: false,
+    error: 'Небезопасный legacy-updater отключён. Обновление появится после подписи Developer ID и notarization.',
+    code: 'UNKNOWN'
   }
 }

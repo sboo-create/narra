@@ -1,0 +1,565 @@
+{
+  "surface": "report",
+  "manifest": {
+    "version": 1,
+    "surface": "report",
+    "title": "Narra: план безопасного релиза и аналитики",
+    "description": "Технический план превращения текущего прототипа Narra в безопасный релиз с защищённым gateway, OpenRouter + Giga, подписанными обновлениями и модулем Traction.",
+    "generatedAt": "2026-07-23T12:00:00+03:00",
+    "sources": [
+      {
+        "id": "narra_code",
+        "label": "Narra — текущий код приложения и proxy",
+        "href": "https://github.com/sboo-create/narra/tree/e7c1e5f8a07117605653d5a361f0ce1a0b27f5d6",
+        "query": {
+          "engine": "artifact-snapshot",
+          "sql": "SELECT priority, area, work, acceptance FROM security_work ORDER BY order",
+          "description": "Read-only аудит Electron-клиента, proxy, import pipeline, updater и локального хранилища.",
+          "executed_at": "2026-07-23T12:00:00+03:00",
+          "language": "TypeScript/JavaScript",
+          "tables_used": [
+            "src/main/api/proxy.ts",
+            "src/main/store.ts",
+            "src/main/importer.ts",
+            "src/renderer/components/Logo.tsx",
+            "server/index.mjs",
+            "package.json"
+          ]
+        }
+      },
+      {
+        "id": "traction_contract",
+        "label": "Traction — canonical Overview и контракт модуля",
+        "href": "https://github.com/q121212/Traction/tree/6ab09733cb5935cff60edb44da77a39a44f10c1a",
+        "query": {
+          "engine": "artifact-snapshot",
+          "sql": "SELECT metric, narra_definition, window, guardrail FROM canonical_metrics ORDER BY order",
+          "description": "Ревью SPEC, ONBOARDING, hub и контрактных тестов после унификации шести canonical-метрик.",
+          "executed_at": "2026-07-23T12:00:00+03:00",
+          "language": "Markdown/Python/JavaScript",
+          "tables_used": [
+            "SPEC.md",
+            "ONBOARDING.md",
+            "service/server.py",
+            "hub/index.html",
+            "tests/test_contract.py"
+          ]
+        }
+      },
+      {
+        "id": "aiwa_tuning",
+        "label": "AIWA — analytics v2 и доработанный stats-модуль",
+        "href": "https://github.com/sboo-create/aiwa-bot/tree/74b90c0",
+        "query": {
+          "description": "Ревью dual-write, request/attempt модели, data-quality coverage, product health, feedback, push funnels и UX дашборда.",
+          "executed_at": "2026-07-23T12:00:00+03:00",
+          "language": "Python/HTML",
+          "tables_used": [
+            "ANALYTICS_V2.md",
+            "analytics_v2.py",
+            "stats/server.py",
+            "stats/index.html"
+          ]
+        }
+      },
+      {
+        "id": "owner_context",
+        "label": "Продуктовые вводные владельца Narra, переданные 23 июля 2026",
+        "query": {
+          "description": "Проект ещё не релизнут; историческую аналитику переносить не требуется; необходимо добавить OpenRouter и сохранить Giga; LLM и Kandinsky video являются доверенными сервисами команды.",
+          "executed_at": "2026-07-23T12:00:00+03:00",
+          "language": "conversation"
+        }
+      },
+      {
+        "id": "engineering_estimate",
+        "label": "Инженерная оценка плана Narra от 23 июля 2026",
+        "query": {
+          "engine": "duckdb",
+          "sql": "SELECT * FROM (VALUES ('0 · Contract freeze', 0.75, '0.5–1 день', 'Нет'), ('1 · Security foundation', 3.0, '2–4 дня', 'Нет'), ('2 · Gateway v2', 2.5, '2–3 дня', 'Нет'), ('3 · OpenRouter + Giga', 1.5, '1–2 дня', 'Тестовые ключи для end-to-end'), ('4 · Analytics/outbox', 2.0, '1.5–2.5 дня', 'Volume только для staging'), ('5 · stats-narra', 2.0, '1.5–2.5 дня', 'Актуальный Traction main'), ('6 · Updater/signing', 2.5, '2–3 дня', 'Apple Developer credentials'), ('7 · Railway staging', 1.5, '1–2 дня', 'Railway access'), ('8 · Release', 1.5, '1–2 дня + наблюдение', 'Все release gates')) AS effort(phase, effort_mid, estimate, dependency)",
+          "description": "Диапазоны трудоёмкости по этапам, сформированные из объёма известных изменений и обязательных проверок; midpoint используется только для сравнительного графика.",
+          "executed_at": "2026-07-23T12:00:00+03:00",
+          "language": "sql",
+          "metric_definitions": [
+            "effort_mid = midpoint нижней и верхней оценки рабочих дней этапа",
+            "Внешнее ожидание Railway, Apple и review в effort_mid не включается"
+          ]
+        }
+      }
+    ],
+    "charts": [
+      {
+        "id": "effort_chart",
+        "title": "Оценочная трудоёмкость этапов",
+        "subtitle": "Midpoint инженерного диапазона, рабочие дни одного разработчика; внешнее ожидание исключено",
+        "type": "bar",
+        "dataset": "effort",
+        "sourceId": "engineering_estimate",
+        "valueFormat": "number",
+        "layout": "full",
+        "maxRows": 9,
+        "encodings": {
+          "x": { "field": "phase", "type": "nominal", "label": "Этап" },
+          "y": { "field": "effort_mid", "type": "quantitative", "label": "Рабочие дни" },
+          "tooltip": [
+            { "field": "estimate", "type": "text", "label": "Диапазон" },
+            { "field": "dependency", "type": "text", "label": "Зависимость" }
+          ]
+        }
+      }
+    ],
+    "tables": [
+      {
+        "id": "decisions_table",
+        "title": "Зафиксированные решения и границы",
+        "subtitle": "Что уже можно считать согласованным до получения Railway-доступа",
+        "dataset": "decisions",
+        "source": {
+          "label": "Зафиксированные решения текущего плана",
+          "query": { "engine": "artifact-snapshot", "sql": "SELECT area, decision, consequence FROM decisions ORDER BY order", "description": "Читает reviewed decisions, зафиксированные из аудита и вводных владельца." }
+        },
+        "defaultSort": { "field": "area", "direction": "asc" },
+        "density": "spacious",
+        "columns": [
+          { "field": "area", "label": "Область", "type": "text" },
+          { "field": "decision", "label": "Решение", "type": "text" },
+          { "field": "consequence", "label": "Следствие для плана", "type": "text" }
+        ]
+      },
+      {
+        "id": "architecture_table",
+        "title": "Целевые контуры Narra",
+        "subtitle": "Разделение ответственности между клиентом, gateway, провайдерами и Traction",
+        "dataset": "architecture",
+        "source": {
+          "label": "Целевая архитектура Narra",
+          "query": { "engine": "artifact-snapshot", "sql": "SELECT layer, owns, never, state FROM architecture ORDER BY order", "description": "Читает reviewed architecture rows этого технического плана." }
+        },
+        "defaultSort": { "field": "layer", "direction": "asc" },
+        "density": "spacious",
+        "columns": [
+          { "field": "layer", "label": "Контур", "type": "text" },
+          { "field": "owns", "label": "Что делает", "type": "text" },
+          { "field": "never", "label": "Чего не должен делать", "type": "text" },
+          { "field": "state", "label": "Состояние", "type": "text" }
+        ]
+      },
+      {
+        "id": "provider_matrix_table",
+        "title": "Матрица провайдеров",
+        "subtitle": "OpenRouter добавляется без удаления Giga; изображения, speech и video остаются отдельными контурами",
+        "dataset": "provider_matrix",
+        "source": {
+          "label": "Проектная матрица провайдеров Narra",
+          "query": { "engine": "artifact-snapshot", "sql": "SELECT capability, primary, fallback, measurement FROM provider_matrix ORDER BY order", "description": "Читает proposed provider routing matrix из reviewed plan snapshot." }
+        },
+        "defaultSort": { "field": "capability", "direction": "asc" },
+        "density": "spacious",
+        "columns": [
+          { "field": "capability", "label": "Функция", "type": "text" },
+          { "field": "primary", "label": "Основной маршрут", "type": "text" },
+          { "field": "fallback", "label": "Fallback / эксперимент", "type": "text" },
+          { "field": "measurement", "label": "Что измеряем", "type": "text" }
+        ]
+      },
+      {
+        "id": "canonical_metrics_table",
+        "title": "Шесть canonical-метрик Traction для Narra",
+        "subtitle": "Один actor-space, фиксированные trailing-окна и честные границы session/tool",
+        "dataset": "canonical_metrics",
+        "sourceId": "traction_contract",
+        "defaultSort": { "field": "metric", "direction": "asc" },
+        "density": "spacious",
+        "columns": [
+          { "field": "metric", "label": "Метрика", "type": "text" },
+          { "field": "narra_definition", "label": "Определение в Narra", "type": "text" },
+          { "field": "window", "label": "Окно", "type": "text" },
+          { "field": "guardrail", "label": "Защита от искажения", "type": "text" }
+        ]
+      },
+      {
+        "id": "narra_dashboard_table",
+        "title": "Содержимое вкладки Narra в Traction",
+        "subtitle": "Продуктовые метрики остаются внутри модуля и не смешиваются с cross-product Overview",
+        "dataset": "narra_dashboard",
+        "source": {
+          "label": "Проект KPI-системы Narra",
+          "query": { "engine": "artifact-snapshot", "sql": "SELECT section, metrics, decision FROM narra_dashboard ORDER BY order", "description": "Читает proposed Narra dashboard sections из reviewed plan snapshot." }
+        },
+        "defaultSort": { "field": "section", "direction": "asc" },
+        "density": "spacious",
+        "columns": [
+          { "field": "section", "label": "Раздел", "type": "text" },
+          { "field": "metrics", "label": "Метрики", "type": "text" },
+          { "field": "decision", "label": "Какое решение поддерживает", "type": "text" }
+        ]
+      },
+      {
+        "id": "events_table",
+        "title": "Событийный контракт первой версии",
+        "subtitle": "Минимальный безопасный словарь: без текстов книг, переписок, аудио, изображений и URL",
+        "dataset": "events",
+        "source": {
+          "label": "Проект privacy-safe event contract Narra",
+          "query": { "engine": "artifact-snapshot", "sql": "SELECT `group`, events, safe_properties, exclude FROM events ORDER BY order", "description": "Читает proposed event allowlist и запреты из reviewed plan snapshot." }
+        },
+        "defaultSort": { "field": "group", "direction": "asc" },
+        "density": "dense",
+        "columns": [
+          { "field": "group", "label": "Группа", "type": "text" },
+          { "field": "events", "label": "События", "type": "text" },
+          { "field": "safe_properties", "label": "Разрешённые свойства", "type": "text" },
+          { "field": "exclude", "label": "Никогда не отправлять", "type": "text" }
+        ]
+      },
+      {
+        "id": "security_work_table",
+        "title": "Пакет исправлений до релиза",
+        "subtitle": "Известные риски закрываются до production-кандидата; доверие к upstream не отменяет защиту транспорта и клиента",
+        "dataset": "security_work",
+        "sourceId": "narra_code",
+        "defaultSort": { "field": "priority", "direction": "asc" },
+        "density": "spacious",
+        "columns": [
+          { "field": "priority", "label": "Приоритет", "type": "text" },
+          { "field": "area", "label": "Область", "type": "text" },
+          { "field": "work", "label": "Что исправить", "type": "text" },
+          { "field": "acceptance", "label": "Критерий готовности", "type": "text" }
+        ]
+      },
+      {
+        "id": "roadmap_table",
+        "title": "Пошаговый план реализации",
+        "subtitle": "Оценки — инженерные диапазоны при последовательной работе одного разработчика; внешнее ожидание не включено",
+        "dataset": "roadmap",
+        "source": {
+          "label": "Инженерный roadmap Narra",
+          "query": { "engine": "artifact-snapshot", "sql": "SELECT phase, scope, result, estimate, dependency FROM roadmap ORDER BY order", "description": "Читает этапы, диапазоны и зависимости из reviewed plan snapshot." }
+        },
+        "defaultSort": { "field": "phase", "direction": "asc" },
+        "density": "spacious",
+        "columns": [
+          { "field": "phase", "label": "Этап", "type": "text" },
+          { "field": "scope", "label": "Работы", "type": "text" },
+          { "field": "result", "label": "Проверяемый результат", "type": "text" },
+          { "field": "estimate", "label": "Оценка", "type": "text" },
+          { "field": "dependency", "label": "Зависимость", "type": "text" }
+        ]
+      },
+      {
+        "id": "release_gates_table",
+        "title": "Release gates",
+        "subtitle": "Релиз допускается только после прохождения всех обязательных ворот",
+        "dataset": "release_gates",
+        "source": {
+          "label": "Release gate checklist Narra",
+          "query": { "engine": "artifact-snapshot", "sql": "SELECT gate, must_pass, evidence FROM release_gates ORDER BY order", "description": "Читает обязательные критерии выпуска из reviewed plan snapshot." }
+        },
+        "defaultSort": { "field": "gate", "direction": "asc" },
+        "density": "spacious",
+        "columns": [
+          { "field": "gate", "label": "Ворота", "type": "text" },
+          { "field": "must_pass", "label": "Что должно быть доказано", "type": "text" },
+          { "field": "evidence", "label": "Артефакт проверки", "type": "text" }
+        ]
+      },
+      {
+        "id": "responsibilities_table",
+        "title": "Что делаем сейчас и что ждёт внешнего доступа",
+        "subtitle": "Локальную разработку можно начать сразу; production-действия остаются заблокированы до Railway и Apple",
+        "dataset": "responsibilities",
+        "source": {
+          "label": "Матрица зависимостей и ответственности",
+          "query": { "engine": "artifact-snapshot", "sql": "SELECT lane, now, later, owner FROM responsibilities ORDER BY order", "description": "Читает work lanes и owners из reviewed plan snapshot." }
+        },
+        "defaultSort": { "field": "lane", "direction": "asc" },
+        "density": "spacious",
+        "columns": [
+          { "field": "lane", "label": "Поток", "type": "text" },
+          { "field": "now", "label": "Можно сделать сейчас", "type": "text" },
+          { "field": "later", "label": "Что потребуется позже", "type": "text" },
+          { "field": "owner", "label": "Владелец решения", "type": "text" }
+        ]
+      }
+    ],
+    "blocks": [
+      {
+        "id": "title",
+        "type": "markdown",
+        "body": "# Narra: план безопасного релиза и аналитики\n\n**Версия плана:** 23 июля 2026 · **Статус:** готов к локальной реализации, production-доступ ожидается"
+      },
+      {
+        "id": "technical_summary",
+        "type": "markdown",
+        "body": "## Техническое резюме\n\n- **Историю переносить не нужно.** Narra ещё не релизнута, поэтому аналитика стартует с чистой даты cutover; дни до неё не рисуются нулями и не участвуют в retention.\n- **Видео и текущий LLM-контур не отключаем.** Kandinsky video и командный LiteLLM считаются доверенными upstream, но доступ к ним проходит только через защищённый Narra gateway с TLS или приватным туннелем, авторизацией, квотами и наблюдаемостью.\n- **OpenRouter добавляется рядом с Giga, маршрутизация полностью серверная.** Провайдер, модель и fallback меняются конфигурацией gateway без пересборки клиента и без провайдерского выбора в UI.\n- **Минимальная аналитика включена всегда.** Opt-out относится только к расширенной детализации функций/чтения; активная установка, версия, квалифицированное чтение, AI-запросы без содержимого, ошибки и update funnel остаются. Тексты книг, промпты, ответы и медиа запрещены в обоих режимах.\n- **Traction получает все шесть canonical-метрик.** Внутри Narra-модуля добавляются activation, reading health, feature adoption, AI quality/cost, import и update funnel по образцу доработанного AIWA.\n- **Релиз — universal macOS и только подписанный/notarized.** Один релиз поддерживает Apple Silicon и Intel; новый клиент проверяет подпись и хеш и больше не снимает quarantine скриптом.\n- **Legacy endpoint не поддерживается.** Клиент и gateway синхронно переходят на v2 до первого внешнего релиза.\n- **Оценка полного пакета:** ориентировочно 9–15 рабочих дней разработки и проверки плюс ожидание Railway/Apple-доступов."
+      },
+      {
+        "id": "decisions_heading",
+        "type": "markdown",
+        "body": "## Базовые решения уже приняты\n\nПлан не ждёт ответов на всё сразу: ниже отделены решения, которые уже зафиксированы, от production-шагов, требующих доступа."
+      },
+      { "id": "decisions", "type": "table", "tableId": "decisions_table" },
+      {
+        "id": "brand",
+        "type": "markdown",
+        "body": "## Логотип уже вынесен в оба репозитория\n\nГотовый знак **«ночное чтение»** — чёрный квадрат, белая книжка-крыша, лаймовые глаза и улыбка — сохранён как `assets/narra.svg` в Narra и `hub/logos/narra.svg` в отдельной Traction-ветке с Narra stub. Перерисовка и новый бренд-ассет не нужны."
+      },
+      {
+        "id": "architecture_heading",
+        "type": "markdown",
+        "body": "## Целевая архитектура: один защищённый вход, раздельные контуры\n\n```text\nElectron Narra\n  ├─ локальные книги, заметки и медиа-кэш остаются на устройстве\n  ├─ локальная bounded event queue ───────────────┐\n  └─ AI-запросы + per-install token ──────────────┤\n                                                  ▼\n                                  Narra Gateway (Railway)\n                    ┌───────────────┼───────────────┬───────────────┐\n                    ▼               ▼               ▼               ▼\n             Giga / LiteLLM    OpenRouter      SaluteSpeech   Kandinsky / Video\n                    └───────────────┬───────────────┴───────────────┘\n                                    ▼\n                       SQLite + durable outbox (/data)\n                                    ▼\n                     stats-narra /events → Traction hub\n```\n\nTraction ingest token хранится только на gateway. Клиент получает собственный per-install token, который можно ограничить или отозвать."
+      },
+      { "id": "architecture", "type": "table", "tableId": "architecture_table" },
+      {
+        "id": "providers_heading",
+        "type": "markdown",
+        "body": "## OpenRouter не заменяет Giga — он делает маршрутизацию управляемой\n\nМаршрутизация полностью серверная: клиент передаёт только назначение запроса (`purpose`), но не провайдера и не модель. До staging конкретные модели остаются конфигурацией gateway. Один `request_id` соответствует намерению пользователя; retry, fallback и обращения к разным провайдерам получают отдельные `attempt_id`. Это позволяет отличить «пользователь получил ответ» от «одна из технических попыток упала»."
+      },
+      { "id": "providers", "type": "table", "tableId": "provider_matrix_table" },
+      {
+        "id": "canonical_heading",
+        "type": "markdown",
+        "body": "## В Overview Traction попадают ровно шесть сравнимых метрик\n\nКанонический слой не принимает произвольные красивые KPI. Для Narra actor — одна псевдонимная установка, session — квалифицированная продуктовая сессия, tool — одно пользовательское AI-намерение. Provider retries в Tools / DAU не входят."
+      },
+      { "id": "canonical", "type": "table", "tableId": "canonical_metrics_table" },
+      {
+        "id": "dashboard_heading",
+        "type": "markdown",
+        "body": "## Вкладка Narra наследует сильные решения AIWA, но не её исторические костыли\n\nПереносим UX-принципы AIWA: определения по hover/focus, секунды вместо миллисекунд, сворачиваемые диагностические блоки с сохранением состояния, отдельные user requests и provider attempts, data-quality coverage, честные proxy-метрики и зрелые когорты retention. Не переносим `mixed/reconstructed`, legacy migration и dual-write: для нерелизнутой Narra они не нужны."
+      },
+      { "id": "narra_dashboard", "type": "table", "tableId": "narra_dashboard_table" },
+      {
+        "id": "events_heading",
+        "type": "markdown",
+        "body": "## События проектируются от решений, а не от каждого клика\n\nВ gateway уходит только allowlist. Любое новое поле считается запрещённым, пока явно не добавлено в схему и тест приватности. Тексты книг и общения нужны провайдерам для выполнения конкретной функции, но никогда не становятся аналитическими properties."
+      },
+      { "id": "events", "type": "table", "tableId": "events_table" },
+      {
+        "id": "security_heading",
+        "type": "markdown",
+        "body": "## Безопасность закрывается до release candidate\n\nДоверенный upstream решает вопрос владельца сервиса, но не защищает незашифрованный канал, публичный endpoint или украденный клиентский токен. Поэтому функциональность сохраняется, а транспорт, доступ и лимиты исправляются вокруг неё."
+      },
+      { "id": "security_work", "type": "table", "tableId": "security_work_table" },
+      {
+        "id": "roadmap_heading",
+        "type": "markdown",
+        "body": "## Реализация идёт вертикальными проверяемыми срезами\n\nКаждый этап заканчивается работающим артефактом и тестами. Production не используется как dev-среда; после Railway-доступа сначала создаётся staging по модели AIWA. На графике видна относительная трудоёмкость: больше всего времени требуют клиентский security foundation, gateway и безопасная цепочка подписания/обновления; это ориентир планирования, а не обещание календарной даты."
+      },
+      { "id": "effort", "type": "chart", "chartId": "effort_chart" },
+      { "id": "roadmap", "type": "table", "tableId": "roadmap_table" },
+      {
+        "id": "release_heading",
+        "type": "markdown",
+        "body": "## Релиз не определяется фактом успешной сборки\n\nГотовность означает доказанный upgrade path, сохранность локальных данных, управляемый rollback, наблюдаемую стоимость и отсутствие чувствительного контента в аналитике."
+      },
+      { "id": "release_gates", "type": "table", "tableId": "release_gates_table" },
+      {
+        "id": "responsibilities_heading",
+        "type": "markdown",
+        "body": "## Локальную работу можно начать до ответа Сони\n\nRailway нужен для проверки фактических переменных, volume и staging-деплоя, но архитектуру, тесты, event contract, gateway v2, Electron hardening и stats-модуль можно подготовить локально уже сейчас."
+      },
+      { "id": "responsibilities", "type": "table", "tableId": "responsibilities_table" },
+      {
+        "id": "methodology",
+        "type": "markdown",
+        "body": "## Как сформирован план\n\nПлан основан на read-only аудите Narra, canonical-контракте Traction и фактическом тюнинге AIWA. Метрики отбирались по четырём критериям: они отражают ценность продукта, меняют решение команды, доступны на нужной частоте и трудно улучшаются обманным способом. Для каждого rate зафиксированы actor, окно и знаменатель; для новых данных запрещён исторический zero-fill."
+      },
+      {
+        "id": "limitations",
+        "type": "markdown",
+        "body": "## Ограничения и неизвестные\n\n- До Railway-доступа не подтверждены фактические overrides `LLM_BASE_URL` и `VIDEO_BASE_URL`, Source/branch, restart history, volume mount и бюджет сервиса.\n- Механизм маршрутизации зафиксирован как server-side; финальная матрица Giga/OpenRouter по `purpose`, модели и fallback определяется на staging без изменения клиента.\n- Universal подписанный macOS-релиз зависит от Apple Developer Team, Developer ID Application и notarization credentials; Gatekeeper проверяется отдельно на Apple Silicon и Intel.\n- Оценки сроков предполагают одного разработчика, быстрый доступ к staging и отсутствие несовместимого старого пользовательского формата.\n- Формулировка «закрыть все уязвимости» недоказуема; release gate покрывает известные находки, dependency audit, статический анализ и проверяемые abuse-сценарии."
+      },
+      {
+        "id": "next_steps",
+        "type": "markdown",
+        "body": "## Следующие шаги после уже сделанного foundation\n\n1. **Готово локально:** Narra-ветка, Traction stub + логотип, essential/extended analytics contract, bounded queue, gateway v2 auth/limits, server-side Giga/OpenRouter routing, SSRF redirect policy, Electron sandbox и universal build target.\n2. Довести продуктовую инструментализацию до шести canonical KPI, добавить request/attempt durable outbox и локальный `stats-narra`, не трогая production.\n3. Закрыть оставшиеся P1: EPUB/ZIP containment, полное удаление связанных данных, безопасный подписанный updater и dependency upgrades.\n4. После Railway-доступа зафиксировать конфигурацию, сделать staging + Volume `/data`, загрузить отдельные тестовые ключи и прогнать end-to-end/failure tests.\n5. После merge AIWA перенести Narra stub на актуальный Traction `main`, активировать stats service и dashboard.\n6. Получить Apple credentials, собрать universal подписанный release candidate, проверить clean install/Gatekeeper на Apple Silicon и Intel, затем выпускать."
+      },
+      {
+        "id": "further_questions",
+        "type": "markdown",
+        "body": "## Оставшиеся внешние входы\n\nКлючевые продуктовые решения уже приняты. Для завершения нужны только данные и доступы:\n\n- Railway project access: фактические variables, source/branch, healthcheck, restart history, staging и Volume `/data`.\n- Отдельные staging-ключи Giga/LiteLLM, OpenRouter, SaluteSpeech и Kandinsky/video для end-to-end и сверки стоимости.\n- Apple Developer Team: Developer ID Application и notarization credentials для universal-релиза.\n- Финальная staging-матрица моделей по `purpose`; механизм выбора уже server-side и не блокирует локальную реализацию."
+      }
+    ]
+  },
+  "snapshot": {
+    "version": 1,
+    "generatedAt": "2026-07-23T12:00:00+03:00",
+    "status": "ready",
+    "datasets": {
+      "decisions": [
+        { "order": 1, "area": "Статус продукта", "decision": "Проект ещё не релизнут", "consequence": "Нет backfill, reconstructed-слоя и миграции старой продуктовой статистики" },
+        { "order": 2, "area": "Видео", "decision": "Kandinsky video — проверенный сервис Сбера", "consequence": "Функцию сохраняем; добавляем защищённый транспорт, auth, очередь, timeout и telemetry" },
+        { "order": 3, "area": "LLM", "decision": "Текущий LiteLLM — сервис команды", "consequence": "Не отключаем; выдаём Narra отдельный scoped key и измеряем стоимость/лимиты" },
+        { "order": 4, "area": "Провайдеры", "decision": "Добавить OpenRouter и сохранить Giga", "consequence": "Provider abstraction и server-side routing вместо замены одного жёсткого URL другим" },
+        { "order": 5, "area": "Railway", "decision": "Доступ запрошен; staging создаётся после приглашения", "consequence": "До доступа только локальные и репозиторные изменения; production не трогаем" },
+        { "order": 6, "area": "Аналитика", "decision": "Минимальная всегда включена; расширенная default-on с opt-out", "consequence": "Выключение удаляет из очереди только расширенные события; canonical/service telemetry и строгий запрет контента сохраняются" },
+        { "order": 7, "area": "Маршрутизация", "decision": "Полностью серверная", "consequence": "Клиент передаёт purpose, но не выбирает provider/model; переключение не требует пересборки" },
+        { "order": 8, "area": "macOS", "decision": "Universal build", "consequence": "Один подписанный/notarized релиз для arm64 и x64, проверяемый на обеих архитектурах" },
+        { "order": 9, "area": "API cutover", "decision": "Legacy endpoint не поддерживается", "consequence": "Клиент и gateway переходят на v2 синхронно до первого внешнего релиза" },
+        { "order": 10, "area": "Traction", "decision": "Narra stub создан до завершения AIWA", "consequence": "Контракт и логотип уже в отдельной ветке; live-интеграция переносится на актуальный main" }
+      ],
+      "architecture": [
+        { "order": 1, "layer": "Electron client", "owns": "UI, локальные книги/заметки/кэш, installation identity, always-on essential + default-on extended telemetry, bounded offline event queue", "never": "Не содержит provider keys/Traction token и не выбирает provider/model", "state": "Foundation реализован; остаётся полная продуктовая инструментализация" },
+        { "order": 2, "layer": "Narra Gateway", "owns": "Auth, schemas, quotas, routing, request/attempt telemetry, content fetch, update manifest", "never": "Не принимает анонимные дорогие запросы и не пишет сырой контент в аналитику", "state": "Текущий proxy нужно превратить в gateway v2" },
+        { "order": 3, "layer": "Provider adapters", "owns": "Giga/LiteLLM, OpenRouter, SaluteSpeech, Kandinsky, video; единый error/cost contract", "never": "Не определяют продуктовую активность и не получают клиентский analytics token", "state": "Нужно унифицировать" },
+        { "order": 4, "layer": "Railway state", "owns": "SQLite WAL, installs, revocations, quotas, events, durable outbox", "never": "Не хранит книги, чаты, заметки, изображения или аудио", "state": "Ждёт Volume /data" },
+        { "order": 5, "layer": "stats-narra", "owns": "Traction contract, агрегаты, Narra dashboard, retention и data-quality", "never": "Не обращается к production-клиентам и не хранит provider secrets", "state": "Можно разработать локально" },
+        { "order": 6, "layer": "Traction hub", "owns": "Overview, health polling, общий доступ и сравнимость продуктов", "never": "Не угадывает продуктовые определения Narra", "state": "Подключается после AIWA" }
+      ],
+      "provider_matrix": [
+        { "order": 1, "capability": "Персонажный чат", "primary": "Giga через текущий LiteLLM на первом релизе", "fallback": "OpenRouter-модель после staging-сравнения", "measurement": "request success, answer feedback, p50/p95, tokens, exact cost" },
+        { "order": 2, "capability": "Разметка, summary, structured JSON", "primary": "Конфигурируемый маршрут по task purpose", "fallback": "Giga ↔ OpenRouter только при retryable error", "measurement": "валидность JSON, attempts/request, fallback rate, cost/result" },
+        { "order": 3, "capability": "Портреты и сцены", "primary": "GigaChat Image / Kandinsky", "fallback": "Существующие явные правила", "measurement": "success, censor/rate errors, queue wait, latency, cost" },
+        { "order": 4, "capability": "Говорящий аватар и idle video", "primary": "Проверенный Kandinsky video server", "fallback": "Без смены модели в первом релизе", "measurement": "task type, queue wait, generation latency, failures, bytes" },
+        { "order": 5, "capability": "TTS / ASR", "primary": "SaluteSpeech", "fallback": "Нет скрытого cross-provider fallback", "measurement": "seconds/chars, success, latency, provider cost" },
+        { "order": 6, "capability": "Ручной rollback", "primary": "Railway variables/feature flags", "fallback": "Мгновенный возврат маршрута без пересборки клиента", "measurement": "route version, change timestamp, error delta" }
+      ],
+      "canonical_metrics": [
+        { "order": 1, "metric": "Ever used", "narra_definition": "Distinct HMAC installation IDs, которые хотя бы раз открыли книгу; простая установка или app_open не считается", "window": "Вся история с cutover", "guardrail": "Один installation actor-space; test/staging исключены" },
+        { "order": 2, "metric": "DAU", "narra_definition": "Distinct installations с квалифицированной reading session или осмысленным продуктовым действием", "window": "Trailing 24h", "guardrail": "Фоновые health/update события не создают активность" },
+        { "order": 3, "metric": "WAU", "narra_definition": "Те же active actors, что в DAU", "window": "Trailing 7d", "guardrail": "Не сумма DAU; только distinct actor IDs" },
+        { "order": 4, "metric": "MAU", "narra_definition": "Те же active actors, что в DAU", "window": "Trailing 30d", "guardrail": "Не рисовать периоды до начала измерения нулями" },
+        { "order": 5, "metric": "Sessions / DAU", "narra_definition": "Distinct qualified sessions за 24h / DAU; новая сессия после 30 минут бездействия", "window": "Trailing 24h", "guardrail": "Сессия квалифицируется ≥60 с или значимым действием; denominator=0 → ключ опускается" },
+        { "order": 6, "metric": "Tools / DAU", "narra_definition": "Пользовательские AI requests за 24h / DAU", "window": "Trailing 24h", "guardrail": "Retry/fallback attempts не увеличивают tool count" }
+      ],
+      "narra_dashboard": [
+        { "order": 1, "section": "Audience", "metrics": "Ever used, DAU/WAU/MAU, new installations, active versions", "decision": "Есть ли реальное использование и принят ли новый релиз" },
+        { "order": 2, "section": "Activation", "metrics": "App → book available → book opened → 5 min reading → first immersive action", "decision": "Где пользователь не доходит до первой ценности" },
+        { "order": 3, "section": "Reading health", "metrics": "Qualified sessions, minutes, chapters progressed/completed, active reading days", "decision": "Narra — читаемый продукт или только AI-демо" },
+        { "order": 4, "section": "Retention", "metrics": "D1/D7/D30 rolling retention только зрелых когорт", "decision": "Возвращаются ли после первой читающей сессии" },
+        { "order": 5, "section": "Feature adoption", "metrics": "Bookmarks, notes, character cards, chat, TTS, ASR, images, video — users и share of active", "decision": "Какие immersive-функции дают глубину" },
+        { "order": 6, "section": "Imports", "metrics": "Started/succeeded/failed, format, source class, latency, safe size buckets", "decision": "Какие форматы и источники мешают активации" },
+        { "order": 7, "section": "AI & reliability", "metrics": "User request success, attempts, attempt errors, fallback, p50/p95, queue wait, tokens, exact cost", "decision": "Где деградируют качество, скорость и unit economics" },
+        { "order": 8, "section": "Answer quality", "metrics": "Helpful/unhelpful, response rate, failure reasons без текста", "decision": "Подтверждает ли пользователь ценность, а не только proxy" },
+        { "order": 9, "section": "Update funnel", "metrics": "Offered → downloaded → verified → installed → next launch confirmed", "decision": "Можно ли безопасно закрывать legacy client/API" },
+        { "order": 10, "section": "Data quality", "metrics": "Coverage installation/request/model/token/cost, event schema version, prod/staging isolation", "decision": "Каким цифрам уже можно доверять" }
+      ],
+      "events": [
+        { "order": 1, "group": "Lifecycle", "events": "app_opened, app_closed, update_offered/downloaded/verified/installed, app_version_seen", "safe_properties": "app_version, OS major, arch, channel, status, duration bucket", "exclude": "Имя пользователя, пути к файлам, device fingerprint" },
+        { "order": 2, "group": "Library/import", "events": "book_import_started/completed/failed, book_opened, book_deleted", "safe_properties": "builtin/imported, format, source_class, size bucket, chapter count bucket, error_code", "exclude": "Название, автор, URL, имя файла, содержимое" },
+        { "order": 3, "group": "Reading", "events": "reading_session_started/qualified/ended, chapter_changed/completed", "safe_properties": "session_id, elapsed seconds, chapter position bucket, navigation type", "exclude": "Текст страницы, цитаты, заголовки глав" },
+        { "order": 4, "group": "Immersive features", "events": "bookmark_added, note_added, character_opened, chat_opened", "safe_properties": "feature, builtin/imported, success", "exclude": "Заметка, цитата, имя персонажа, контекст сцены" },
+        { "order": 5, "group": "AI request", "events": "ai_request_started/completed/failed, answer_feedback_submitted", "safe_properties": "request_id, purpose, route, status, latency, safe error_code, rating", "exclude": "Prompt, response, messages, memory, book excerpt" },
+        { "order": 6, "group": "Provider attempt", "events": "provider_attempt_started/completed/failed", "safe_properties": "attempt_id, request_id, provider, model, retry_index, fallback_from, latency, token counts, exact cost/unit", "exclude": "Credentials, headers, provider response body" },
+        { "order": 7, "group": "Media", "events": "tts/asr/image/video completed/failed", "safe_properties": "purpose, provider/model, chars/seconds/bytes buckets, queue wait, generation latency", "exclude": "Audio, image, video, transcript, generation prompt" }
+      ],
+      "security_work": [
+        { "order": 1, "priority": "P0", "area": "Gateway auth", "work": "Per-install registration/token, revocation, per-IP registration limit, per-install quotas, deny-by-default admin routes", "acceptance": "Дорогой endpoint без валидного token получает 401; abuse tests зелёные" },
+        { "order": 2, "priority": "P0", "area": "Rate/queue limits", "work": "Ограничить RPM, concurrency, body sizes, retries и очередь отдельно для LLM/image/video/speech", "acceptance": "Один клиент не может занять все GPU/LLM slots или вызвать неограниченный расход" },
+        { "order": 3, "priority": "P0", "area": "Transport", "work": "HTTPS к LiteLLM/video либо защищённый приватный туннель; certificate verification по умолчанию", "acceptance": "Ключи и пользовательский контент не проходят через plaintext HTTP" },
+        { "order": 4, "priority": "P0", "area": "Updater", "work": "Подписанный manifest, SHA-256, code-signature verification, atomic replace, rollback; убрать произвольный URL и xattr -cr", "acceptance": "Подменённый DMG/manifest отвергается до остановки текущего приложения" },
+        { "order": 5, "priority": "P1", "area": "Import/SSRF", "work": "Повторная проверка каждого redirect, DNS/IP policy, timeout, streaming byte cap, safe content types", "acceptance": "Open redirect не достигает private/metadata addresses; oversized response не буферизуется" },
+        { "order": 6, "priority": "P1", "area": "EPUB/ZIP", "work": "Path containment, realpath/symlink checks, entry/count/ratio limits, temp cleanup", "acceptance": "Traversal, symlink escape и zip bomb fixtures безопасно отклоняются" },
+        { "order": 7, "priority": "P1", "area": "Electron", "work": "sandbox, strict CSP, validated IPC schemas, external protocol allowlist, current supported Electron, fuses", "acceptance": "Renderer compromise не даёт произвольного filesystem/shell доступа" },
+        { "order": 8, "priority": "P1", "area": "Local privacy", "work": "Полное удаление книги и связанных чатов/memory/stats/cache, delete-all, понятная telemetry setting", "acceptance": "Regression test подтверждает отсутствие orphaned sensitive records" },
+        { "order": 9, "priority": "P1", "area": "Content exposure", "work": "Закрыть team content авторизацией или убрать из публичного gateway", "acceptance": "Неавторизованный запрос к закрытому контенту не возвращает файл" },
+        { "order": 10, "priority": "P2", "area": "Supply chain/CI", "work": "Pinned dependencies, typecheck/tests, OSV/npm audit, secret scan, SBOM/checksum release artifacts", "acceptance": "Чистый reproducible build и зелёный security pipeline" }
+      ],
+      "roadmap": [
+        { "order": 0, "phase": "0 · Contract freeze", "scope": "ADR архитектуры, event schemas, privacy allowlist, provider contract, metric dictionary, threat model", "result": "Согласованные JSON schemas и acceptance tests до сетевого кода", "estimate": "0.5–1 день", "dependency": "Нет" },
+        { "order": 1, "phase": "1 · Local security foundation", "scope": "Обновление зависимостей, Electron hardening, IPC validation, import/EPUB fixes, data deletion tests", "result": "Локальная сборка и security fixtures зелёные", "estimate": "2–4 дня", "dependency": "Нет" },
+        { "order": 2, "phase": "2 · Gateway v2", "scope": "Registration/auth, quotas, bounded queues, provider adapters, request/attempt logging, readiness, structured logs", "result": "Локальный gateway выдерживает abuse/failure tests", "estimate": "2–3 дня", "dependency": "Нет" },
+        { "order": 3, "phase": "3 · OpenRouter + Giga routing", "scope": "Purpose-based routes, feature flags, exact usage/cost, retry/fallback policy, staging evaluation set", "result": "Смена маршрута переменной без пересборки; результаты сравнимы", "estimate": "1–2 дня", "dependency": "Тестовые ключи для end-to-end" },
+        { "order": 4, "phase": "4 · Analytics client/outbox", "scope": "Installation ID, local queue, essential/extended event tiers, server SQLite/WAL, durable Traction outbox, extended opt-out", "result": "Offline/restart не теряют и не дублируют события; opt-out не отключает canonical минимум", "estimate": "1.5–2.5 дня", "dependency": "Volume нужен только для staging проверки" },
+        { "order": 5, "phase": "5 · stats-narra + Traction", "scope": "Шесть canonical KPI, Narra dashboard, tooltips/collapsibles, contract tests, logo", "result": "Локальный hub показывает Narra live; все шесть метрик честно считаются", "estimate": "1.5–2.5 дня", "dependency": "Актуальный Traction main после AIWA" },
+        { "order": 6, "phase": "6 · Safe updater and signing", "scope": "Universal arm64+x64 build, hardened runtime, Developer ID, notarization, signed manifest/hash, update rollback", "result": "Clean install проходит Gatekeeper на Apple Silicon и Intel; данные сохраняются", "estimate": "2–3 дня", "dependency": "Apple Developer credentials" },
+        { "order": 7, "phase": "7 · Railway staging", "scope": "Зафиксировать prod config, создать staging + /data, отдельные keys, smoke/load/failure tests", "result": "End-to-end staging зелёный без production mutation", "estimate": "1–2 дня", "dependency": "Railway access" },
+        { "order": 8, "phase": "8 · Release and observation", "scope": "RC, update внутренних установок, version adoption, provider/cost reconciliation, rollback rehearsal", "result": "Подписанный релиз, наблюдаемый gateway и проверенный rollback", "estimate": "1–2 дня + наблюдение", "dependency": "Все release gates" }
+      ],
+      "effort": [
+        { "phase": "0 · Contract freeze", "effort_mid": 0.75, "estimate": "0.5–1 день", "dependency": "Нет" },
+        { "phase": "1 · Security foundation", "effort_mid": 3.0, "estimate": "2–4 дня", "dependency": "Нет" },
+        { "phase": "2 · Gateway v2", "effort_mid": 2.5, "estimate": "2–3 дня", "dependency": "Нет" },
+        { "phase": "3 · OpenRouter + Giga", "effort_mid": 1.5, "estimate": "1–2 дня", "dependency": "Тестовые ключи для end-to-end" },
+        { "phase": "4 · Analytics/outbox", "effort_mid": 2.0, "estimate": "1.5–2.5 дня", "dependency": "Volume только для staging" },
+        { "phase": "5 · stats-narra", "effort_mid": 2.0, "estimate": "1.5–2.5 дня", "dependency": "Актуальный Traction main" },
+        { "phase": "6 · Updater/signing", "effort_mid": 2.5, "estimate": "2–3 дня", "dependency": "Apple Developer credentials" },
+        { "phase": "7 · Railway staging", "effort_mid": 1.5, "estimate": "1–2 дня", "dependency": "Railway access" },
+        { "phase": "8 · Release", "effort_mid": 1.5, "estimate": "1–2 дня + наблюдение", "dependency": "Все release gates" }
+      ],
+      "release_gates": [
+        { "order": 1, "gate": "Build", "must_pass": "Чистая установка зависимостей, typecheck, unit/integration tests, reproducible package", "evidence": "CI run + artifact checksum/SBOM" },
+        { "order": 2, "gate": "Security", "must_pass": "Auth/rate/SSRF/ZIP/IPC/updater abuse cases и dependency/secret scans", "evidence": "Security test report без открытых P0/P1" },
+        { "order": 3, "gate": "Privacy", "must_pass": "Analytics allowlist не содержит content/PII; essential/extended tiers и extended opt-out работают", "evidence": "Captured staging payloads + selective queue cleanup regression test" },
+        { "order": 4, "gate": "Provider", "must_pass": "Giga/OpenRouter routes, fallback, cost unit, token split и failure semantics проверены", "evidence": "Synthetic evaluation + billing reconciliation" },
+        { "order": 5, "gate": "Reliability", "must_pass": "Client/gateway offline, restart, queue overflow, provider timeout и Railway restart не теряют состояние", "evidence": "Failure-injection checklist" },
+        { "order": 6, "gate": "Analytics", "must_pass": "Шесть canonical KPI, mature retention, no pre-cutover zeros, request/attempt separation", "evidence": "Traction contract tests + synthetic event assertions" },
+        { "order": 7, "gate": "macOS trust", "must_pass": "Universal arm64+x64 artifact, Developer ID signature, hardened runtime, notarization и Gatekeeper clean install", "evidence": "codesign, lipo, spctl и notarytool receipts на обеих архитектурах" },
+        { "order": 8, "gate": "Upgrade/cutover", "must_pass": "Новый клиент работает только с v2; legacy API закрыт; данные сохраняются и подменённый пакет отвергается", "evidence": "Cutover matrix + rollback test" },
+        { "order": 9, "gate": "Operations", "must_pass": "Health/readiness, logs, alerts, budget caps, backup/restore и rollback owner определены", "evidence": "Staging runbook и release checklist" }
+      ],
+      "responsibilities": [
+        { "order": 1, "lane": "Репозиторий Narra", "now": "Schemas, tests, hardening, import/EPUB, provider abstraction, analytics queue, logo asset", "later": "Merge/release после ревью", "owner": "Мы" },
+        { "order": 2, "lane": "Gateway", "now": "Локальная реализация v2, SQLite/outbox, quotas, route flags", "later": "Actual env mapping и staging deploy", "owner": "Мы + Railway access" },
+        { "order": 3, "lane": "OpenRouter/Giga", "now": "Server-side adapter, purpose routing и test harness с заглушками", "later": "Staging-модели, keys и cost reconciliation", "owner": "Ты/Соня + мы" },
+        { "order": 4, "lane": "Traction", "now": "stats-narra contract и dashboard локально", "later": "Новая ветка от актуального main, slot/port, i167 deploy", "owner": "Мы после AIWA" },
+        { "order": 5, "lane": "Railway", "now": "Ничего не менять", "later": "Audit config, staging, Volume, secrets, healthcheck, budgets", "owner": "Соня даёт доступ; мы настраиваем" },
+        { "order": 6, "lane": "Apple release", "now": "Подготовить entitlements/updater/CI contract", "later": "Signing, notarization, publisher identity", "owner": "Владелец Apple Team + мы" },
+        { "order": 7, "lane": "Telemetry policy", "now": "Всегда включённый essential tier + default-on extended tier с opt-out, allowlist и selective queue cleanup", "later": "Финальный privacy text перед релизом", "owner": "Мы + утверждение текста от тебя/Сони" }
+      ]
+    }
+  },
+  "sources": [
+    {
+      "id": "narra_code",
+      "label": "Narra — текущий код приложения и proxy",
+      "href": "https://github.com/sboo-create/narra/tree/e7c1e5f8a07117605653d5a361f0ce1a0b27f5d6",
+      "query": {
+        "engine": "artifact-snapshot",
+        "sql": "SELECT priority, area, work, acceptance FROM security_work ORDER BY order",
+        "description": "Read-only аудит Electron-клиента, proxy, import pipeline, updater и локального хранилища.",
+        "executed_at": "2026-07-23T12:00:00+03:00",
+        "language": "TypeScript/JavaScript",
+        "tables_used": ["src/main/api/proxy.ts", "src/main/store.ts", "src/main/importer.ts", "src/renderer/components/Logo.tsx", "server/index.mjs", "package.json"]
+      }
+    },
+    {
+      "id": "traction_contract",
+      "label": "Traction — canonical Overview и контракт модуля",
+      "href": "https://github.com/q121212/Traction/tree/6ab09733cb5935cff60edb44da77a39a44f10c1a",
+      "query": {
+        "engine": "artifact-snapshot",
+        "sql": "SELECT metric, narra_definition, window, guardrail FROM canonical_metrics ORDER BY order",
+        "description": "Ревью SPEC, ONBOARDING, hub и контрактных тестов после унификации шести canonical-метрик.",
+        "executed_at": "2026-07-23T12:00:00+03:00",
+        "language": "Markdown/Python/JavaScript",
+        "tables_used": ["SPEC.md", "ONBOARDING.md", "service/server.py", "hub/index.html", "tests/test_contract.py"]
+      }
+    },
+    {
+      "id": "aiwa_tuning",
+      "label": "AIWA — analytics v2 и доработанный stats-модуль",
+      "href": "https://github.com/sboo-create/aiwa-bot/tree/74b90c0",
+      "query": {
+        "description": "Ревью dual-write, request/attempt модели, data-quality coverage, product health, feedback, push funnels и UX дашборда.",
+        "executed_at": "2026-07-23T12:00:00+03:00",
+        "language": "Python/HTML",
+        "tables_used": ["ANALYTICS_V2.md", "analytics_v2.py", "stats/server.py", "stats/index.html"]
+      }
+    },
+    {
+      "id": "owner_context",
+      "label": "Продуктовые вводные владельца Narra, переданные 23 июля 2026",
+      "query": {
+        "description": "Проект ещё не релизнут; историческую аналитику переносить не требуется; необходимо добавить OpenRouter и сохранить Giga; LLM и Kandinsky video являются доверенными сервисами команды.",
+        "executed_at": "2026-07-23T12:00:00+03:00",
+        "language": "conversation"
+      }
+    },
+    {
+      "id": "engineering_estimate",
+      "label": "Инженерная оценка плана Narra от 23 июля 2026",
+      "query": {
+        "engine": "duckdb",
+        "sql": "SELECT * FROM (VALUES ('0 · Contract freeze', 0.75, '0.5–1 день', 'Нет'), ('1 · Security foundation', 3.0, '2–4 дня', 'Нет'), ('2 · Gateway v2', 2.5, '2–3 дня', 'Нет'), ('3 · OpenRouter + Giga', 1.5, '1–2 дня', 'Тестовые ключи для end-to-end'), ('4 · Analytics/outbox', 2.0, '1.5–2.5 дня', 'Volume только для staging'), ('5 · stats-narra', 2.0, '1.5–2.5 дня', 'Актуальный Traction main'), ('6 · Updater/signing', 2.5, '2–3 дня', 'Apple Developer credentials'), ('7 · Railway staging', 1.5, '1–2 дня', 'Railway access'), ('8 · Release', 1.5, '1–2 дня + наблюдение', 'Все release gates')) AS effort(phase, effort_mid, estimate, dependency)",
+        "description": "Диапазоны трудоёмкости по этапам, сформированные из объёма известных изменений и обязательных проверок; midpoint используется только для сравнительного графика.",
+        "executed_at": "2026-07-23T12:00:00+03:00",
+        "language": "sql",
+        "metric_definitions": [
+          "effort_mid = midpoint нижней и верхней оценки рабочих дней этапа",
+          "Внешнее ожидание Railway, Apple и review в effort_mid не включается"
+        ]
+      }
+    }
+  ]
+}

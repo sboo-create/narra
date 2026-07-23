@@ -71,6 +71,8 @@ export interface BookContent {
 // Ключи живут на прокси-сервере (Railway). В приложении хранится только URL прокси.
 export interface Settings {
   proxyUrl: string
+  /** Детальная продуктовая аналитика; минимальная обезличенная телеметрия обязательна. */
+  extendedTelemetryEnabled: boolean
 }
 
 export interface ProxyHealth {
@@ -79,6 +81,7 @@ export interface ProxyHealth {
     gigachat: boolean
     salutespeech: boolean
     kandinsky: boolean
+    video: boolean
   }
 }
 
@@ -127,3 +130,10 @@ export interface LlmMessage {
   role: 'system' | 'user' | 'assistant'
   content: string
 }
+
+export type LlmPurpose =
+  | 'character_chat'
+  | 'structured_task'
+  | 'summary'
+  | 'scenario'
+  | 'memory'

@@ -4,6 +4,8 @@ import { IPC } from '../shared/ipc'
 import type { LlmMessage, Settings } from '../shared/types'
 import { getSettings, setSettings, getAppState, setAppState } from './store'
 import { loadBooks } from './content'
+import { recordTelemetry, startTelemetry, stopTelemetry } from './telemetry'
+import { ANALYTICS_EVENTS, type AnalyticsEventName, type SafeAnalyticsValue } from '../shared/analytics'
 import { importBook, importBookFromUrl, saveBookCharacters, deleteBook, bookExcerpt } from './importer'
 import {
   testProxy,
@@ -41,13 +43,18 @@ function createWindow(): void {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false
+      sandbox: true
     }
   })
 
   mainWindow.on('ready-to-show', () => mainWindow?.show())
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url)
+    try {
+      const target = new URL(url)
+      if (target.protocol === 'https:') void shell.openExternal(target.toString())
+    } catch {
+      // Invalid and non-HTTPS links stay inside the denied renderer request.
+    }
     return { action: 'deny' }
   })
 
@@ -70,7 +77,17 @@ function registerIpc(): void {
   })
 
   ipcMain.handle(IPC.getSettings, () => getSettings())
-  ipcMain.handle(IPC.setSettings, (_e, next: Partial<Settings>) => setSettings(next))
+  ipcMain.handle(IPC.setSettings, (_e, next: Partial<Settings>) => {
+    return setSettings(next)
+  })
+  ipcMain.handle(
+    IPC.trackEvent,
+    (_e, name: AnalyticsEventName, properties: Record<string, SafeAnalyticsValue>) => {
+      if (!ANALYTICS_EVENTS.includes(name)) return { ok: false }
+      recordTelemetry(name, properties)
+      return { ok: true }
+    }
+  )
 
   ipcMain.handle(IPC.getState, () => getAppState())
   ipcMain.handle(IPC.setState, (_e, next: Record<string, unknown>) => {
@@ -158,6 +175,7 @@ function registerIpc(): void {
 
 app.whenReady().then(() => {
   registerIpc()
+  startTelemetry()
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
@@ -165,5 +183,6 @@ app.whenReady().then(() => {
 })
 
 app.on('window-all-closed', () => {
+  stopTelemetry()
   if (process.platform !== 'darwin') app.quit()
 })

@@ -108,6 +108,18 @@ export function Reader() {
   const ttsReady = canTts(health)
   const gcReady = canChat(health)
 
+  useEffect(() => {
+    const bookKind = fanfic.id.startsWith('u-') ? 'imported' : 'builtin'
+    void window.narra.trackEvent('book_opened', { book_kind: bookKind })
+    const qualified = setTimeout(() => {
+      void window.narra.trackEvent('reading_session_qualified', {
+        book_kind: bookKind,
+        duration_seconds: 60
+      })
+    }, 60_000)
+    return () => clearTimeout(qualified)
+  }, [fanfic.id])
+
   const blocks = useMemo(() => parseBlocks(chapter?.text || ''), [chapter])
   const paragraphs = useMemo(
     () => blocks.map((b) => (b.type === 'p' ? b.text : '')),

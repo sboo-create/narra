@@ -6,6 +6,7 @@ dist/
 *.log
 .env
 server/.env
+server/.data/
 server/updates/*.dmg
 # тексты под авторским правом — только для локальной сборки, в публичный репо не попадают
 content/fanfic.json

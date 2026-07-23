@@ -84,14 +84,18 @@ export function Chat({ id, sceneContext, autoAsk }: Props) {
     }
     const aud = await window.narra.synthesize(
       { ssml: buildSsml(m.content, emo), voice: voiceFor(id) },
-      `chatmsg-${m.id}-${emo}`
+      `chatmsg-${fanfic.id}-${m.id}-${emo}`
     )
     if (!aud.ok) {
       setAvatarBusy(null)
       toast({ type: 'error', title: 'Озвучка не удалась', message: aud.error })
       return
     }
-    const vid = await window.narra.generateAvatar(imgRes.data!.dataUrl, aud.data!.dataUrl, `avatar-${m.id}-${emo}`)
+    const vid = await window.narra.generateAvatar(
+      imgRes.data!.dataUrl,
+      aud.data!.dataUrl,
+      `avatar-${fanfic.id}-${m.id}-${emo}`
+    )
     setAvatarBusy(null)
     if (vid.ok) {
       setEmotion(emo)

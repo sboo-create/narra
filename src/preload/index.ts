@@ -7,6 +7,7 @@ import type {
   ProxyHealth,
   Settings
 } from '../shared/types'
+import type { AnalyticsEventName, SafeAnalyticsValue } from '../shared/analytics'
 
 export interface ChatHandlers {
   onChunk: (delta: string) => void
@@ -19,6 +20,10 @@ const api = {
 
   getSettings: (): Promise<Settings> => ipcRenderer.invoke(IPC.getSettings),
   setSettings: (next: Partial<Settings>): Promise<Settings> => ipcRenderer.invoke(IPC.setSettings, next),
+  trackEvent: (
+    name: AnalyticsEventName,
+    properties: Record<string, SafeAnalyticsValue> = {}
+  ): Promise<{ ok: boolean }> => ipcRenderer.invoke(IPC.trackEvent, name, properties),
 
   getState: (): Promise<Record<string, unknown>> => ipcRenderer.invoke(IPC.getState),
   setState: (next: Record<string, unknown>): Promise<{ ok: boolean }> =>

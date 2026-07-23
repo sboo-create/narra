@@ -10,10 +10,13 @@ export function Settings() {
   const toast = useStore((s) => s.toast)
 
   const [proxyUrl, setProxyUrl] = useState(settings?.proxyUrl || '')
+  const [extendedTelemetryEnabled, setExtendedTelemetryEnabled] = useState(
+    settings?.extendedTelemetryEnabled ?? true
+  )
   const [saved, setSaved] = useState(false)
 
   async function save() {
-    await window.narra.setSettings({ proxyUrl: proxyUrl.trim() })
+    await window.narra.setSettings({ proxyUrl: proxyUrl.trim(), extendedTelemetryEnabled })
     await reloadSettings()
     setSaved(true)
     setTimeout(() => setSaved(false), 1600)
@@ -28,9 +31,10 @@ export function Settings() {
   }
 
   const services = [
-    { key: 'gigachat', label: 'GigaChat — чат и разметка', on: !!health?.gigachat },
+    { key: 'gigachat', label: 'AI — Giga / OpenRouter', on: !!health?.gigachat },
     { key: 'salutespeech', label: 'SaluteSpeech — эмоциональная озвучка', on: !!health?.salutespeech },
-    { key: 'kandinsky', label: 'Kandinsky — изображения', on: !!health?.kandinsky }
+    { key: 'kandinsky', label: 'Kandinsky — изображения', on: !!health?.kandinsky },
+    { key: 'video', label: 'Kandinsky video — аватары и анимация', on: !!health?.video }
   ]
 
   return (
@@ -81,6 +85,29 @@ export function Settings() {
           Локально: запусти прокси <code>cd server &amp;&amp; npm run dev</code> и впиши ключи в{' '}
           <code>server/.env</code>. Для раздачи приложения задеплой <code>server/</code> на Railway
           и укажи здесь его URL — тогда у всех получателей всё работает без ключей.
+        </div>
+      </div>
+
+      <div className="card settings-block">
+        <div className="settings-block__head">
+          <h3>Расширенная аналитика</h3>
+          <span className={`chip ${extendedTelemetryEnabled ? 'chip--accent' : ''}`}>
+            {extendedTelemetryEnabled ? 'включена' : 'выключена'}
+          </span>
+        </div>
+        <label className="service-row" style={{ cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={extendedTelemetryEnabled}
+            onChange={(event) => setExtendedTelemetryEnabled(event.target.checked)}
+          />
+          <span>Отправлять детальную обезличенную статистику функций и чтения</span>
+        </label>
+        <div className="settings-block__sub" style={{ marginTop: 12 }}>
+          Даже при выключении остаётся минимальная служебная статистика: активная установка,
+          версия, квалифицированное чтение, AI-запросы без содержимого, ошибки и обновления.
+          Никогда не отправляются тексты книг, названия и файлы, заметки, переписка, промпты,
+          ответы, изображения, аудио или видео.
         </div>
       </div>
     </div>

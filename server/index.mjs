@@ -1,14 +1,32 @@
 import express from 'express'
 import { readFileSync } from 'node:fs'
 import cors from 'cors'
-import { randomUUID } from 'crypto'
+import { createHmac, randomUUID } from 'crypto'
 import { httpsRequest } from './http.mjs'
+import {
+  parseAvatarBody,
+  parseChatBody,
+  parseImageBody,
+  parsePortraitBody,
+  parseSynthesisBody,
+  validationErrors
+} from './contracts.mjs'
+import { requestChat } from './providers.mjs'
+import { parseEventBatch } from './events.mjs'
+import { createEventStore } from './event-store.mjs'
+import { fetchWithRedirectPolicy, readBoundedBody } from './safe-fetch.mjs'
+import {
+  createFixedWindowLimiter,
+  createTokenService,
+  isInstallationId,
+  requireGatewayAuth,
+  resolveTokenSecret
+} from './security.mjs'
 
 // ================= Конфигурация =================
 const PORT = process.env.PORT || 8787
-const INSECURE = (process.env.ALLOW_INSECURE_TLS ?? 'true') !== 'false'
-// Ключ авторизации можно задать напрямую (GIGACHAT_AUTH_KEY, длинная Base64-строка),
-// ЛИБО через Client ID + Client Secret — тогда собираем Base64(id:secret) сами.
+const INSECURE = process.env.ALLOW_INSECURE_TLS === 'true'
+// Собирает Basic key из готового значения либо client id + secret.
 function buildBasicKey(direct, clientId, clientSecret) {
   const d = (direct || '').trim()
   if (d) return d
@@ -17,11 +35,6 @@ function buildBasicKey(direct, clientId, clientSecret) {
   if (id && secret) return Buffer.from(`${id}:${secret}`).toString('base64')
   return ''
 }
-const GIGACHAT_KEY = buildBasicKey(
-  process.env.GIGACHAT_AUTH_KEY,
-  process.env.GIGACHAT_CLIENT_ID,
-  process.env.GIGACHAT_CLIENT_SECRET
-)
 // SaluteSpeech (speech.giga.chat): логин 'gigacons' + секрет → Basic base64(логин:секрет).
 const SALUTE_CLIENT = (process.env.SBER_SALUTE_CLIENT || 'gigacons').trim()
 const _saluteSecret = (process.env.SBER_SALUTE_AUTH_KEY || '').trim()
@@ -35,17 +48,12 @@ const SALUTE_KEY = _saluteSecret
       process.env.SALUTESPEECH_CLIENT_SECRET
     )
 // LiteLLM-шлюз для чата (уже держит ключи Сбера у команды).
-const LLM_BASE_URL = (process.env.LLM_BASE_URL || 'http://104.168.54.196:4000').replace(/\/+$/, '')
+const LLM_BASE_URL = (process.env.LLM_BASE_URL || '').replace(/\/+$/, '')
 const LLM_API_KEY = (process.env.LLM_API_KEY || '').trim() // виртуальный ключ LiteLLM (sk-...)
 const LLM_MODEL = (process.env.LLM_MODEL || 'gigachat-3-ultra').trim()
 
 // Kandinsky 6.0 (studio.kandinskylab.ai) — один Bearer-токен
 const KANDINSKY_TOKEN = (process.env.KANDINSKY_TOKEN || '').trim()
-// Модель для живого чата с персонажами (качество характера) и для дешёвых задач
-// (разметка/саммари/эмоции). Меняется через .env без правки кода.
-const CHAT_MODEL = (process.env.GIGACHAT_CHAT_MODEL || 'GigaChat-3-Ultra').trim()
-const TASK_MODEL = (process.env.GIGACHAT_TASK_MODEL || 'GigaChat-3-Ultra').trim()
-
 // SaluteSpeech — URL настраиваются через .env (у команды могут быть свои).
 const SALUTE_OAUTH_URL = (process.env.SBER_SALUTE_OAUTH_URL || 'https://ngw.devices.sberbank.ru:9443/api/v2/oauth').trim()
 const SALUTE_SYNTH_URL = (process.env.SBER_SALUTE_SYNTH_URL || 'https://smartspeech.sber.ru/rest/v1/text:synthesize').trim()
@@ -53,7 +61,7 @@ const SALUTE_RECOGNIZE_URL = (process.env.SBER_SALUTE_RECOGNIZE_URL || 'https://
 const SALUTE_RECOGNITION_MODEL = (process.env.SBER_SALUTE_RECOGNITION_MODEL || 'voice_messaging').trim()
 const KANDINSKY_HOST = 'https://studio.kandinskylab.ai/api'
 // Видео/аватар API (GigaAvatar: image + audio → говорящее видео)
-const VIDEO_BASE_URL = (process.env.VIDEO_BASE_URL || 'http://87.242.117.37:5051').replace(/\/+$/, '')
+const VIDEO_BASE_URL = (process.env.VIDEO_BASE_URL || '').replace(/\/+$/, '')
 
 // ================= Токены (кэш ~30 мин) =================
 const tokenCache = {} // scope -> { token, expiresAt }
@@ -93,7 +101,7 @@ function httpErr(code, message) {
   return e
 }
 function statusFor(code) {
-  return { NO_KEY: 400, AUTH: 401, RATE: 429, TIMEOUT: 504, NETWORK: 502 }[code] || 500
+  return { NO_KEY: 400, VALIDATION: 400, AUTH: 401, RATE: 429, TIMEOUT: 504, NETWORK: 502 }[code] || 500
 }
 
 // ================= Kandinsky 6.0 (kandinskylab) =================
@@ -143,7 +151,7 @@ async function kandinskyGenerate(prompt, width = 768, height = 1024) {
   // 1) создать задачу
   const runRes = await httpsRequest(`${KANDINSKY_HOST}/tasks/k6-image-t2i`, {
     method: 'POST',
-    insecure: true, // ssl_verify=False в примере вендора
+    insecure: INSECURE,
     timeoutMs: 30000,
     headers: kHeaders(),
     body: JSON.stringify({ params: { query: `${prompt}${STYLE_SUFFIX}`.slice(0, 950), resolution } })
@@ -159,7 +167,7 @@ async function kandinskyGenerate(prompt, width = 768, height = 1024) {
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 4000))
     const st = await httpsRequest(`${KANDINSKY_HOST}/tasks/${taskId}`, {
-      insecure: true,
+      insecure: INSECURE,
       timeoutMs: 20000,
       headers: kHeaders()
     })
@@ -172,7 +180,7 @@ async function kandinskyGenerate(prompt, width = 768, height = 1024) {
 
   // 3) забрать результат (бинарный PNG)
   const resImg = await httpsRequest(`${KANDINSKY_HOST}/tasks/${taskId}/result`, {
-    insecure: true,
+    insecure: INSECURE,
     timeoutMs: 30000,
     binary: true,
     headers: { Authorization: `Bearer ${KANDINSKY_TOKEN}` }
@@ -213,6 +221,7 @@ async function videoTaskRetry(taskType, params, attempts = 10) {
 }
 
 async function videoTaskRaw(taskType, params) {
+  if (!VIDEO_BASE_URL) throw httpErr('NO_KEY', 'Видео: VIDEO_BASE_URL не задан')
   const create = await fetch(`${VIDEO_BASE_URL}/tasks/${taskType}`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${KANDINSKY_TOKEN}`, 'Content-Type': 'application/json' },
@@ -304,76 +313,226 @@ async function longJob(res, job) {
 
 // ================= Express =================
 const app = express()
-app.use(cors({ origin: process.env.CORS_ORIGIN || '*' }))
-app.use(express.json({ limit: '25mb' }))
+const allowedOrigins = new Set(
+  String(process.env.CORS_ORIGINS || process.env.CORS_ORIGIN || 'http://localhost:5173')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean)
+)
+app.disable('x-powered-by')
+app.set('trust proxy', 1)
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin || allowedOrigins.has(origin)) return callback(null, true)
+      callback(new Error('Origin is not allowed'))
+    },
+    methods: ['GET', 'POST'],
+    allowedHeaders: ['Authorization', 'Content-Type', 'X-Audio-Type'],
+    maxAge: 3600
+  })
+)
+app.use(
+  ['/v2/media/avatar', '/v2/media/portrait-animation'],
+  express.json({ limit: '25mb' })
+)
+app.use(express.json({ limit: '1mb' }))
+
+const tokenSecret = resolveTokenSecret()
+const tokenService = createTokenService(tokenSecret)
+const analyticsSecret = String(process.env.ANALYTICS_HMAC_SECRET || tokenSecret)
+const eventStore = createEventStore({
+  dataDir: process.env.DATA_DIR || (process.env.NODE_ENV === 'production'
+    ? '/data'
+    : new URL('./.data', import.meta.url).pathname),
+  environment: process.env.ANALYTICS_ENV || (process.env.NODE_ENV === 'production' ? 'production' : 'development')
+})
+
+function actorIdFor(req) {
+  return createHmac('sha256', analyticsSecret).update(req.installation.sub).digest('hex')
+}
+
+async function appendInternalEvent(req, eventName, properties, eventId = randomUUID()) {
+  await eventStore.append([{
+    event_id: eventId,
+    event_name: eventName,
+    actor_id: actorIdFor(req),
+    occurred_at: new Date().toISOString(),
+    received_at: new Date().toISOString(),
+    session_id: null,
+    schema_version: 1,
+    properties
+  }])
+}
+const registrationLimit = createFixedWindowLimiter({
+  windowMs: 60 * 60 * 1000,
+  limit: Number(process.env.REGISTRATION_LIMIT_PER_HOUR || 10),
+  key: (req) => req.ip
+})
+const apiLimit = createFixedWindowLimiter({
+  windowMs: 60 * 1000,
+  limit: Number(process.env.API_LIMIT_PER_MINUTE || 120),
+  key: (req) => req.installation?.sub || req.ip
+})
 
 app.get('/health', (_req, res) => {
   res.json({
     ok: true,
     services: {
-      gigachat: !!LLM_API_KEY,
+      gigachat: !!(LLM_API_KEY || process.env.OPENROUTER_API_KEY),
       salutespeech: !!SALUTE_KEY,
-      kandinsky: !!KANDINSKY_TOKEN
+      kandinsky: !!KANDINSKY_TOKEN,
+      video: !!KANDINSKY_TOKEN && !!VIDEO_BASE_URL
     }
   })
 })
 
-// --- Чат: стриминг через LiteLLM-шлюз (OpenAI /v1/chat/completions) ---
-app.post('/gigachat/chat', async (req, res) => {
-  const { messages, temperature = 0.8 } = req.body || {}
-  if (!LLM_API_KEY) return res.status(400).json({ error: 'Не задан ключ LLM-шлюза (LLM_API_KEY)', code: 'NO_KEY' })
-  try {
-    const upstream = await fetch(`${LLM_BASE_URL}/v1/chat/completions`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${LLM_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: LLM_MODEL, messages, temperature, max_tokens: 1024, stream: true })
-    })
-    if (!upstream.ok || !upstream.body) {
-      const t = await upstream.text().catch(() => '')
-      return res
-        .status(upstream.status === 401 ? 401 : 502)
-        .json({ error: `LLM ${upstream.status}: ${t.slice(0, 180)}`, code: upstream.status === 401 ? 'AUTH' : 'NETWORK' })
+app.get('/ready', (_req, res) => {
+  const ready = !!(LLM_API_KEY || process.env.OPENROUTER_API_KEY) && !!SALUTE_KEY && !!KANDINSKY_TOKEN && !!VIDEO_BASE_URL
+  res.status(ready ? 200 : 503).json({ ok: ready })
+})
+
+app.post('/v2/installations/register', registrationLimit, (req, res) => {
+  const body = req.body || {}
+  const keys = Object.keys(body)
+  if (keys.some((key) => !['installation_id', 'app_version', 'platform', 'arch'].includes(key))) {
+    return res.status(400).json({ error: 'Неизвестное поле регистрации', code: 'VALIDATION' })
+  }
+  if (!isInstallationId(body.installation_id)) {
+    return res.status(400).json({ error: 'Некорректный installation_id', code: 'VALIDATION' })
+  }
+  for (const key of ['app_version', 'platform', 'arch']) {
+    if (body[key] !== undefined && (typeof body[key] !== 'string' || body[key].length > 80)) {
+      return res.status(400).json({ error: `Некорректное поле ${key}`, code: 'VALIDATION' })
     }
+  }
+  res.status(201).json({ token: tokenService.issue(body.installation_id), token_type: 'Bearer' })
+})
+
+app.use('/v2', requireGatewayAuth(tokenService), apiLimit)
+
+app.post('/v2/events/batch', async (req, res) => {
+  try {
+    const events = parseEventBatch(req.body)
+    const actorId = actorIdFor(req)
+    const receivedAt = new Date().toISOString()
+    await eventStore.append(events.map((event) => ({
+      ...event,
+      actor_id: actorId,
+      received_at: receivedAt
+    })))
+    res.status(202).json({ accepted: events.length })
+  } catch (error) {
+    res.status(error.status || 500).json({ error: error.message, code: error.code || 'UNKNOWN' })
+  }
+})
+
+// --- Чат: стриминг через LiteLLM-шлюз (OpenAI /v1/chat/completions) ---
+app.post('/v2/ai/chat/stream', async (req, res) => {
+  const startedAt = Date.now()
+  let requestId
+  try {
+    const input = parseChatBody(req.body, { stream: true })
+    requestId = input.requestId || randomUUID()
+    await appendInternalEvent(req, 'ai_request_started', { request_id: requestId, purpose: input.purpose })
+    const { response: upstream, provider, model } = await requestChat({
+      ...input,
+      requestId,
+      stream: true,
+      onAttempt: (attempt) => appendInternalEvent(req, `provider_attempt_${attempt.status}`, {
+        request_id: requestId,
+        purpose: input.purpose,
+        provider: attempt.provider,
+        model: attempt.model,
+        latency_ms: attempt.latency_ms || 0,
+        http_status: attempt.http_status || null,
+        error_code: attempt.error_code || null
+      }, attempt.attempt_id)
+    })
     res.setHeader('Content-Type', 'text/event-stream')
     res.setHeader('Cache-Control', 'no-cache')
     res.setHeader('Connection', 'keep-alive')
+    res.setHeader('X-Request-Id', requestId)
+    res.setHeader('X-Narra-Route', `${provider}:${model}`)
     for await (const chunk of upstream.body) res.write(chunk)
     res.end()
+    await appendInternalEvent(req, 'ai_request_completed', {
+      request_id: requestId,
+      purpose: input.purpose,
+      route: `${provider}:${model}`,
+      latency_ms: Date.now() - startedAt,
+      success: true
+    })
   } catch (e) {
-    if (!res.headersSent) res.status(502).json({ error: String(e.message), code: 'NETWORK' })
+    if (requestId) await appendInternalEvent(req, 'ai_request_failed', {
+      request_id: requestId,
+      latency_ms: Date.now() - startedAt,
+      error_code: e.code || 'NETWORK',
+      success: false
+    }).catch(() => {})
+    if (!res.headersSent) res.status(e.status || 502).json({ error: String(e.message), code: e.code || 'NETWORK', request_id: e.requestId })
     else res.end()
   }
 })
 
 // --- Чат: обычный ответ (для разметки/саммари/эмоций) ---
-app.post('/gigachat/complete', async (req, res) => {
-  const { messages, temperature = 0.7 } = req.body || {}
-  if (!LLM_API_KEY) return res.status(400).json({ error: 'Не задан ключ LLM-шлюза (LLM_API_KEY)', code: 'NO_KEY' })
+app.post('/v2/ai/chat/complete', async (req, res) => {
+  const startedAt = Date.now()
+  let requestId
   try {
-    const r = await fetch(`${LLM_BASE_URL}/v1/chat/completions`, {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${LLM_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: LLM_MODEL, messages, temperature, max_tokens: 6000, stream: false })
+    const input = parseChatBody(req.body)
+    requestId = input.requestId || randomUUID()
+    await appendInternalEvent(req, 'ai_request_started', { request_id: requestId, purpose: input.purpose })
+    const { response: r, provider, model, attempts } = await requestChat({
+      ...input,
+      requestId,
+      stream: false,
+      onAttempt: (attempt) => appendInternalEvent(req, `provider_attempt_${attempt.status}`, {
+        request_id: requestId,
+        purpose: input.purpose,
+        provider: attempt.provider,
+        model: attempt.model,
+        latency_ms: attempt.latency_ms || 0,
+        http_status: attempt.http_status || null,
+        error_code: attempt.error_code || null
+      }, attempt.attempt_id)
     })
-    if (r.status === 401) return res.status(401).json({ error: 'LLM: ключ отклонён', code: 'AUTH' })
-    if (r.status === 429) return res.status(429).json({ error: 'LLM: лимит запросов', code: 'RATE' })
-    if (!r.ok) {
-      const t = await r.text().catch(() => '')
-      return res.status(502).json({ error: `LLM ${r.status}: ${t.slice(0, 180)}`, code: 'NETWORK' })
-    }
     const j = await r.json()
-    res.json({ text: j?.choices?.[0]?.message?.content ?? '' })
+    await appendInternalEvent(req, 'ai_request_completed', {
+      request_id: requestId,
+      purpose: input.purpose,
+      route: `${provider}:${model}`,
+      latency_ms: Date.now() - startedAt,
+      success: true,
+      input_tokens: j?.usage?.prompt_tokens ?? null,
+      output_tokens: j?.usage?.completion_tokens ?? null,
+      total_tokens: j?.usage?.total_tokens ?? null,
+      exact_cost: j?.usage?.cost ?? null
+    })
+    res.json({
+      text: j?.choices?.[0]?.message?.content ?? '',
+      request_id: requestId,
+      route: `${provider}:${model}`,
+      usage: j?.usage || null,
+      attempts: attempts.length
+    })
   } catch (e) {
-    res.status(502).json({ error: String(e.message), code: 'NETWORK' })
+    if (requestId) await appendInternalEvent(req, 'ai_request_failed', {
+      request_id: requestId,
+      latency_ms: Date.now() - startedAt,
+      error_code: e.code || 'NETWORK',
+      success: false
+    }).catch(() => {})
+    res.status(e.status || 502).json({ error: String(e.message), code: e.code || 'NETWORK', request_id: e.requestId })
   }
 })
 
 // --- SaluteSpeech: синтез сегмента ---
-app.post('/salutespeech/synthesize', async (req, res) => {
-  const { text, ssml, voice = 'Nec' } = req.body || {}
-  const isSsml = !!ssml
-  const payload = isSsml ? ssml : text || ''
+app.post('/v2/speech/synthesize', async (req, res) => {
   try {
+    const { text, ssml, voice } = parseSynthesisBody(req.body)
+    const isSsml = !!ssml
+    const payload = isSsml ? ssml : text || ''
     const token = await getToken('SALUTE_SPEECH_PERS', SALUTE_KEY, SALUTE_OAUTH_URL)
     const url = `${SALUTE_SYNTH_URL}?format=wav16&voice=${encodeURIComponent(voice)}_24000`
     const r = await httpsRequest(url, {
@@ -421,7 +580,7 @@ async function gigachatImage(prompt) {
 
 // --- SaluteSpeech: распознавание речи (ASR) ---
 app.post(
-  '/salutespeech/recognize',
+  '/v2/speech/recognize',
   express.raw({ type: () => true, limit: '25mb' }),
   async (req, res) => {
     if (!SALUTE_KEY) return res.status(400).json({ error: 'ASR: ключ не задан', code: 'NO_KEY' })
@@ -458,10 +617,10 @@ app.post(
 
 // --- Генерация изображения: gigachat-image (осн.), Kandinsky (фолбэк) ---
 // --- Автообновление: версия и ссылка на свежий dmg (лежит рядом в updates/) ---
-app.use('/updates', express.static(new URL('./updates', import.meta.url).pathname))
+app.use('/v2/updates/files', express.static(new URL('./updates', import.meta.url).pathname))
 // контент для команды (тексты, которые нельзя класть в публичный репозиторий);
 // файлы лежат в updates/ с префиксом tc- — эта папка гарантированно доезжает до Railway
-app.get('/team/content/:file', (req, res) => {
+app.get('/v2/content/team/:file', (req, res) => {
   const f = String(req.params.file)
   if (!/^[a-z0-9-]+\.json$/.test(f)) return res.status(400).end()
   res.sendFile(new URL(`./updates/tc-${f}`, import.meta.url).pathname, (err) => {
@@ -471,12 +630,9 @@ app.get('/team/content/:file', (req, res) => {
 // Загрузка книг по ссылке (AO3 заблокирован в РФ — качаем сервером).
 // Строгий белый список хостов, только https, лимит 30 МБ.
 const IMPORT_HOSTS = new Set(['archiveofourown.org', 'download.archiveofourown.org', 'ficbook.net', 'www.ficbook.net'])
-app.get('/import/fetch', async (req, res) => {
+app.get('/v2/import/fetch', async (req, res) => {
   try {
     const u = new URL(String(req.query.url || ''))
-    if (u.protocol !== 'https:' || !IMPORT_HOSTS.has(u.hostname)) {
-      return res.status(400).json({ error: 'Хост не поддерживается', code: 'UNKNOWN' })
-    }
     const headers = {
       'User-Agent':
         'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
@@ -488,7 +644,7 @@ app.get('/import/fetch', async (req, res) => {
     // сайты фанфиков режут частые запросы (403/429) — ждём и пробуем ещё
     let r = null
     for (let attempt = 0; attempt < 3; attempt++) {
-      r = await fetch(u, { headers, redirect: 'follow' })
+      r = await fetchWithRedirectPolicy(u, { allowedHosts: IMPORT_HOSTS, headers })
       if (r.ok || (r.status !== 403 && r.status !== 429 && r.status < 500)) break
       if (attempt < 2) await new Promise((ok) => setTimeout(ok, 4000 * (attempt + 1)))
     }
@@ -501,16 +657,15 @@ app.get('/import/fetch', async (req, res) => {
         code: limited ? 'RATE' : 'NETWORK'
       })
     }
-    const buf = Buffer.from(await r.arrayBuffer())
-    if (buf.length > 30 * 1024 * 1024) return res.status(413).json({ error: 'Файл больше 30 МБ', code: 'UNKNOWN' })
+    const buf = await readBoundedBody(r, 30 * 1024 * 1024)
     res.setHeader('Content-Type', r.headers.get('content-type') || 'application/octet-stream')
     res.send(buf)
   } catch (e) {
-    res.status(502).json({ error: String(e.message), code: 'NETWORK' })
+    res.status(e.status || 502).json({ error: String(e.message), code: e.code || 'NETWORK' })
   }
 })
 
-app.get('/app/latest', (_req, res) => {
+app.get('/v2/updates/latest', (_req, res) => {
   try {
     const j = JSON.parse(readFileSync(new URL('./updates/latest.json', import.meta.url), 'utf-8'))
     res.json(j)
@@ -519,13 +674,13 @@ app.get('/app/latest', (_req, res) => {
   }
 })
 
-app.post('/kandinsky/generate', async (req, res) => {
-  const { prompt, width = 768, height = 1024, engine } = req.body || {}
-  // Вертикальные изображения (обложки) и явный engine='kandinsky' (сцены) — Kandinsky:
-  // он соблюдает состав кадра, одежду и размер. Портреты — gigachat-image: быстро.
-  // Взаимные фолбэки.
-  const wantKandinsky = height > width || engine === 'kandinsky'
+app.post('/v2/media/images', async (req, res) => {
   try {
+    const { prompt, width, height, engine } = parseImageBody(req.body)
+    // Вертикальные изображения (обложки) и явный engine='kandinsky' (сцены) — Kandinsky:
+    // он соблюдает состав кадра, одежду и размер. Портреты — gigachat-image: быстро.
+    // Взаимные фолбэки.
+    const wantKandinsky = height > width || engine === 'kandinsky'
     if (wantKandinsky && KANDINSKY_TOKEN) {
       try {
         return res.json({ image: await kandinskyQueued(prompt, width, height) })
@@ -553,19 +708,34 @@ app.post('/kandinsky/generate', async (req, res) => {
 })
 
 // --- GigaAvatar: портрет + аудио → говорящее видео ---
-app.post('/avatar/generate', async (req, res) => {
-  const { image, audio, query } = req.body || {}
-  if (!KANDINSKY_TOKEN) return res.status(400).json({ error: 'Видео: токен не задан на сервере', code: 'NO_KEY' })
-  if (!image || !audio) return res.status(400).json({ error: 'Нужны image и audio (base64)', code: 'UNKNOWN' })
-  longJob(res, async () => ({ video: await gigaAvatar(image, audio, query) }))
+app.post('/v2/media/avatar', async (req, res) => {
+  try {
+    const { image, audio, query } = parseAvatarBody(req.body)
+    if (!KANDINSKY_TOKEN) return res.status(400).json({ error: 'Видео: токен не задан на сервере', code: 'NO_KEY' })
+    longJob(res, async () => ({ video: await gigaAvatar(image, audio, query) }))
+  } catch (error) {
+    res.status(error.status || 500).json({ error: error.message, code: error.code || 'UNKNOWN' })
+  }
 })
 
 // --- Idle-анимация портрета (image → короткое видео, без звука) ---
-app.post('/animate/portrait', async (req, res) => {
-  const { image, query, quality } = req.body || {}
-  if (!KANDINSKY_TOKEN) return res.status(400).json({ error: 'Видео: токен не задан на сервере', code: 'NO_KEY' })
-  if (!image) return res.status(400).json({ error: 'Нужен image (base64)', code: 'UNKNOWN' })
-  longJob(res, async () => ({ video: await animatePortrait(image, query, quality) }))
+app.post('/v2/media/portrait-animation', async (req, res) => {
+  try {
+    const { image, query, quality } = parsePortraitBody(req.body)
+    if (!KANDINSKY_TOKEN) return res.status(400).json({ error: 'Видео: токен не задан на сервере', code: 'NO_KEY' })
+    longJob(res, async () => ({ video: await animatePortrait(image, query, quality) }))
+  } catch (error) {
+    res.status(error.status || 500).json({ error: error.message, code: error.code || 'UNKNOWN' })
+  }
+})
+
+app.use(validationErrors)
+app.use((error, _req, res, _next) => {
+  if (error?.message === 'Origin is not allowed') {
+    return res.status(403).json({ error: 'Origin is not allowed', code: 'AUTH' })
+  }
+  console.error('[gateway]', error)
+  res.status(500).json({ error: 'Внутренняя ошибка gateway', code: 'UNKNOWN' })
 })
 
 app.listen(PORT, () => {

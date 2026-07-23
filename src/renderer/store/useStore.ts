@@ -262,7 +262,11 @@ export const useStore = create<StoreState>((set, get) => ({
     }
   },
 
-  navigate: (r) => set({ route: r }),
+  navigate: (r) => {
+    if (r.name === 'character') void window.narra.trackEvent('character_opened', { feature: 'character' })
+    if (r.name === 'chat') void window.narra.trackEvent('chat_opened', { feature: 'chat' })
+    set({ route: r })
+  },
 
   setActiveBook: (id) => {
     const book = get().books.find((b) => b.fanfic.id === id)
@@ -300,6 +304,11 @@ export const useStore = create<StoreState>((set, get) => ({
     const p = { ...get().persisted, chapters: { ...get().persisted.chapters, [id]: n } }
     set({ persisted: p, chapter: n })
     persist(p)
+    const bucket = n <= 3 ? '1-3' : n <= 10 ? '4-10' : n <= 25 ? '11-25' : '26+'
+    void window.narra.trackEvent('chapter_changed', {
+      navigation_type: 'reader',
+      chapter_position_bucket: bucket
+    })
   },
   setChats: (charId, msgs) => {
     const k = charKey(get().activeBookId, charId)
@@ -379,6 +388,7 @@ export const useStore = create<StoreState>((set, get) => ({
     const p = { ...get().persisted, bookmarks: { ...get().persisted.bookmarks, [bookId]: next } }
     set({ persisted: p })
     persist(p)
+    if (!same) void window.narra.trackEvent('bookmark_added', { feature: 'bookmark' })
   },
   removeBookmark: (bookId, id) => {
     const next = (get().persisted.bookmarks[bookId] || []).filter((x) => x.id !== id)
@@ -391,6 +401,7 @@ export const useStore = create<StoreState>((set, get) => ({
     const p = { ...get().persisted, notes: { ...get().persisted.notes, [bookId]: next } }
     set({ persisted: p })
     persist(p)
+    void window.narra.trackEvent('note_added', { feature: 'note' })
   },
   removeNote: (bookId, id) => {
     const next = (get().persisted.notes[bookId] || []).filter((x) => x.id !== id)
@@ -414,8 +425,13 @@ export const useStore = create<StoreState>((set, get) => ({
     const res = await window.narra.deleteBook(bookId)
     const st = get().persisted
     // подчищаем всё, что связано с книгой (прогресс, саммари, сценарии, закладки)
-    const dropByPrefix = <T,>(rec: Record<string, T>) =>
-      Object.fromEntries(Object.entries(rec).filter(([k]) => !k.startsWith(`${bookId}-`)))
+    const belongsToBook = (key: string) =>
+      key === bookId ||
+      key.startsWith(`${bookId}-`) ||
+      key.startsWith(`${bookId}:`) ||
+      key.includes(`-${bookId}-`)
+    const dropBook = <T,>(rec: Record<string, T>) =>
+      Object.fromEntries(Object.entries(rec).filter(([key]) => !belongsToBook(key)))
     const chapters = { ...st.chapters }
     delete chapters[bookId]
     const bookmarks = { ...st.bookmarks }
@@ -427,11 +443,17 @@ export const useStore = create<StoreState>((set, get) => ({
       chapters,
       bookmarks,
       notes,
-      summaries: dropByPrefix(st.summaries),
-      scenarios: dropByPrefix(st.scenarios),
-      sceneAnchors: dropByPrefix(st.sceneAnchors),
-      extraScenes: dropByPrefix(st.extraScenes),
-      anchorLists: dropByPrefix(st.anchorLists),
+      chats: dropBook(st.chats),
+      stats: dropBook(st.stats),
+      versions: dropBook(st.versions),
+      covers: dropBook(st.covers),
+      summaries: dropBook(st.summaries),
+      scenarios: dropBook(st.scenarios),
+      voiceOverrides: dropBook(st.voiceOverrides),
+      memories: dropBook(st.memories),
+      sceneAnchors: dropBook(st.sceneAnchors),
+      extraScenes: dropBook(st.extraScenes),
+      anchorLists: dropBook(st.anchorLists),
       // встроенную книгу удалить с диска нельзя — прячем её с полки
       hiddenBooks:
         res.ok && res.data!.builtin ? [...new Set([...st.hiddenBooks, bookId])] : st.hiddenBooks

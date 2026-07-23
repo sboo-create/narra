@@ -7,9 +7,88 @@ import path from 'path'
 import type { ApiResult, Chapter, Character, Fanfic } from '../shared/types'
 
 const execFileP = promisify(execFile)
+const MAX_ARCHIVE_FILES = 2_000
+const MAX_ARCHIVE_BYTES = 200 * 1024 * 1024
 
 export function userBooksDir(): string {
   return path.join(app.getPath('userData'), 'books')
+}
+
+async function extractZipSafely(filePath: string, prefix: string): Promise<{
+  directory: string
+  files: string[]
+  cleanup: () => Promise<void>
+}> {
+  const [{ stdout: namesOutput }, { stdout: sizesOutput }, archiveStat] = await Promise.all([
+    execFileP('/usr/bin/unzip', ['-Z1', filePath], { maxBuffer: 4 * 1024 * 1024 }),
+    execFileP('/usr/bin/unzip', ['-l', filePath], { maxBuffer: 4 * 1024 * 1024 }),
+    fs.stat(filePath)
+  ])
+  const names = namesOutput.split(/\r?\n/).filter(Boolean)
+  if (!names.length || names.length > MAX_ARCHIVE_FILES) throw new Error('Архив содержит слишком много файлов')
+  for (const name of names) {
+    const normalized = name.replace(/\\/g, '/')
+    const parts = normalized.split('/')
+    if (
+      normalized.startsWith('/') ||
+      normalized.length > 500 ||
+      parts.some((part) => part === '..' || part === '') && !normalized.endsWith('/')
+    ) {
+      throw new Error('Архив содержит небезопасный путь')
+    }
+  }
+  const totalMatch = sizesOutput.match(/^\s*(\d+)\s+\d+\s+files?\s*$/m)
+  if (!totalMatch) throw new Error('Не удалось проверить размер архива')
+  const unpackedBytes = Number(totalMatch[1])
+  const ratioLimit = Math.max(20 * 1024 * 1024, archiveStat.size * 100)
+  if (unpackedBytes > MAX_ARCHIVE_BYTES || unpackedBytes > ratioLimit) {
+    throw new Error('Архив слишком большой или имеет опасную степень сжатия')
+  }
+
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), prefix))
+  const cleanup = () => fs.rm(directory, { recursive: true, force: true })
+  try {
+    await execFileP('/usr/bin/unzip', ['-qq', '-n', filePath, '-d', directory], {
+      maxBuffer: 4 * 1024 * 1024
+    })
+    const files: string[] = []
+    let actualBytes = 0
+    const visit = async (current: string): Promise<void> => {
+      for (const entry of await fs.readdir(current, { withFileTypes: true })) {
+        const candidate = path.join(current, entry.name)
+        const stat = await fs.lstat(candidate)
+        if (stat.isSymbolicLink()) throw new Error('Архив содержит символическую ссылку')
+        const real = await fs.realpath(candidate)
+        if (real !== directory && !real.startsWith(`${directory}${path.sep}`)) {
+          throw new Error('Файл архива вышел за временный каталог')
+        }
+        if (stat.isDirectory()) await visit(candidate)
+        else if (stat.isFile()) {
+          actualBytes += stat.size
+          if (files.length >= MAX_ARCHIVE_FILES || actualBytes > MAX_ARCHIVE_BYTES) {
+            throw new Error('Распакованный архив превышает лимит')
+          }
+          files.push(candidate)
+        }
+      }
+    }
+    await visit(directory)
+    return { directory, files, cleanup }
+  } catch (error) {
+    await cleanup()
+    throw error
+  }
+}
+
+function resolveInside(root: string, base: string, relative: string): string {
+  if (!relative || relative.includes('\0') || path.isAbsolute(relative)) {
+    throw new Error('EPUB содержит небезопасную ссылку')
+  }
+  const candidate = path.resolve(base, relative)
+  if (candidate !== root && !candidate.startsWith(`${root}${path.sep}`)) {
+    throw new Error('EPUB-ссылка выходит за каталог книги')
+  }
+  return candidate
 }
 
 // ---------- декодирование ----------
@@ -141,13 +220,14 @@ function parseTxt(text: string, fallbackTitle: string): { title: string; author:
 
 // ---------- EPUB ----------
 async function parseEpub(filePath: string): Promise<{ title: string; author: string; chapters: Chapter[] }> {
-  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'narra-epub-'))
-  await execFileP('/usr/bin/unzip', ['-o', filePath, '-d', tmp])
-  // container.xml → путь к OPF
-  const container = await fs.readFile(path.join(tmp, 'META-INF/container.xml'), 'utf8')
+  const extracted = await extractZipSafely(filePath, 'narra-epub-')
+  const tmp = extracted.directory
+  try {
+    // container.xml → путь к OPF
+    const container = await fs.readFile(path.join(tmp, 'META-INF/container.xml'), 'utf8')
   const opfRel = container.match(/full-path="([^"]+)"/)?.[1]
   if (!opfRel) throw new Error('EPUB: не найден OPF')
-  const opfPath = path.join(tmp, opfRel)
+  const opfPath = resolveInside(tmp, tmp, opfRel)
   const opfDir = path.dirname(opfPath)
   const opf = await fs.readFile(opfPath, 'utf8')
   const title = stripTags(opf.match(/<dc:title[^>]*>(.*?)<\/dc:title>/s)?.[1] || 'Без названия')
@@ -167,7 +247,7 @@ async function parseEpub(filePath: string): Promise<{ title: string; author: str
     if (!href || !/\.x?html?$/i.test(href)) continue
     let html = ''
     try {
-      html = decode(await fs.readFile(path.join(opfDir, decodeURIComponent(href))))
+      html = decode(await fs.readFile(resolveInside(tmp, opfDir, decodeURIComponent(href))))
     } catch {
       continue
     }
@@ -186,7 +266,10 @@ async function parseEpub(filePath: string): Promise<{ title: string; author: str
       text
     })
   }
-  return { title, author, chapters }
+    return { title, author, chapters }
+  } finally {
+    await extracted.cleanup()
+  }
 }
 
 // ---------- PDF ----------
@@ -268,12 +351,7 @@ function buildExcerpt(chapters: Chapter[], description?: string): string {
 }
 
 // ---------- импорт по ссылке (AO3 / Фикбук) ----------
-import { getSettings } from './store'
-
-function proxyFetchUrl(target: string): string {
-  const base = getSettings().proxyUrl.replace(/\/+$/, '')
-  return `${base}/import/fetch?url=${encodeURIComponent(target)}`
-}
+import { deleteBookCache, gatewayFetch } from './api/proxy'
 
 const BROWSER_HEADERS = {
   'User-Agent':
@@ -289,7 +367,7 @@ const BROWSER_HEADERS = {
 async function fetchViaProxy(target: string): Promise<Buffer> {
   let proxyErr = ''
   try {
-    const r = await fetch(proxyFetchUrl(target))
+    const r = await gatewayFetch(`/v2/import/fetch?url=${encodeURIComponent(target)}`)
     if (r.ok) return Buffer.from(await r.arrayBuffer())
     try {
       proxyErr = ((await r.json()) as { error?: string }).error || `ошибка ${r.status}`
@@ -314,7 +392,11 @@ async function importFromAo3(workId: string): Promise<{ title: string; author: s
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'narra-ao3-'))
   const file = path.join(tmp, 'work.epub')
   await fs.writeFile(file, buf)
-  return parseEpub(file)
+  try {
+    return await parseEpub(file)
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true })
+  }
 }
 
 async function importFromFicbook(
@@ -447,19 +529,20 @@ export async function importBook(): Promise<ApiResult<ImportedBookMeta>> {
   })
   if (pick.canceled || !pick.filePaths[0]) return { ok: false, error: 'Отменено', code: 'UNKNOWN' }
   let filePath = pick.filePaths[0]
+  let cleanupArchive: (() => Promise<void>) | undefined
 
   try {
     if (filePath.toLowerCase().endsWith('.zip')) {
-      const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'narra-import-'))
-      await execFileP('/usr/bin/unzip', ['-o', filePath, '-d', tmp])
-      const files = await fs.readdir(tmp)
+      const extracted = await extractZipSafely(filePath, 'narra-import-')
+      cleanupArchive = extracted.cleanup
+      const files = extracted.files
       const inner =
-        files.find((f) => f.toLowerCase().endsWith('.fb2')) ||
-        files.find((f) => f.toLowerCase().endsWith('.epub')) ||
-        files.find((f) => f.toLowerCase().endsWith('.txt')) ||
-        files.find((f) => f.toLowerCase().endsWith('.pdf'))
+        files.find((file) => file.toLowerCase().endsWith('.fb2')) ||
+        files.find((file) => file.toLowerCase().endsWith('.epub')) ||
+        files.find((file) => file.toLowerCase().endsWith('.txt')) ||
+        files.find((file) => file.toLowerCase().endsWith('.pdf'))
       if (!inner) return { ok: false, error: 'В архиве нет .fb2/.epub/.txt/.pdf', code: 'UNKNOWN' }
-      filePath = path.join(tmp, inner)
+      filePath = inner
     }
 
     const low = filePath.toLowerCase()
@@ -493,6 +576,8 @@ export async function importBook(): Promise<ApiResult<ImportedBookMeta>> {
     return { ok: true, data: { id, title: parsed.title, author: parsed.author, chapters: parsed.chapters.length, words, excerpt } }
   } catch (e) {
     return { ok: false, error: `Импорт не удался: ${(e as Error).message}`, code: 'UNKNOWN' }
+  } finally {
+    await cleanupArchive?.()
   }
 }
 
@@ -510,6 +595,9 @@ export async function bookExcerpt(bookId: string): Promise<ApiResult<{ title: st
 /** Удалить книгу пользователя с диска. Встроенные книги удалить нельзя — их прячет renderer. */
 export async function deleteBook(bookId: string): Promise<ApiResult<{ builtin: boolean }>> {
   try {
+    if (!/^[a-zA-Z0-9_-]{1,120}$/.test(bookId)) {
+      return { ok: false, error: 'Некорректный идентификатор книги', code: 'UNKNOWN' }
+    }
     const base = userBooksDir()
     const main = path.join(base, `${bookId}.json`)
     let existed = false
@@ -524,6 +612,7 @@ export async function deleteBook(bookId: string): Promise<ApiResult<{ builtin: b
     } catch {
       /* героев могло не быть */
     }
+    await deleteBookCache(bookId)
     return { ok: true, data: { builtin: !existed } }
   } catch (e) {
     return { ok: false, error: (e as Error).message, code: 'UNKNOWN' }
