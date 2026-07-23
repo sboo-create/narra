@@ -2,7 +2,9 @@
 
 > Обновлено 23 июля 2026
 > Рабочая ветка: `feat/narra-monitoring-and-voices`
-> Статус: foundation и staging готовы; stats-модуль Narra подключён к production Traction, обновление общей карточки Traction ещё не выкачено; публичный macOS-релиз ещё не выпущен.
+> Статус: gateway/stats staging и production Traction обновлены; общая карточка
+> показывает шесть canonical-слотов, мониторинг собирает историю; публичный
+> macOS-релиз ещё не выпущен.
 > Классификация: внутренний рабочий документ. Перед внешней публикацией удалить
 > имена владельцев, Apple Team ID, инфраструктурный IP и DNS verification data.
 
@@ -10,12 +12,12 @@
 
 | Контур | Статус | Что это означает |
 |---|---|---|
-| Gateway staging | ✅ Live | OpenRouter, SaluteSpeech, Kandinsky, video и analytics outbox проверены |
-| Stats staging | ✅ Live | Отдельные token, database и Volume; restart/dedupe проверены |
+| Gateway staging | ✅ Live | Exact deploy `2fda2f7`: OpenRouter, SaluteSpeech, 86 голосов, Kandinsky, video и analytics outbox |
+| Stats staging | ✅ Live | Exact deploy `2fda2f7`; отдельные token, database и Volume, monitoring здесь выключен |
 | Traction production stats | ✅ Live | Narra stats-модуль активен, dashboard защищён, poller healthy |
-| Общая карточка Traction | ⏳ Deploy | Ветка с шестью постоянными слотами не в `main`; live hub пока показывает только четыре значения |
-| Шесть canonical-метрик | ✅ Контракт готов | После выкладки hub при пустом DAU ratios показываются как `—`, а не исчезают и не превращаются в ложный `0` |
-| Мониторинг доменов/ручек | ✅ Код готов | 4 fixed-target HTTPS probe, TLS/latency/availability/coverage и 30-дневная история; ждёт reviewed deploy |
+| Общая карточка Traction | ✅ Live v0.6 | Шесть постоянных слотов выкачены; при нулевом DAU ratios видны как `—` |
+| Шесть canonical-метрик | ✅ Live | `Ever used`, `DAU`, `WAU`, `MAU`, `Sessions / DAU`, `Tools / DAU` |
+| Мониторинг доменов/ручек | ✅ Live | 4 fixed-target HTTPS probe, TLS/latency/availability/coverage и 30-дневная история |
 | Universal unsigned macOS | ✅ QA готов | arm64 + x64 упаковываются в один артефакт |
 | Signed macOS | ⏳ Local RC | Локальный release path готов; подписанный артефакт ещё не собран |
 | Notarized macOS | ⏳ Credentials | Для публичного DMG всё ещё нужен matching Team API key Жени |
@@ -51,6 +53,14 @@ Production Narra пока не получала пользовательских
 | Tools / DAU | `—` |
 
 `—` означает «пока невозможно вычислить». Это не ноль и не отсутствующая метрика.
+
+Фактический post-deploy check подтвердил Traction v0.6, healthy poller и
+отсутствие регрессий у AIWA/Gigagochi. Отдельно обнаружена сетевая асимметрия:
+`narra-staging.multitool.works` отвечает пользовательской сети примерно за
+0,5 секунды, но соединение к его Railway IP с московского stats-host истекает
+по TCP timeout. Внутренний monitor поэтому честно показывает эту цель как
+`down`; внешний multi-region uptime check нужен, чтобы различать отказ сервиса
+и проблему одного маршрута наблюдения.
 
 ---
 
