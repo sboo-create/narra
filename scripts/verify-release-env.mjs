@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { accessSync, constants, statSync } from 'node:fs'
 
-const required = ['NARRA_PROXY_URL', 'NARRA_ACTIVATION_TOKEN', 'NARRA_UPDATE_BASE_URL']
+const required = ['NARRA_PROXY_URL', 'NARRA_UPDATE_BASE_URL']
 const localKeychainSigning = process.env.NARRA_LOCAL_RELEASE === '1'
 const missing = required.filter((name) => !String(process.env[name] || '').trim())
 if (localKeychainSigning) {
@@ -37,9 +37,6 @@ if (gateway.protocol !== 'https:' || gateway.username || gateway.password || gat
 const updates = new URL(process.env.NARRA_UPDATE_BASE_URL)
 if (updates.protocol !== 'https:' || updates.username || updates.password || updates.search || updates.hash) {
   throw new Error('NARRA_UPDATE_BASE_URL must be a clean HTTPS URL')
-}
-if (process.env.NARRA_ACTIVATION_TOKEN.length < 32) {
-  throw new Error('NARRA_ACTIVATION_TOKEN must contain at least 32 characters')
 }
 if (process.env.NODE_ENV !== 'production') throw new Error('NODE_ENV=production is required for a release')
 console.log(`Release environment validated for ${gateway.origin}`)

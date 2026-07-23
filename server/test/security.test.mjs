@@ -12,8 +12,11 @@ const INSTALLATION_ID = '123e4567-e89b-42d3-a456-426614174000'
 
 test('installation token is signed, scoped and expires', () => {
   const service = createTokenService('a'.repeat(32), { ttlSeconds: 60 })
-  const token = service.issue(INSTALLATION_ID, 1_000_000)
-  assert.equal(service.verify(token, 1_030_000)?.sub, INSTALLATION_ID)
+  const token = service.issue(INSTALLATION_ID, 7, 1_000_000)
+  assert.deepEqual(
+    { sub: service.verify(token, 1_030_000)?.sub, ver: service.verify(token, 1_030_000)?.ver },
+    { sub: INSTALLATION_ID, ver: 7 }
+  )
   assert.equal(service.verify(`${token}x`, 1_030_000), null)
   assert.equal(service.verify(token, 1_061_000), null)
 })

@@ -26,12 +26,26 @@ async function devGatewayFetch(pathname: string, init: RequestInit = {}, retry =
     installationId = crypto.randomUUID()
     localStorage.setItem('narra-dev-installation-id', installationId)
   }
+  let installationSecret = localStorage.getItem('narra-dev-installation-secret')
+  if (!installationSecret) {
+    const bytes = crypto.getRandomValues(new Uint8Array(32))
+    installationSecret = btoa(String.fromCharCode(...bytes))
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '')
+    localStorage.setItem('narra-dev-installation-secret', installationSecret)
+  }
   let token = localStorage.getItem('narra-dev-gateway-token')
   if (!token) {
     const registration = await fetch(`${PROXY}/v2/installations/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ installation_id: installationId, platform: 'browser', arch: 'dev' })
+      body: JSON.stringify({
+        installation_id: installationId,
+        installation_secret: installationSecret,
+        platform: 'browser',
+        arch: 'dev'
+      })
     })
     if (!registration.ok) throw new Error(`gateway registration ${registration.status}`)
     token = ((await registration.json()) as { token: string }).token

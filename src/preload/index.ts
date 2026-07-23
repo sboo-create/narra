@@ -97,8 +97,12 @@ const api = {
     ipcRenderer.invoke(IPC.recognize, base64, mime),
   importBook: (): Promise<ApiResult<{ id: string; title: string; author: string; chapters: number; words: number; excerpt: string }>> =>
     ipcRenderer.invoke(IPC.importBook),
-  saveBookCharacters: (bookId: string, characters: unknown): Promise<ApiResult<{ ok: true }>> =>
-    ipcRenderer.invoke(IPC.saveBookCharacters, bookId, characters),
+  saveBookCharacters: (
+    bookId: string,
+    narratorVoice: string,
+    characters: unknown
+  ): Promise<ApiResult<{ ok: true }>> =>
+    ipcRenderer.invoke(IPC.saveBookCharacters, bookId, narratorVoice, characters),
 
   chat: (messages: LlmMessage[], handlers: ChatHandlers, temperature?: number): (() => void) => {
     const requestId = crypto.randomUUID()

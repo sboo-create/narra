@@ -295,8 +295,8 @@ function registerIpc(): void {
     }
     return result
   })
-  handle(IPC.saveBookCharacters, (_e, bookId: string, characters: unknown) =>
-    saveBookCharacters(bookId, characters as never)
+  handle(IPC.saveBookCharacters, (_e, bookId: string, narratorVoice: unknown, characters: unknown) =>
+    saveBookCharacters(bookId, narratorVoice as never, characters as never)
   )
 
   on(

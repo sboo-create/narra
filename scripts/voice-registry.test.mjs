@@ -8,6 +8,7 @@ import {
   CHILD_MALE_VOICES,
   SALUTE_24K_VOICES,
   SALUTE_VOICES,
+  assignBookCharacterVoices,
   normalizeCharacterVoices,
   normalizeNarratorVoice,
   saluteVoiceSampleRate
@@ -113,4 +114,36 @@ test('automatic pools prioritize 48 kHz and exclude probe-only manual voices', (
   )
   assert.ok(pending)
   for (const voice of pending.codes) assert.equal(automatic.has(voice), false)
+})
+
+test('main-character voices follow narrator gender rules without duplicating Sber', () => {
+  const maleHero = character('hero', 'male', 'She')
+  const maleFriend = character('friend', 'male', 'She')
+  const femaleFriend = character('friend-f', 'female', 'Che')
+  assert.deepEqual(
+    assignBookCharacterVoices([maleHero, maleFriend, femaleFriend], 'She').map((item) => item.voice),
+    ['Ast', 'Gal', 'Ste'],
+    'Sber narrator must send a male protagonist to the first male library voice'
+  )
+  assert.equal(assignBookCharacterVoices([maleHero], 'Che')[0].voice, 'She')
+  assert.equal(assignBookCharacterVoices([character('hero-f', 'female', 'Che')], 'Che')[0].voice, 'Erm')
+  assert.equal(
+    assignBookCharacterVoices([{ ...maleHero, isNarrator: true }], 'She')[0].voice,
+    'She',
+    'a first-person protagonist shares the narrator voice'
+  )
+  assert.deepEqual(
+    assignBookCharacterVoices([
+      maleHero,
+      {
+        ...character('girl', 'female', 'Che'),
+        passport: { age: 10, gender: 'female', build: '', hair: '', eyes: '', face: '', outfit: '' }
+      },
+      {
+        ...character('boy', 'male', 'She'),
+        passport: { age: 9, gender: 'male', build: '', hair: '', eyes: '', face: '', outfit: '' }
+      }
+    ], 'Che').map((item) => item.voice),
+    ['She', 'Saf', 'Ksa']
+  )
 })

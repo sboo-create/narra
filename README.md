@@ -21,6 +21,11 @@ Electron (main / preload / renderer React+Vite+TS)
 
 - Текущий Railway URL владельца: `https://narra-proxy-production.up.railway.app` (`/health`); перед релизом проверяется через отдельный staging.
 - Автообновление: только `latest-mac.yml` + universal ZIP по HTTPS; notarized DMG публикуется как отдельный installer. Legacy `/app/latest` и `latest.json` не поддерживаются.
+- Доступ без приглашений: приложение само регистрирует installation UUID,
+  получает 15-минутный bearer; gateway хранит отзыв и дневные per-install/global
+  бюджеты на Railway Volume. Общего registration secret в сборке нет:
+  per-install proof создаётся на устройстве, а сервер хранит только HMAC с
+  отдельным `INSTALLATION_SECRET_PEPPER`.
 - Контент: `content/*.json` (книга) + `content/*-characters.json` (герои с паспортами внешности)
 - Паспорта внешности — канон: вшиваются дословно в каждый промпт картинок (`src/renderer/lib/passport.ts`)
 

@@ -104,6 +104,8 @@ export interface Character {
   greeting?: string
   exampleDialogue?: ExampleTurn[]
   idleAnimation?: string
+  /** True only when the main protagonist is also the first-person narrator. */
+  isNarrator?: boolean
 }
 
 export function normalizeNarratorVoice(value: unknown): SaluteVoice {
@@ -118,6 +120,56 @@ export function normalizeCharacterVoices(characters: Character[]): Character[] {
     const pool = character.gender === 'female' ? AUTO_FEMALE_VOICES : AUTO_MALE_VOICES
     const index = character.gender === 'female' ? female++ : male++
     return { ...character, voice: pool[index % pool.length] }
+  })
+}
+
+/**
+ * Deterministic book-level assignment. The first character is the protagonist,
+ * as required by the markup contract. Assistant voices are reserved for the
+ * narrator/protagonist; secondary characters use the reviewed library pools.
+ */
+export function assignBookCharacterVoices(
+  characters: Character[],
+  narratorVoice: SaluteVoice
+): Character[] {
+  let male = 0
+  let female = 0
+  let childMale = 0
+  let childFemale = 0
+  return characters.map((character, index) => {
+    if (index === 0 && character.isNarrator) {
+      return { ...character, voice: narratorVoice }
+    }
+    if (index === 0 && character.gender === 'male') {
+      // If the user selected the only male assistant (Sber) as narrator, do
+      // not duplicate it: the hero gets the first male library voice.
+      if (narratorVoice === 'She') {
+        return { ...character, voice: AUTO_MALE_VOICES[male++ % AUTO_MALE_VOICES.length] }
+      }
+      return { ...character, voice: 'She' }
+    }
+    if (index === 0) {
+      // Pick the other female assistant deterministically.
+      return { ...character, voice: narratorVoice === 'Che' ? 'Erm' : 'Che' }
+    }
+    const childAge = Number(character.passport?.age)
+    const child = Number.isFinite(childAge) && childAge >= 0 && childAge <= 12
+    if (child && character.gender === 'female') {
+      return {
+        ...character,
+        voice: CHILD_FEMALE_VOICES[childFemale++ % CHILD_FEMALE_VOICES.length]
+      }
+    }
+    if (child) {
+      return {
+        ...character,
+        voice: CHILD_MALE_VOICES[childMale++ % CHILD_MALE_VOICES.length]
+      }
+    }
+    if (character.gender === 'female') {
+      return { ...character, voice: AUTO_FEMALE_VOICES[female++ % AUTO_FEMALE_VOICES.length] }
+    }
+    return { ...character, voice: AUTO_MALE_VOICES[male++ % AUTO_MALE_VOICES.length] }
   })
 }
 

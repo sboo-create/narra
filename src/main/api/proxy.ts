@@ -2,7 +2,12 @@ import { app } from 'electron'
 import { promises as fs } from 'fs'
 import path from 'path'
 import { randomUUID } from 'node:crypto'
-import { clearGatewayToken, getGatewayIdentity, getSettings, setGatewayToken } from '../store'
+import {
+  clearGatewayTokenIf,
+  getGatewayIdentity,
+  getSettings,
+  setGatewayToken
+} from '../store'
 import type { ApiResult, LlmMessage, LlmPurpose, ProxyHealth } from '../../shared/types'
 import type { AnalyticsEvent } from '../../shared/analytics'
 import { runLocalDataWrite } from '../local-data-barrier'
@@ -13,41 +18,84 @@ function base(): string {
   return getSettings().proxyUrl.replace(/\/+$/, '')
 }
 
-let registration: Promise<string> | null = null
-let registrationController: AbortController | null = null
+let registration: {
+  proxyUrl: string
+  promise: Promise<string>
+  controller: AbortController
+} | null = null
 let gatewayActivityController = new AbortController()
 let localDataResetting = false
 
 export function cancelGatewayActivity(): void {
   localDataResetting = true
   gatewayActivityController.abort(new Error('local data reset'))
-  registrationController?.abort(new Error('local data reset'))
-  registrationController = null
+  registration?.controller.abort(new Error('local data reset'))
   registration = null
 }
 
 async function gatewayToken(): Promise<string> {
   const proxyUrl = base()
   const identity = getGatewayIdentity()
-  if (identity.token && identity.tokenProxyUrl === proxyUrl) return identity.token
-  if (registration) return registration
-  registration = (async () => {
+  if (
+    identity.token &&
+    identity.tokenProxyUrl === proxyUrl &&
+    !tokenExpiresSoon(identity.token)
+  ) {
+    return identity.token
+  }
+  if (registration?.proxyUrl === proxyUrl) return registration.promise
+  if (registration) {
+    registration.controller.abort(new Error('gateway changed'))
+    registration = null
+  }
+  const controller = new AbortController()
+  const promise = (async () => {
     const { signal, done } = withTimeout(10_000)
-    registrationController = new AbortController()
     let response: Response
     try {
-      response = await fetch(`${proxyUrl}/v2/installations/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          installation_id: identity.installationId,
-          app_version: app.getVersion(),
-          platform: process.platform,
-          arch: process.arch,
-          activation_token: process.env.NARRA_ACTIVATION_TOKEN || ''
-        }),
-        signal: AbortSignal.any([signal, registrationController.signal])
-      })
+      const abortSignal = AbortSignal.any([signal, controller.signal])
+      if (identity.token && identity.tokenProxyUrl === proxyUrl) {
+        response = await fetch(`${proxyUrl}/v2/installations/refresh`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            installation_id: identity.installationId,
+            installation_secret: identity.refreshSecret
+          }),
+          signal: abortSignal
+        })
+        if (
+          (response.status === 401 && isInstallationAuthFailure(response)) ||
+          (response.status === 404 && isInstallationNotFound(response))
+        ) {
+          clearGatewayTokenIf(identity.token, proxyUrl)
+          response = await fetch(`${proxyUrl}/v2/installations/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              installation_id: identity.installationId,
+              installation_secret: identity.refreshSecret,
+              app_version: app.getVersion(),
+              platform: process.platform,
+              arch: process.arch
+            }),
+            signal: abortSignal
+          })
+        }
+      } else {
+        response = await fetch(`${proxyUrl}/v2/installations/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            installation_id: identity.installationId,
+            installation_secret: identity.refreshSecret,
+            app_version: app.getVersion(),
+            platform: process.platform,
+            arch: process.arch
+          }),
+          signal: abortSignal
+        })
+      }
     } finally {
       done()
     }
@@ -57,11 +105,28 @@ async function gatewayToken(): Promise<string> {
     setGatewayToken(payload.token, proxyUrl)
     return payload.token
   })()
+  registration = { proxyUrl, promise, controller }
   try {
-    return await registration
+    return await promise
   } finally {
-    registration = null
-    registrationController = null
+    if (registration?.promise === promise) registration = null
+  }
+}
+
+function tokenExpiresSoon(token: string, now = Date.now()): boolean {
+  try {
+    const [prefix, body] = token.split('.')
+    if (prefix !== 'nrv3' || !body) return true
+    const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')) as {
+      iat?: number
+      exp?: number
+    }
+    if (!Number.isInteger(payload.iat) || !Number.isInteger(payload.exp)) return true
+    const lifetimeMs = (Number(payload.exp) - Number(payload.iat)) * 1000
+    const refreshMarginMs = Math.min(60_000, Math.max(5_000, lifetimeMs / 10))
+    return Number(payload.exp) * 1000 <= now + refreshMarginMs
+  } catch {
+    return true
   }
 }
 
@@ -82,11 +147,19 @@ export async function gatewayFetch(
       ? AbortSignal.any([suppliedSignal, gatewayActivityController.signal])
       : gatewayActivityController.signal
   })
-  if (response.status === 401 && retryAuth) {
-    clearGatewayToken()
+  if (response.status === 401 && retryAuth && isInstallationAuthFailure(response)) {
+    clearGatewayTokenIf(token, base())
     return gatewayFetch(pathname, init, false)
   }
   return response
+}
+
+function isInstallationAuthFailure(response: Response): boolean {
+  return response.headers.get('x-narra-auth-error') === 'installation_token'
+}
+
+function isInstallationNotFound(response: Response): boolean {
+  return response.headers.get('x-narra-auth-error') === 'installation_not_found'
 }
 
 export async function sendTelemetryBatch(

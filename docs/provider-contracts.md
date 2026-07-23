@@ -93,6 +93,7 @@ staging therefore copies only the required credential values without exposing
 them; it does not copy unsafe provider URLs or route flags wholesale. Until
 LiteLLM has HTTPS/private transport, staging must omit `LLM_BASE_URL`, set every
 purpose-specific `LLM_ROUTE_*` to `openrouter`, and clear every Giga fallback.
-It also uses distinct Narra gateway, activation, analytics-HMAC and Traction
-ingest secrets, a separate `ANALYTICS_ENV=staging`, and a separate persistent
-Volume. No production analytics database is reused.
+It also uses distinct Narra gateway-signing, installation-operator,
+analytics-HMAC and Traction ingest secrets, a separate
+`ANALYTICS_ENV=staging`, and a separate persistent Volume. No production
+analytics database is reused. No registration secret is embedded in a client.

@@ -1,6 +1,6 @@
 # Narra — release, media capacity и аналитика
 
-> Обновлено 23 июля 2026
+> Обновлено 24 июля 2026
 > Рабочая ветка: `feat/narra-monitoring-and-voices`
 > Статус: gateway/stats staging и production Traction обновлены; общая карточка
 > показывает шесть canonical-слотов, мониторинг собирает историю; публичный
@@ -22,9 +22,10 @@
 | Signed macOS | ⏳ Local RC | Локальный release path готов; подписанный артефакт ещё не собран |
 | Notarized macOS | ⏳ Credentials | Для публичного DMG всё ещё нужен matching Team API key Жени |
 | Giga через LiteLLM | ⏳ Transport | Адаптер сохранён; до защищённого relay используется OpenRouter |
-| Video в public release | ⏳ Transport/capacity | В staging работает по явно разрешённому HTTP; для public нужен HTTPS edge relay и durable queue |
+| Video в public release | ⏳ Origin transport/capacity | `narra-video.multitool.works` уже имеет валидный TLS, но намеренно отвечает `503`; для public ещё нужен защищённый последний hop и durable queue |
 | Production hostname | ✅ TLS reserved | `narra.multitool.works` изолированно отвечает `503 not_ready`; staging/legacy не проксируются |
 | Production gateway | ⏳ One-time cutover | Новый v2-сервис ещё не подключён к production hostname |
+| No-invite registry | 🧪 Branch-ready | Код, tests и runbook готовы; staging всё ещё на `2fda2f7`, нужны deploy + restart/revoke proof |
 
 ---
 
@@ -360,7 +361,7 @@ Railway fallback `Application not found` — это нормально: edge м�
 Поддомен закрывает TLS только до gateway. Маршрут к video остаётся
 server-to-server HTTP до установки TLS/HMAC/firewall-контролей выше.
 
-### Read-only аудит сервера `i46`
+### Аудит и fail-closed TLS на сервере `i46`
 
 `i46` — это отдельный хост `167.233.103.46`; текущий
 `narra.multitool.works` смотрит на другой сервер `158.160.163.167`. На `i46`
@@ -375,17 +376,28 @@ Bizzy Radio и Gigagochi, использует:
 
 Поэтому ставить второй Caddy/Nginx на `i46` нельзя: он конфликтует за
 `80/443` и может уронить соседние проекты. Безопасная процедура добавления
-нового exact-host:
+нового exact-host была выполнена 24 июля:
 
-1. Сохранить копию и SHA-256 текущего Caddyfile.
-2. Добавить отдельный host block без изменения существующих radio/Gigagochi
+1. Сохранена копия и SHA-256 текущего Caddyfile.
+2. Добавлен отдельный host block без изменения существующих radio/Gigagochi
    блоков.
-3. Выполнить `caddy validate` внутри работающего контейнера.
-4. Применить `caddy reload`, не перезапуская весь compose stack.
-5. Проверить новый hostname и обязательные regression probes radio/Gigagochi.
-6. При любой регрессии вернуть исходный файл и повторить reload.
+3. Candidate проверен через `caddy validate`.
+4. Recreate выполнен только для service `caddy` с `--no-deps`: single-file
+   bind ранее держал stale inode, поэтому простой reload не видел новый файл.
+5. Проверены exact TLS/status/body/headers Narra и regression probes
+   radio/Gigagochi.
+6. Rollback проверяет восстановленный SHA, container mount, validate и оба
+   соседних endpoint; неполный rollback получает отдельный аварийный exit.
 
-Это пока только изучено; на `i46` ничего не изменялось. Кроме того, Caddy на
+Итог: `https://narra-video.multitool.works/health` имеет валидный публичный
+сертификат и отвечает точным fail-closed JSON `503
+waiting_for_secure_origin`; root также отвечает точным `503`. Live Caddyfile
+SHA-256 после применения:
+`5faf7e1455b925cdd739beeae2b89f1904d954b390bae1c58176f999e93eec88`.
+Radio и `https://gigagochi.serega.works/health` независимо перепроверены и
+отвечают `200`.
+
+При этом Caddy на
 `i46`, проксирующий `http://87.242.117.37:5051`, **не решает transport risk**:
 TLS будет только до `i46`, а последний публичный участок
 `i46 → video-origin` останется незашифрованным. Для безопасного production
@@ -409,78 +421,87 @@ Provider credentials в Electron не передаются и не хранят�
 - `NARRA_PROXY_URL`;
 - `NARRA_UPDATE_BASE_URL`.
 
-Сейчас есть одно временное исключение: общий
-`NARRA_ACTIVATION_TOKEN` зашивается в beta-сборку и отправляется только на
-registration endpoint при регистрации или перерегистрации установки — например, после истечения bearer,
-смены gateway URL или ответа `401`. Он не отправляется в provider routes. Это не
-provider API key, но это всё равно извлекаемый общий секрет. После регистрации
-gateway выдаёт stateless installation bearer с текущим TTL по умолчанию 30 дней;
-на macOS он хранится через Keychain-backed `safeStorage`, а не открытым текстом.
+В текущей рабочей ветке общего activation/registration secret в сборке больше
+нет. На первом запуске
+приложение генерирует случайный installation UUID и получает подписанный
+15-минутный bearer. Отдельный случайный refresh secret генерируется на
+устройстве, на macOS хранится через Keychain-backed `safeStorage`, а gateway
+хранит только его HMAC с отдельным server-side
+`INSTALLATION_SECRET_PEPPER`. Этот pepper не совпадает с ключом подписи
+bearer, analytics HMAC или operator token, поэтому их можно ротировать
+раздельно. Однако pepper стабилен: его ротация без миграции инвалидирует
+refresh proof всех существующих установок. Перед изменением нужен backup
+registry и отдельный migration/reset plan. Bearer также хранится через
+`safeStorage`; при недоступном Keychain release-клиент держит его только в
+памяти. Клиент обновляет bearer незадолго до истечения. Staging-deploy
+`2fda2f7` пока использует предыдущую схему: новый контур нельзя считать live до
+отдельного deploy/restart/revoke smoke.
 
-Принято целевое решение выпускать beta **без приглашений**, но безопасная
-auto-enrollment модель ещё не реализована и остаётся P0 gate до внешней раздачи.
-Provider keys в клиенте не появятся, а cohort token будет только мягким
-distribution gate, не криптографической защитой.
-
-### Как доступ устроен сейчас
+### Как доступ устроен в подготовленной ветке
 
 Отдельных приглашений и UI для invite code в Narra сейчас нет:
 
-- если на gateway задан `REGISTRATION_ACTIVATION_SECRET`, пользоваться может
-  любая копия приложения, собранная с совпадающим общим activation token;
-- фактически это означает «любой, у кого есть beta-сборка **или скопированный из
-  неё общий token и совместимый клиент**» — сама раздача официальной сборки не
-  является границей доступа;
-- индивидуально отозвать одну такую установку нельзя;
-- в production gateway отсутствие или длина activation secret меньше 32
-  символов блокирует запуск; открытая регистрация без него возможна только в
-  non-production режиме после осознанного изменения конфигурации.
+- пользоваться может любой, у кого есть сборка или совместимый клиент;
+- registration ограничен per-IP и общим числом новых установок в час;
+- server-side registry на Railway Volume хранит `active/revoked`,
+  `token_version`, версии приложения и платформу;
+- отзыв одной установки немедленно инвалидирует уже выданный bearer и переживает
+  рестарт;
+- дорогие ручки имеют persistent per-install и global UTC-day budgets;
+- минутные лимиты, bounded queues и concurrency gates остаются вторым слоем.
 
-Это текущее техническое состояние, но ещё не готовая открытая beta-модель.
-Технически нельзя доказать, что запрос
-пришёл именно из официального Electron binary: статический секрет можно
-извлечь, User-Agent подделать. Поэтому безопасность строится не на скрытности
-сборки, а на ограничении ущерба.
+Нельзя доказать, что запрос пришёл именно из официального Electron binary:
+User-Agent и формат API воспроизводимы. Поэтому безопасность строится на
+отзываемости и ограничении ущерба. Пользователь, который полностью очистил
+локальные данные, получит новый UUID; против массового обхода работают
+IP velocity, global registration budget, provider budgets и circuit breakers.
 
 ---
 
 ## Без приглашений: безопасная auto-enrollment модель
 
-Сейчас закрытая сборка использует общий activation secret. Если положить его в публичное Electron-приложение, его можно извлечь и раздать; уже выданные stateless install tokens нельзя индивидуально отозвать.
-
-В целевой реализации вместо invite entitlement используем автоматически
-создаваемую запись установки:
+Реализована автоматически создаваемая запись установки:
 
 ```text
 installation_id
 status: active | revoked
-plan / quotas
-issued_at
+created_at
 last_seen_at
 token_version
+first_app_version / last_app_version
+platform / arch
 ```
 
 Поток:
 
 1. Приложение генерирует installation identity; пользователь ничего не вводит.
 2. Registration endpoint автоматически создаёт запись установки, но ограничен
-   по IP, частоте и общему числу новых регистраций.
-3. Cohort tokens версионируются server-side. Новая и предыдущая версии активны
-   одновременно в grace window не короче максимального bearer TTL плюс окна
-   обновления; старый token отключается только после adoption gate или
-   emergency revoke. Gateway хранит несколько hashed active token versions, а
-   не один секрет.
-4. Gateway выдаёт короткий bearer; целевой TTL — часы, а не текущие 30 дней.
-5. Refresh и дорогие запросы проверяют `status`, `token_version` и quota.
+   по IP, частоте, общему числу новых регистраций в час/сутки и размеру
+   registry; active записи без активности 30 дней удаляются.
+3. Gateway выдаёт подписанный bearer с TTL 15 минут и `token_version`.
+4. Refresh требует отдельный per-install secret; знания UUID или истёкшего
+   access token недостаточно. Каждый защищённый запрос проверяет подпись,
+   expiry, `status` и `token_version`.
+5. Дорогие запросы атомарно резервируют per-install и global UTC-day quota.
 6. Конкретную установку можно отозвать; повторная массовая регистрация
    ограничивается IP/velocity controls.
-7. Отдельные per-install daily quotas, global provider budget, concurrency
-   fairness и emergency circuit breaker ограничивают стоимость даже при утечке
-   cohort token.
+7. `INSTALLATION_OPERATOR_TOKEN` существует только в Railway и у оператора; он
+   не попадает в Electron. Через защищённую operator route можно посмотреть и
+   отозвать UUID.
+8. `INSTALLATION_SECRET_PEPPER` существует только в Railway, не возвращается
+   клиенту и не используется как access token.
 
-После реализации P0 пользовательский UX будет полностью открытым: скачал
-сборку — запустил — работает. Аккаунтов, invite codes и персональных данных для
-этого не требуется. До этого внешняя beta не раздаётся.
+Данные разделены по частоте записи: атомарный snapshot хранит installation
+records, а расход — append-only journal текущих суток. Повреждённый registry или
+journal блокирует запуск fail-closed вместо тихого сброса отзывов/квот.
+Пользовательский UX открыт: скачал сборку — запустил — работает. Аккаунтов,
+invite codes и персональных данных не требуется.
+
+Для file-backed registry Railway service закрепляется на одной реплике:
+`RAILWAY_VOLUME_MOUNT_PATH` обязан реально присутствовать, `DATA_DIR` обязан
+совпадать с ним, `RAILWAY_DEPLOYMENT_OVERLAP_SECONDS=0`, а
+`RAILWAY_DEPLOYMENT_DRAINING_SECONDS>=30`. Пользовательская переменная,
+притворяющаяся Volume, на Railway не принимается.
 
 ---
 
@@ -907,7 +928,12 @@ artifact/HTML как отдельные evidence datasets. Неизменяем�
 - результат и `child_rule_version` фиксируются в voice plan на всю книгу, чтобы
   повторный импорт или новая модель не меняли голос без явной миграции.
 
-Нерешённое правило: `Sber narrator + male third-person protagonist`. Среди оставшихся assistant voices нет мужского. Рекомендация — дать protagonist первому мужскому library voice, а не нарушать пол и не дублировать narrator.
+Правило `Sber narrator + male third-person protagonist` принято и реализовано:
+главный герой получает первый мужской library voice (`Ast`, затем deterministic
+pool для остальных), а не женский assistant voice и не дубликат narrator.
+Если главный герой сам является first-person narrator, он сохраняет голос
+narrator. Разметочный контракт возвращает `isNarrator`, а назначение закреплено
+unit-тестом.
 
 До публичной beta остаётся дать Соне прослушать одинаковые audible samples и
 при необходимости сократить active 24 kHz pool. Техническая проверка 94 кодов,
@@ -937,8 +963,13 @@ HTTP status, content type и фактический WAV sample rate уже вы�
 - [ ] Progressive TTS first-audio
 - [ ] Durable media job API и queue UX
 - [x] Внутренний staging-only degraded HTTP video gate с тестовыми данными
+- [x] Fail-closed TLS hostname `narra-video.multitool.works` без proxy к HTTP origin
 - [ ] HTTPS video relay до передачи media внешних beta-пользователей
-- [ ] Auto-enrolled revocable installation registry без приглашений
+- [x] Auto-enrolled revocable installation registry без приглашений
+- [x] 15-минутные bearer/refresh, server-side revoke и persistent per-install/global budgets
+- [ ] Staging deploy новой no-invite схемы и проверка
+      `register → restart → refresh`, `revoke → restart → 401`,
+      `daily cap → restart → still 429`
 
 ### P1 — перед public release
 
@@ -981,46 +1012,54 @@ HTTP status, content type и фактический WAV sample rate уже вы�
    Telegram/Slack/email и через сколько минут считать outage. Внутренний
    Traction monitor уже не требует отдельных ключей.
 3. Если хотим использовать `i46` как TLS edge для video/LiteLLM, выбрать
-   отдельные имена вроде `narra-video.multitool.works` и
-   `narra-llm.multitool.works`, но создавать DNS только после подтверждения
-   HTTPS на origin либо WireGuard/SSH tunnel. Один reverse proxy до HTTP origin
-   недостаточен. После выбора нужен короткий maintenance window и разрешение
-   reload существующего Caddy с обязательными regression probes соседних
-   сервисов.
-4. Согласовать безопасный способ локальной notarization с Apple Team Жени:
+   отдельные имена. `narra-video.multitool.works → 167.233.103.46` уже создан;
+   до появления HTTPS на origin либо WireGuard/SSH tunnel он может быть только
+   fail-closed TLS-заглушкой. Один reverse proxy до публичного HTTP origin
+   недостаточен. Для рабочего relay нужен доступ владельца origin к настройке
+   tunnel/HTTPS; соседние сервисы на `i46` меняются только через validate,
+   recreate только Caddy с `--no-deps`, regression probes и проверяемый
+   автоматический rollback.
+4. Выбрать владельца operator token и аварийного отзыва установок. Значение
+   `INSTALLATION_OPERATOR_TOKEN` хранится в Railway/password manager и никогда
+   не передаётся в чат или сборку. Для staging я могу создать и записать его
+   сам; от Макса требуется только решить, кто имеет право выполнять revoke в
+   production.
+5. Подтвердить или скорректировать перед production текущие общие дневные caps:
+   AI 25 000 запросов, Speech 50 000, Images 5 000, Video 500, Imports 1 000 /
+   10 000 MiB. Per-install caps остались 500 / 1 000 / 100 / 20 / 20 и
+   300 MiB соответственно. Эти значения — hard stop, а не прогноз пропускной
+   способности или денежная оценка.
+6. Согласовать безопасный способ локальной notarization с Apple Team Жени:
    credentials не присылать в чат и не коммитить, а вместе с владельцем Team
    создать локальный `notarytool` profile либо положить matching Team API key в
    локальный Keychain.
-5. Назвать денежный либо запросный лимит capacity benchmark
+7. Назвать денежный либо запросный лимит capacity benchmark
    `1 → 2 → 5 → 10` и разрешённое окно теста, чтобы проверка не создала
    неожиданный расход у провайдеров.
-6. Подтвердить политику голосов для beta: 48 kHz остаются первыми, 24 kHz
-   используются для следующих персонажей; один voice ID всегда имеет один
-   sample rate. Если нужен только 48 kHz, разнообразие снова сократится до 16
-   голосов.
-7. Intel Mac сейчас отсутствует: универсальную сборку продолжаем готовить, но
+8. Intel Mac сейчас отсутствует: универсальную сборку продолжаем готовить, но
    отсутствие install/launch smoke фиксируем как принятый release risk.
-8. Уточнить, означает ли «APK» отдельное Android-приложение. Текущая Narra —
+9. Уточнить, означает ли «APK» отдельное Android-приложение. Текущая Narra —
    Electron desktop; Android/iOS не получаются из universal macOS build и
    требуют отдельного клиентского проекта.
 
 ### От Сони
 
-1. Утвердить fallback для комбинации `Sber narrator + male third-person
-   protagonist`. Рекомендация: главному герою назначать первый доступный мужской
-   library voice, а не женский assistant voice и не голос narrator.
-2. Прослушать одинаковые samples и подтвердить mixed registry. Уже технически
+1. Прослушать одинаковые samples и подтвердить mixed registry. Уже технически
    работают 86 голосов: 16 × 48 kHz и 70 × 24 kHz. В автоматическом обычном
    pool 26 мужских и 16 женских, в детском — 3 и 4. Ещё 32 24 kHz голоса,
    включая `Kov/Aso/Pik/Roz/Voy`, доступны только вручную: они работают, но их
    пол и художественное назначение пока намеренно не используются автоматикой.
-3. Подтвердить объём автоматических портретов. Текущая рекомендация: главный
+2. Подтвердить объём автоматических портретов. Текущая рекомендация: главный
    герой плюс 2–3 основных персонажа при импорте; остальные — по запросу при
    открытии карточки.
-4. Подтвердить, что 24 kHz допустимы второстепенным героям при сохранении 48 kHz
+3. Подтвердить, что 24 kHz допустимы второстепенным героям при сохранении 48 kHz
    для narrator/первых ролей. Замер показал лишь ~11% медианного выигрыша по
    latency, но WAV примерно вдвое меньше; главное преимущество здесь —
    разнообразие доступных тембров.
+
+Уже зафиксировано и больше не требует решения Сони: при `Sber narrator` мужской
+third-person protagonist получает первый мужской library voice; first-person
+protagonist делит голос narrator.
 
 ### От Юры или владельца video host
 

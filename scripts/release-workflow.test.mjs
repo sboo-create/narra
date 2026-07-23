@@ -12,6 +12,9 @@ const verifyMacRelease = readFileSync(new URL('./verify-macos-release.sh', impor
 const finalizeUpdateFeedUrl = new URL('./finalize-update-feed.mjs', import.meta.url)
 const appEntitlements = readFileSync(new URL('../build/entitlements.mac.plist', import.meta.url), 'utf8')
 const inheritedEntitlements = readFileSync(new URL('../build/entitlements.mac.inherit.plist', import.meta.url), 'utf8')
+const electronViteConfig = readFileSync(new URL('../electron.vite.config.ts', import.meta.url), 'utf8')
+const gatewayClient = readFileSync(new URL('../src/main/api/proxy.ts', import.meta.url), 'utf8')
+const verifyReleaseEnv = readFileSync(new URL('./verify-release-env.mjs', import.meta.url), 'utf8')
 
 test('hosted workflow is a manual unsigned preflight and receives no Apple secrets', () => {
   assert.match(workflow, /workflow_dispatch:/)
@@ -92,4 +95,11 @@ test('modern Electron release does not request unsigned executable memory', () =
     assert.match(entitlements, /com\.apple\.security\.cs\.allow-jit/)
     assert.doesNotMatch(entitlements, /com\.apple\.security\.cs\.allow-unsigned-executable-memory/)
   }
+})
+
+test('release bundle contains no shared registration or activation secret', () => {
+  for (const source of [electronViteConfig, gatewayClient, verifyReleaseEnv]) {
+    assert.doesNotMatch(source, /NARRA_ACTIVATION_TOKEN|REGISTRATION_ACTIVATION_SECRET/)
+  }
+  assert.match(gatewayClient, /installation_id: identity\.installationId/)
 })

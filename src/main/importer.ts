@@ -6,7 +6,13 @@ import { Worker } from 'node:worker_threads'
 import { Transform } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import unzipper from 'unzipper'
-import type { ApiResult, Chapter, Character, Fanfic } from '../shared/types'
+import {
+  normalizeNarratorVoice,
+  type ApiResult,
+  type Chapter,
+  type Character,
+  type Fanfic
+} from '../shared/types'
 import { cleanupStagedDeleteTombstones, stagedDeleteFiles } from './staged-delete'
 import { setAppState } from './store'
 import { ArchiveByteQuota, validateArchiveEntry } from './archive-security'
@@ -697,7 +703,11 @@ export async function deleteBook(
 }
 
 /** Сохранить персонажей импортированной книги; unlockChapter считается по тексту. */
-export async function saveBookCharacters(bookId: string, characters: Character[]): Promise<ApiResult<{ ok: true }>> {
+export async function saveBookCharacters(
+  bookId: string,
+  narratorVoice: unknown,
+  characters: Character[]
+): Promise<ApiResult<{ ok: true }>> {
   try {
     if (!Array.isArray(characters) || characters.length > 100) throw new Error('Слишком много персонажей')
     const serialized = JSON.stringify(characters)
@@ -735,7 +745,7 @@ export async function saveBookCharacters(bookId: string, characters: Character[]
     }
     await runLocalDataWrite(() => fs.writeFile(
       userBookPath(bookId, '-characters'),
-      JSON.stringify({ narratorVoice: 'Che', characters }),
+      JSON.stringify({ narratorVoice: normalizeNarratorVoice(narratorVoice), characters }),
       'utf8'
     ))
     return { ok: true, data: { ok: true } }

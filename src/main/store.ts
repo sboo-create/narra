@@ -1,5 +1,5 @@
 import Store from 'electron-store'
-import { randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { app, safeStorage } from 'electron'
 import type { Settings } from '../shared/types'
 import { isEssentialAnalyticsEvent, type AnalyticsEvent } from '../shared/analytics'
@@ -10,6 +10,7 @@ interface Schema {
   appState: Record<string, unknown>
   gateway: {
     installationId: string
+    refreshSecret: string
     token: string
     tokenProxyUrl: string
   }
@@ -55,6 +56,7 @@ const defaults: Schema = {
   appState: {},
   gateway: {
     installationId: '',
+    refreshSecret: '',
     token: '',
     tokenProxyUrl: ''
   },
@@ -69,6 +71,7 @@ const defaults: Schema = {
 
 const store = new Store<Schema>({ defaults, name: 'narra' })
 let memoryGatewayToken = ''
+let memoryInstallationSecret = ''
 let privacyResetActive = false
 
 export function getSettings(): Settings {
@@ -105,27 +108,42 @@ export function setSettings(next: Partial<Settings>): Settings {
 
 export function getGatewayIdentity(): {
   installationId: string
+  refreshSecret: string
   token: string
   tokenProxyUrl: string
 } {
   const current = store.get('gateway')
-  if (current?.installationId) {
-    return { ...current, token: revealGatewayToken(current.token) || memoryGatewayToken }
+  const refreshSecret = revealSensitive(current?.refreshSecret || '') || memoryInstallationSecret
+  if (current?.installationId && refreshSecret) {
+    return {
+      ...current,
+      refreshSecret,
+      token: revealSensitive(current.token) || memoryGatewayToken
+    }
   }
-  const created = { ...current, installationId: randomUUID() }
+  const rawSecret = randomBytes(32).toString('base64url')
+  const protectedSecret = protectSensitive(rawSecret)
+  memoryInstallationSecret = protectedSecret ? '' : rawSecret
+  memoryGatewayToken = ''
+  const created = {
+    installationId: randomUUID(),
+    refreshSecret: protectedSecret,
+    token: '',
+    tokenProxyUrl: ''
+  }
   store.set('gateway', created)
-  return created
+  return { ...created, refreshSecret: rawSecret }
 }
 
 export function setGatewayToken(token: string, tokenProxyUrl: string): void {
   if (privacyResetActive) return
-  const protectedToken = protectGatewayToken(token)
+  const protectedToken = protectSensitive(token)
   memoryGatewayToken = protectedToken ? '' : token
   store.set('gateway.token', protectedToken)
   store.set('gateway.tokenProxyUrl', tokenProxyUrl)
 }
 
-function protectGatewayToken(token: string): string {
+function protectSensitive(token: string): string {
   if (!token) return ''
   if (safeStorage.isEncryptionAvailable()) {
     return `safe:${safeStorage.encryptString(token).toString('base64')}`
@@ -135,7 +153,7 @@ function protectGatewayToken(token: string): string {
   return app.isPackaged ? '' : `plain:${token}`
 }
 
-function revealGatewayToken(stored: string): string {
+function revealSensitive(stored: string): string {
   if (!stored) return ''
   if (stored.startsWith('safe:')) {
     try {
@@ -153,9 +171,17 @@ export function clearGatewayToken(): void {
   store.set('gateway.tokenProxyUrl', '')
 }
 
+export function clearGatewayTokenIf(expectedToken: string, expectedProxyUrl: string): void {
+  const current = store.get('gateway')
+  const currentToken = revealSensitive(current?.token || '') || memoryGatewayToken
+  if (currentToken !== expectedToken || current?.tokenProxyUrl !== expectedProxyUrl) return
+  clearGatewayToken()
+}
+
 export function resetAllPersistentState(): void {
   const extendedTelemetryEnabled = getSettings().extendedTelemetryEnabled
   memoryGatewayToken = ''
+  memoryInstallationSecret = ''
   store.clear()
   store.set({
     ...defaults,

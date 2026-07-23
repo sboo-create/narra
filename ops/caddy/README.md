@@ -182,6 +182,66 @@ Assert TLS verification result `0`, exact status, headers and JSON:
 Capture neighbour statuses before the edit and require the same values after
 reload.
 
+## Narra video hostname
+
+`narra-video.multitool.works.caddy` is a separate fail-closed reservation for
+the DNS record pointing to `i46` (`167.233.103.46`). Until the last hop is
+protected, it returns exact JSON `503` and never proxies to the public
+`http://87.242.117.37:5051`.
+
+Live i46 facts rechecked on 24 July 2026:
+
+- Docker container: `bizzy-radio-caddy-1`, image `caddy:2`;
+- host file: `/opt/bizzy-radio/Caddyfile`, mounted read-only inside the
+  container as `/etc/caddy/Caddyfile`;
+- reviewed pre-change SHA-256:
+  `6f8d81643408fc06053323785bbd4f7d1ee583622152af2a9f29a1be502f2d0d`;
+- the initial check found a stale single-file bind-mount inode
+  (`5e56eb1d…`), but the verified rollback recreate repaired it; the running
+  container now sees the same reviewed `6f8d…2d0d` file as the host;
+- applied host Caddyfile SHA-256:
+  `5faf7e1455b925cdd739beeae2b89f1904d954b390bae1c58176f999e93eec88`;
+- live result: valid TLS, exact JSON `503` on `/health` and `/`; no upstream
+  proxy is configured. Radio and Gigagochi regression probes return `200`.
+
+The system-Caddy procedure above belongs to the separate Yandex production
+hostname host and **must not** be used on i46. For i46, copy the exact reviewed
+fragment and `apply-narra-video-i46.sh` to `/tmp`, verify both hashes, then run
+the script as root. It validates a complete candidate in `caddy:2` and compares
+the shared file twice. An earlier reload demonstrably read a stale
+single-file bind; the verified rollback repaired it, but every shared-file
+mutation still recreates **only** the Caddy service with `--no-deps` so the
+mounted inode is deterministic. The script verifies the new host/container hashes,
+checks Gigagochi and the catch-all listener, verifies exact Narra
+TLS/status/body/headers, and restores the retained backup by recreating only
+Caddy again on any failure.
+
+Reviewed artifact hashes:
+
+```text
+8d30f0199d0be507c44f0fa87fa23ad7bc1d725bc256b26c0cf8268e16dd9449  apply-narra-video-i46.sh
+ff2e7009f8487d4c34715f33535650b1c4e9c2512481238d55cbd9fa356419ab  narra-video.multitool.works.caddy
+```
+
+On i46, immediately before the privileged apply:
+
+```bash
+cd /tmp
+printf '%s  %s\n' \
+  '8d30f0199d0be507c44f0fa87fa23ad7bc1d725bc256b26c0cf8268e16dd9449' \
+  'apply-narra-video-i46.sh' \
+  'ff2e7009f8487d4c34715f33535650b1c4e9c2512481238d55cbd9fa356419ab' \
+  'narra-video.multitool.works.caddy' | sha256sum -c -
+sudo bash /tmp/apply-narra-video-i46.sh
+```
+
+After the video owner enables HTTPS or a private WireGuard/SSH tunnel, replace
+only this exact-host fragment. An HTTP upstream is permitted only when its host
+is loopback or a private tunnel address; `reverse_proxy
+http://87.242.117.37:5051` is explicitly forbidden. Apply it with a newly
+reviewed hash/CAS, Docker validation, `--force-recreate --no-deps caddy`,
+neighbour probes and verified rollback.
+
 ## Manual rollback
 
 The script above rolls back automatically on validation, reload or probe

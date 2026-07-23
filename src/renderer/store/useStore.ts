@@ -308,7 +308,18 @@ export const useStore = create<StoreState>((set, get) => ({
     const res = await window.narra.loadBooks()
     if (res.ok) {
       const hidden = new Set(get().persisted.hiddenBooks || [])
-      set({ books: res.data!.filter((b) => !hidden.has(b.fanfic.id)) })
+      const books = res.data!.filter((b) => !hidden.has(b.fanfic.id))
+      const active = books.find((book) => book.fanfic.id === get().activeBookId)
+      set({
+        books,
+        ...(active
+          ? {
+              fanfic: active.fanfic,
+              characters: active.characters,
+              narratorVoice: active.narratorVoice
+            }
+          : {})
+      })
     }
   },
 

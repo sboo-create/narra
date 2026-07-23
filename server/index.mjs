@@ -1,6 +1,7 @@
 import express from 'express'
 import cors from 'cors'
-import { createHmac, randomUUID, timingSafeEqual } from 'crypto'
+import { createHmac, randomUUID } from 'crypto'
+import path from 'node:path'
 import { httpsRequest } from './http.mjs'
 import {
   parseAvatarBody,
@@ -39,12 +40,15 @@ import { imageUpstreamError, shouldFallbackAfterImageError } from './image-polic
 import { sberCaBundle, verifiedSberCertificates } from './sber-tls.mjs'
 import {
   createFixedWindowLimiter,
-  createFixedWindowByteBudget,
+  createPersistentBudgetMiddleware,
   createTokenService,
+  hashInstallationSecret,
   isInstallationId,
   requireGatewayAuth,
+  requireOperatorAuth,
   resolveTokenSecret
 } from './security.mjs'
+import { createInstallationRegistry } from './installation-registry.mjs'
 
 // ================= Конфигурация =================
 const PORT = process.env.PORT || 8787
@@ -71,19 +75,35 @@ function envInt(name, fallback, max) {
   return parseEnvInt(process.env, name, fallback, max)
 }
 const REGISTRATION_LIMIT = envInt('REGISTRATION_LIMIT_PER_HOUR', 10, 1_000)
+const REGISTRATION_GLOBAL_LIMIT = envInt('REGISTRATION_GLOBAL_LIMIT_PER_HOUR', 500, 100_000)
+const REGISTRATION_GLOBAL_DAILY_LIMIT = envInt('REGISTRATION_GLOBAL_LIMIT_PER_DAY', 250, 100_000)
+const INSTALLATION_REGISTRY_MAX = envInt('INSTALLATION_REGISTRY_MAX', 10_000, 100_000)
+const INSTALLATION_INACTIVE_RETENTION_DAYS = envInt('INSTALLATION_INACTIVE_RETENTION_DAYS', 30, 365)
+const INSTALLATION_TOKEN_TTL_SECONDS = envInt('INSTALLATION_TOKEN_TTL_SECONDS', 15 * 60, 24 * 60 * 60)
+if (INSTALLATION_TOKEN_TTL_SECONDS < 5 * 60) {
+  throw new Error('INSTALLATION_TOKEN_TTL_SECONDS must be at least 300 seconds')
+}
+const REFRESH_LIMIT = envInt('REFRESH_LIMIT_PER_HOUR', 20, 1_000)
+const REFRESH_ATTEMPT_LIMIT = envInt('REFRESH_ATTEMPT_LIMIT_PER_HOUR', 40, 10_000)
 const API_LIMIT = envInt('API_LIMIT_PER_MINUTE', 120, 10_000)
 const EVENT_LIMIT = envInt('EVENT_LIMIT_PER_MINUTE', 10, 1_000)
 const AI_LIMIT = envInt('AI_LIMIT_PER_MINUTE', 30, 1_000)
 const AI_DAILY_LIMIT = envInt('AI_LIMIT_PER_DAY', 500, 100_000)
+const AI_GLOBAL_DAILY_LIMIT = envInt('AI_GLOBAL_LIMIT_PER_DAY', 25_000, 10_000_000)
 const SPEECH_LIMIT = envInt('SPEECH_LIMIT_PER_MINUTE', 60, 2_000)
 const SPEECH_DAILY_LIMIT = envInt('SPEECH_LIMIT_PER_DAY', 1_000, 100_000)
+const SPEECH_GLOBAL_DAILY_LIMIT = envInt('SPEECH_GLOBAL_LIMIT_PER_DAY', 50_000, 10_000_000)
 const IMAGE_LIMIT = envInt('IMAGE_LIMIT_PER_HOUR', 30, 2_000)
 const IMAGE_DAILY_LIMIT = envInt('IMAGE_LIMIT_PER_DAY', 100, 10_000)
+const IMAGE_GLOBAL_DAILY_LIMIT = envInt('IMAGE_GLOBAL_LIMIT_PER_DAY', 5_000, 1_000_000)
 const VIDEO_LIMIT = envInt('VIDEO_LIMIT_PER_HOUR', 8, 500)
 const VIDEO_DAILY_LIMIT = envInt('VIDEO_LIMIT_PER_DAY', 20, 2_000)
+const VIDEO_GLOBAL_DAILY_LIMIT = envInt('VIDEO_GLOBAL_LIMIT_PER_DAY', 500, 100_000)
 const IMPORT_LIMIT = envInt('IMPORT_LIMIT_PER_MINUTE', 6, 100)
 const IMPORT_DAILY_LIMIT = envInt('IMPORT_LIMIT_PER_DAY', 20, 1_000)
+const IMPORT_GLOBAL_DAILY_LIMIT = envInt('IMPORT_GLOBAL_LIMIT_PER_DAY', 1_000, 100_000)
 const IMPORT_DAILY_BYTES_MB = envInt('IMPORT_LIMIT_MIB_PER_DAY', 300, 30_000)
+const IMPORT_GLOBAL_DAILY_BYTES_MB = envInt('IMPORT_GLOBAL_LIMIT_MIB_PER_DAY', 10_000, 300_000)
 const IMPORT_CONCURRENCY = envInt('IMPORT_CONCURRENCY', 2, 20)
 const IMPORT_QUEUE_LIMIT = envInt('IMPORT_QUEUE_LIMIT', 2, 50)
 const LLM_RESPONSE_MAX_BYTES = envInt('LLM_RESPONSE_MAX_MIB', 8, 64) * 1024 * 1024
@@ -155,9 +175,9 @@ if (Boolean(TRACTION_INGEST_URL) !== Boolean(TRACTION_INGEST_TOKEN)) {
 if (PRODUCTION && TRACTION_INGEST_TOKEN && TRACTION_INGEST_TOKEN.length < 32) {
   throw new Error('TRACTION_INGEST_TOKEN must contain at least 32 characters in production')
 }
-const REGISTRATION_ACTIVATION_SECRET = String(process.env.REGISTRATION_ACTIVATION_SECRET || '').trim()
-if (PRODUCTION && REGISTRATION_ACTIVATION_SECRET.length < 32) {
-  throw new Error('REGISTRATION_ACTIVATION_SECRET must contain at least 32 characters in production')
+const INSTALLATION_OPERATOR_TOKEN = String(process.env.INSTALLATION_OPERATOR_TOKEN || '').trim()
+if (PRODUCTION && INSTALLATION_OPERATOR_TOKEN.length < 32) {
+  throw new Error('INSTALLATION_OPERATOR_TOKEN must contain at least 32 characters in production')
 }
 
 // ================= Токены (кэш ~30 мин) =================
@@ -483,22 +503,76 @@ app.use(
     },
     methods: ['GET', 'POST'],
     allowedHeaders: ['Authorization', 'Content-Type', 'X-Audio-Type'],
+    exposedHeaders: ['X-Narra-Auth-Error', 'RateLimit-Reset'],
     maxAge: 3600
   })
 )
 const tokenSecret = resolveTokenSecret()
-const tokenService = createTokenService(tokenSecret)
+const tokenService = createTokenService(tokenSecret, { ttlSeconds: INSTALLATION_TOKEN_TTL_SECONDS })
 const analyticsSecret = String(process.env.ANALYTICS_HMAC_SECRET || (!PRODUCTION ? tokenSecret : ''))
+const installationSecretPepper = String(
+  process.env.INSTALLATION_SECRET_PEPPER || (!PRODUCTION ? tokenSecret : '')
+)
 if (PRODUCTION && analyticsSecret.length < 32) throw new Error(
   'ANALYTICS_HMAC_SECRET must be a separate stable secret of at least 32 characters in production'
 )
+if (PRODUCTION && installationSecretPepper.length < 32) {
+  throw new Error('INSTALLATION_SECRET_PEPPER must contain at least 32 characters in production')
+}
 if (PRODUCTION && analyticsSecret === tokenSecret) {
   throw new Error('ANALYTICS_HMAC_SECRET must differ from GATEWAY_TOKEN_SECRET in production')
 }
+if (
+  PRODUCTION &&
+  new Set([
+    tokenSecret,
+    analyticsSecret,
+    installationSecretPepper,
+    INSTALLATION_OPERATOR_TOKEN
+  ]).size !== 4
+) {
+  throw new Error('Gateway, analytics, installation pepper and operator secrets must all differ')
+}
+const dataDir = process.env.DATA_DIR || (process.env.NODE_ENV === 'production'
+  ? '/data'
+  : new URL('./.data', import.meta.url).pathname)
+if (PRODUCTION) {
+  const railway = Boolean(process.env.RAILWAY_ENVIRONMENT_ID)
+  const railwayMount = String(process.env.RAILWAY_VOLUME_MOUNT_PATH || '').trim()
+  const declaredMount = railway
+    ? railwayMount
+    : String(process.env.PERSISTENT_DATA_MOUNT_PATH || '').trim()
+  if (railway && !railwayMount) {
+    throw new Error('Railway production requires an attached Volume with RAILWAY_VOLUME_MOUNT_PATH')
+  }
+  if (!declaredMount || path.resolve(declaredMount) !== path.resolve(dataDir)) {
+    throw new Error('Production DATA_DIR must exactly match the declared persistent Volume mount')
+  }
+  if (process.env.INSTALLATION_SINGLE_REPLICA_ACK !== 'true') {
+    throw new Error('INSTALLATION_SINGLE_REPLICA_ACK=true is required for the file-backed registry')
+  }
+  if (railway) {
+    const overlapSeconds = Number(process.env.RAILWAY_DEPLOYMENT_OVERLAP_SECONDS || 0)
+    const drainingSeconds = Number(process.env.RAILWAY_DEPLOYMENT_DRAINING_SECONDS || 0)
+    if (!Number.isInteger(overlapSeconds) || overlapSeconds !== 0) {
+      throw new Error('Railway deployment overlap must be exactly 0 seconds')
+    }
+    if (!Number.isInteger(drainingSeconds) || drainingSeconds < 30) {
+      throw new Error('Railway deployment draining must be at least 30 seconds')
+    }
+  }
+}
+const installationRegistry = createInstallationRegistry({
+  dataDir,
+  environment: ANALYTICS_ENV,
+  maxInstallations: INSTALLATION_REGISTRY_MAX,
+  registrationLimitPerHour: REGISTRATION_GLOBAL_LIMIT,
+  registrationLimitPerDay: REGISTRATION_GLOBAL_DAILY_LIMIT,
+  inactiveRetentionDays: INSTALLATION_INACTIVE_RETENTION_DAYS
+})
+await installationRegistry.start()
 const eventStore = createEventStore({
-  dataDir: process.env.DATA_DIR || (process.env.NODE_ENV === 'production'
-    ? '/data'
-    : new URL('./.data', import.meta.url).pathname),
+  dataDir,
   environment: ANALYTICS_ENV,
   tractionUrl: TRACTION_INGEST_URL,
   tractionToken: TRACTION_INGEST_TOKEN
@@ -531,6 +605,16 @@ const registrationLimit = createFixedWindowLimiter({
   limit: REGISTRATION_LIMIT,
   key: (req) => req.ip
 })
+const refreshAttemptLimit = createFixedWindowLimiter({
+  windowMs: 60 * 60 * 1000,
+  limit: REFRESH_ATTEMPT_LIMIT,
+  key: (req) => `${req.ip}:${req.body?.installation_id || ''}`
+})
+const refreshSuccessLimit = createFixedWindowLimiter({
+  windowMs: 60 * 60 * 1000,
+  limit: REFRESH_LIMIT,
+  key: (req) => req.body.installation_id
+})
 const apiLimit = createFixedWindowLimiter({
   windowMs: 60 * 1000,
   limit: API_LIMIT,
@@ -543,7 +627,12 @@ const aiLimit = createFixedWindowLimiter({
   limit: AI_LIMIT,
   key: installationKey
 })
-const aiDailyLimit = createFixedWindowLimiter({ windowMs: 24 * 60 * 60 * 1000, limit: AI_DAILY_LIMIT, key: installationKey })
+const aiDailyLimit = createPersistentBudgetMiddleware({
+  registry: installationRegistry,
+  metric: 'ai_requests',
+  perInstallationLimit: AI_DAILY_LIMIT,
+  globalLimit: AI_GLOBAL_DAILY_LIMIT
+})
 const imageLimit = createFixedWindowLimiter({
   windowMs: 60 * 60 * 1000,
   limit: IMAGE_LIMIT,
@@ -554,21 +643,42 @@ const videoLimit = createFixedWindowLimiter({
   limit: VIDEO_LIMIT,
   key: installationKey
 })
-const videoDailyLimit = createFixedWindowLimiter({ windowMs: 24 * 60 * 60 * 1000, limit: VIDEO_DAILY_LIMIT, key: installationKey })
+const videoDailyLimit = createPersistentBudgetMiddleware({
+  registry: installationRegistry,
+  metric: 'video_requests',
+  perInstallationLimit: VIDEO_DAILY_LIMIT,
+  globalLimit: VIDEO_GLOBAL_DAILY_LIMIT
+})
 const speechLimit = createFixedWindowLimiter({
   windowMs: 60 * 1000,
   limit: SPEECH_LIMIT,
   key: installationKey
 })
-const speechDailyLimit = createFixedWindowLimiter({ windowMs: 24 * 60 * 60 * 1000, limit: SPEECH_DAILY_LIMIT, key: installationKey })
-const imageDailyLimit = createFixedWindowLimiter({ windowMs: 24 * 60 * 60 * 1000, limit: IMAGE_DAILY_LIMIT, key: installationKey })
+const speechDailyLimit = createPersistentBudgetMiddleware({
+  registry: installationRegistry,
+  metric: 'speech_requests',
+  perInstallationLimit: SPEECH_DAILY_LIMIT,
+  globalLimit: SPEECH_GLOBAL_DAILY_LIMIT
+})
+const imageDailyLimit = createPersistentBudgetMiddleware({
+  registry: installationRegistry,
+  metric: 'image_requests',
+  perInstallationLimit: IMAGE_DAILY_LIMIT,
+  globalLimit: IMAGE_GLOBAL_DAILY_LIMIT
+})
 const importLimit = createFixedWindowLimiter({ windowMs: 60 * 1000, limit: IMPORT_LIMIT, key: installationKey })
-const importDailyLimit = createFixedWindowLimiter({ windowMs: 24 * 60 * 60 * 1000, limit: IMPORT_DAILY_LIMIT, key: installationKey })
-const importByteBudget = createFixedWindowByteBudget({
-  windowMs: 24 * 60 * 60 * 1000,
-  maxBytes: IMPORT_DAILY_BYTES_MB * 1024 * 1024,
-  reserveBytes: 30 * 1024 * 1024,
-  key: installationKey
+const importDailyLimit = createPersistentBudgetMiddleware({
+  registry: installationRegistry,
+  metric: 'import_requests',
+  perInstallationLimit: IMPORT_DAILY_LIMIT,
+  globalLimit: IMPORT_GLOBAL_DAILY_LIMIT
+})
+const importByteBudget = createPersistentBudgetMiddleware({
+  registry: installationRegistry,
+  metric: 'import_bytes',
+  amount: () => 30 * 1024 * 1024,
+  perInstallationLimit: IMPORT_DAILY_BYTES_MB * 1024 * 1024,
+  globalLimit: IMPORT_GLOBAL_DAILY_BYTES_MB * 1024 * 1024
 })
 
 app.get('/health', (_req, res) => {
@@ -588,6 +698,10 @@ app.get('/health', (_req, res) => {
     },
     llm_routes: llm.purposes,
     analytics_delivery: eventStore.status(),
+    installation_registry: {
+      storage_verified: installationRegistry.status().storage_verified,
+      capacity_remaining: installationRegistry.status().capacity_remaining
+    },
     concurrency: { llm: llmGate.status(), speech: speechGate.status(), image: imageGate.status(), import: importGate.status() }
   })
 })
@@ -618,36 +732,158 @@ app.get('/ready', (_req, res) => {
       ),
       sber_ca_verified: SBER_CA_VERIFIED
     },
-    llm_routes: llm.purposes
+    llm_routes: llm.purposes,
+    installation_registry: {
+      storage_verified: installationRegistry.status().storage_verified
+    }
   })
 })
 
-app.post('/v2/installations/register', registrationLimit, express.json({ limit: '16kb' }), (req, res) => {
+app.post('/v2/installations/register', registrationLimit, express.json({ limit: '16kb' }), async (req, res, next) => {
   const body = req.body || {}
   const keys = Object.keys(body)
-  if (keys.some((key) => !['installation_id', 'app_version', 'platform', 'arch', 'activation_token'].includes(key))) {
+  if (keys.some((key) => !['installation_id', 'installation_secret', 'app_version', 'platform', 'arch'].includes(key))) {
     return res.status(400).json({ error: 'Неизвестное поле регистрации', code: 'VALIDATION' })
-  }
-  if (REGISTRATION_ACTIVATION_SECRET) {
-    if (typeof body.activation_token !== 'string' || body.activation_token.length > 200) {
-      return res.status(403).json({ error: 'Активация Narra не подтверждена', code: 'AUTH' })
-    }
-    const expected = Buffer.from(REGISTRATION_ACTIVATION_SECRET)
-    const actual = Buffer.from(String(body.activation_token || ''))
-    if (expected.length !== actual.length || !timingSafeEqual(expected, actual)) {
-      return res.status(403).json({ error: 'Активация Narra не подтверждена', code: 'AUTH' })
-    }
   }
   if (!isInstallationId(body.installation_id)) {
     return res.status(400).json({ error: 'Некорректный installation_id', code: 'VALIDATION' })
+  }
+  const refreshSecretHash = hashInstallationSecret(body.installation_secret, installationSecretPepper)
+  if (!refreshSecretHash) {
+    return res.status(400).json({ error: 'Некорректный installation secret', code: 'VALIDATION' })
   }
   for (const key of ['app_version', 'platform', 'arch']) {
     if (body[key] !== undefined && (typeof body[key] !== 'string' || body[key].length > 80)) {
       return res.status(400).json({ error: `Некорректное поле ${key}`, code: 'VALIDATION' })
     }
   }
-  res.status(201).json({ token: tokenService.issue(body.installation_id), token_type: 'Bearer' })
+  try {
+    const registration = await installationRegistry.register({
+      installationId: body.installation_id,
+      refreshSecretHash,
+      appVersion: body.app_version,
+      platform: body.platform,
+      arch: body.arch
+    })
+    if (!registration.ok) {
+      if (registration.code === 'REVOKED') {
+        return res.status(403).json({ error: 'Эта установка отозвана', code: 'AUTH' })
+      }
+      if (registration.code === 'INVALID_PROOF') {
+        return res.status(403).json({ error: 'Installation proof отклонён', code: 'AUTH' })
+      }
+      if (registration.resetAt) {
+        res.setHeader('RateLimit-Reset', String(Math.ceil(registration.resetAt / 1000)))
+      }
+      return res.status(429).json({
+        error: registration.code === 'REGISTRY_FULL'
+          ? 'Лимит зарегистрированных установок исчерпан'
+          : 'Общий лимит регистраций исчерпан',
+        code: 'RATE'
+      })
+    }
+    return res.status(registration.created ? 201 : 200).json({
+      token: tokenService.issue(
+        body.installation_id,
+        registration.record.token_version
+      ),
+      token_type: 'Bearer',
+      expires_in: INSTALLATION_TOKEN_TTL_SECONDS
+    })
+  } catch (error) {
+    next(error)
+  }
 })
+
+app.post(
+  '/v2/installations/refresh',
+  express.json({ limit: '16kb' }),
+  refreshAttemptLimit,
+  async (req, res, next) => {
+    try {
+      const body = req.body || {}
+      if (
+        Object.keys(body).some((key) => !['installation_id', 'installation_secret'].includes(key)) ||
+        !isInstallationId(body.installation_id)
+      ) {
+        return res.status(400).json({ error: 'Некорректный refresh payload', code: 'VALIDATION' })
+      }
+      const refreshSecretHash = hashInstallationSecret(
+        body.installation_secret,
+        installationSecretPepper
+      )
+      if (!refreshSecretHash) {
+        return res.status(400).json({ error: 'Некорректный installation secret', code: 'VALIDATION' })
+      }
+      const refresh = await installationRegistry.refresh(body.installation_id, refreshSecretHash)
+      if (!refresh.ok) {
+        if (refresh.code === 'NOT_FOUND') {
+          res.setHeader('X-Narra-Auth-Error', 'installation_not_found')
+          return res.status(404).json({
+            error: 'Установка больше не зарегистрирована',
+            code: 'INSTALLATION_NOT_FOUND'
+          })
+        }
+        if (refresh.code === 'REVOKED') {
+          return res.status(403).json({ error: 'Установка отозвана', code: 'REVOKED' })
+        }
+        return res.status(403).json({ error: 'Installation proof отклонён', code: 'AUTH' })
+      }
+      return refreshSuccessLimit(req, res, () => {
+        res.json({
+          token: tokenService.issue(body.installation_id, refresh.record.token_version),
+          token_type: 'Bearer',
+          expires_in: INSTALLATION_TOKEN_TTL_SECONDS
+        })
+      })
+    } catch (error) {
+      next(error)
+    }
+  }
+)
+
+const operatorAuth = requireOperatorAuth(INSTALLATION_OPERATOR_TOKEN)
+app.get('/v2/admin/installations/:installationId', operatorAuth, (req, res) => {
+  if (!isInstallationId(req.params.installationId)) {
+    return res.status(400).json({ error: 'Некорректный installation_id', code: 'VALIDATION' })
+  }
+  const record = installationRegistry.get(req.params.installationId)
+  if (!record) return res.status(404).json({ error: 'Установка не найдена', code: 'NOT_FOUND' })
+  res.json({ installation_id: req.params.installationId, ...record })
+})
+app.post(
+  '/v2/admin/installations/:installationId/revoke',
+  operatorAuth,
+  express.json({ limit: '4kb' }),
+  async (req, res, next) => {
+    if (!isInstallationId(req.params.installationId)) {
+      return res.status(400).json({ error: 'Некорректный installation_id', code: 'VALIDATION' })
+    }
+    if (
+      !req.body ||
+      typeof req.body !== 'object' ||
+      Array.isArray(req.body) ||
+      Object.keys(req.body).some((key) => key !== 'reason') ||
+      (req.body.reason !== undefined && typeof req.body.reason !== 'string')
+    ) {
+      return res.status(400).json({ error: 'Некорректная причина отзыва', code: 'VALIDATION' })
+    }
+    try {
+      const record = await installationRegistry.revoke(
+        req.params.installationId,
+        req.body.reason
+      )
+      if (!record) return res.status(404).json({ error: 'Установка не найдена', code: 'NOT_FOUND' })
+      res.json({
+        installation_id: req.params.installationId,
+        status: record.status,
+        revoked_at: record.revoked_at
+      })
+    } catch (error) {
+      next(error)
+    }
+  }
+)
 
 // Public generic update feed. Integrity comes from electron-builder SHA-512
 // metadata plus the required Developer ID signature of the macOS app. Keeping
@@ -660,7 +896,7 @@ app.use('/v2/updates/files', express.static(new URL('./updates', import.meta.url
 }))
 app.use('/v2/updates/files', (_req, res) => res.status(404).json({ error: 'Update artifact not found' }))
 
-app.use('/v2', requireGatewayAuth(tokenService), apiLimit)
+app.use('/v2', requireGatewayAuth(tokenService, installationRegistry), apiLimit)
 // Parsers deliberately live after bearer auth/rate limiting. Large unauthenticated
 // bodies are rejected before Express buffers or parses them. Endpoint quotas
 // are attached directly before each parser so Express path normalization cannot
@@ -1096,7 +1332,7 @@ async function shutdown(signal) {
   force.unref?.()
   httpServer.close(async (error) => {
     try {
-      await eventStore.stop()
+      await Promise.all([eventStore.stop(), installationRegistry.stop()])
       if (error) throw error
       clearTimeout(force)
       process.exit(0)

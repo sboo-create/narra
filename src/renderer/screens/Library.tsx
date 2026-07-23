@@ -4,7 +4,7 @@ import { GeneratedImage } from '../components/GeneratedImage'
 import { coverKey } from '../lib/imageStyle'
 import { buildCharacters } from '../lib/importFlow'
 import { coverPrompt } from '../lib/passport'
-import type { BookContent } from '@shared/types'
+import { DEFAULT_NARRATOR_VOICE, type BookContent } from '@shared/types'
 
 type SortKey = 'title' | 'progress'
 
@@ -87,11 +87,25 @@ export function Library() {
     toast({ type: 'success', title: `«${meta.title}» загружена`, message: `${meta.chapters} глав · размечаю героев…` })
     const built = await buildCharacters(meta.title, meta.author, meta.excerpt)
     if (built.ok) {
-      await window.narra.saveBookCharacters(meta.id, built.characters)
-      toast({ type: 'success', title: `Готово: ${built.characters.map((c) => c.name).join(', ')}` })
+      const saved = await window.narra.saveBookCharacters(
+        meta.id,
+        DEFAULT_NARRATOR_VOICE,
+        built.characters
+      )
+      if (saved.ok) {
+        toast({ type: 'success', title: `Готово: ${built.characters.map((c) => c.name).join(', ')}` })
+      } else {
+        toast({ type: 'error', title: 'Герои не сохранились', message: saved.error })
+      }
     } else {
-      await window.narra.saveBookCharacters(meta.id, [])
-      toast({ type: 'error', title: 'Герои не разметились', message: `${built.error}. Книга добавлена без героев.` })
+      const saved = await window.narra.saveBookCharacters(meta.id, DEFAULT_NARRATOR_VOICE, [])
+      toast({
+        type: 'error',
+        title: saved.ok ? 'Герои не разметились' : 'Герои не сохранились',
+        message: saved.ok
+          ? `${built.error}. Книга добавлена без героев.`
+          : saved.error
+      })
     }
     await reloadBooks()
   }
