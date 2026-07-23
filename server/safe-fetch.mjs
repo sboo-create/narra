@@ -35,11 +35,15 @@ export async function assertSafeImportUrl(input, allowedHosts, lookupImpl = look
 
 export async function fetchWithRedirectPolicy(
   input,
-  { allowedHosts, headers, maxRedirects = 5, fetchImpl = fetch, lookupImpl = lookup }
+  { allowedHosts, headers, maxRedirects = 5, timeoutMs = 30_000, fetchImpl = fetch, lookupImpl = lookup }
 ) {
   let url = await assertSafeImportUrl(input, allowedHosts, lookupImpl)
   for (let redirect = 0; redirect <= maxRedirects; redirect++) {
-    const response = await fetchImpl(url, { headers, redirect: 'manual' })
+    const response = await fetchImpl(url, {
+      headers,
+      redirect: 'manual',
+      signal: AbortSignal.timeout(timeoutMs)
+    })
     if (![301, 302, 303, 307, 308].includes(response.status)) return response
     await response.body?.cancel().catch(() => {})
     const location = response.headers.get('location')

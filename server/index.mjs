@@ -26,6 +26,21 @@ import {
 // ================= Конфигурация =================
 const PORT = process.env.PORT || 8787
 const INSECURE = process.env.ALLOW_INSECURE_TLS === 'true'
+function envInt(name, fallback, max) {
+  const value = Number(process.env[name] || fallback)
+  if (!Number.isInteger(value) || value < 1 || value > max) {
+    throw new Error(`${name} must be an integer between 1 and ${max}`)
+  }
+  return value
+}
+const REGISTRATION_LIMIT = envInt('REGISTRATION_LIMIT_PER_HOUR', 10, 1_000)
+const API_LIMIT = envInt('API_LIMIT_PER_MINUTE', 120, 10_000)
+const AI_LIMIT = envInt('AI_LIMIT_PER_MINUTE', 30, 1_000)
+const SPEECH_LIMIT = envInt('SPEECH_LIMIT_PER_MINUTE', 60, 2_000)
+const IMAGE_LIMIT = envInt('IMAGE_LIMIT_PER_HOUR', 30, 2_000)
+const VIDEO_LIMIT = envInt('VIDEO_LIMIT_PER_HOUR', 8, 500)
+const KANDINSKY_QUEUE_LIMIT = envInt('KANDINSKY_QUEUE_LIMIT', 6, 100)
+const VIDEO_QUEUE_LIMIT = envInt('VIDEO_QUEUE_LIMIT', 4, 100)
 // Собирает Basic key из готового значения либо client id + secret.
 function buildBasicKey(direct, clientId, clientSecret) {
   const d = (direct || '').trim()
@@ -121,8 +136,13 @@ function resolutionFor(width, height) {
 
 // Kandinsky не любит параллельных запросов — сериализуем и ретраим лимит.
 let kandinskyChain = Promise.resolve()
+let kandinskyPending = 0
 function kandinskyQueued(prompt, width, height) {
-  const run = kandinskyChain.then(() => kandinskyWithRetry(prompt, width, height))
+  if (kandinskyPending >= KANDINSKY_QUEUE_LIMIT) throw httpErr('RATE', 'Kandinsky: очередь переполнена')
+  kandinskyPending += 1
+  const run = kandinskyChain
+    .then(() => kandinskyWithRetry(prompt, width, height))
+    .finally(() => { kandinskyPending -= 1 })
   kandinskyChain = run.catch(() => {})
   return run
 }
@@ -196,12 +216,17 @@ async function kandinskyGenerate(prompt, width = 768, height = 1024) {
 // ================= Видео (Kandinsky video API) =================
 // Видеосервер не терпит параллельных запросов (429 LIMIT_EXHAUSTED) — очередь + ретраи.
 let videoChain = Promise.resolve()
+let videoPending = 0
 function videoTask(taskType, params) {
-  const run = videoChain.then(() => videoTaskRetry(taskType, params))
+  if (videoPending >= VIDEO_QUEUE_LIMIT) throw httpErr('RATE', 'Видео: очередь переполнена')
+  videoPending += 1
+  const run = videoChain
+    .then(() => videoTaskRetry(taskType, params))
+    .finally(() => { videoPending -= 1 })
   videoChain = run.catch(() => {})
   return run
 }
-async function videoTaskRetry(taskType, params, attempts = 10) {
+async function videoTaskRetry(taskType, params, attempts = 3) {
   for (let i = 0; i < attempts; i++) {
     try {
       return await videoTaskRaw(taskType, params)
@@ -225,7 +250,8 @@ async function videoTaskRaw(taskType, params) {
   const create = await fetch(`${VIDEO_BASE_URL}/tasks/${taskType}`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${KANDINSKY_TOKEN}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ censor: false, params })
+    body: JSON.stringify({ censor: false, params }),
+    signal: AbortSignal.timeout(30_000)
   })
   if (create.status === 401 || create.status === 403) throw httpErr('AUTH', 'Видео: токен отклонён')
   if (create.status === 429) {
@@ -242,12 +268,18 @@ async function videoTaskRaw(taskType, params) {
   const deadline = Date.now() + 480_000
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 5000))
-    const st = await fetch(`${VIDEO_BASE_URL}/tasks/${task_id}`, { headers: { Authorization: `Bearer ${KANDINSKY_TOKEN}` } })
+    const st = await fetch(`${VIDEO_BASE_URL}/tasks/${task_id}`, {
+      headers: { Authorization: `Bearer ${KANDINSKY_TOKEN}` },
+      signal: AbortSignal.timeout(20_000)
+    })
     if (!st.ok) continue
     const j = await st.json()
     const status = String(j.status || '').toLowerCase()
     if (status === 'done') {
-      const r = await fetch(`${VIDEO_BASE_URL}/tasks/${task_id}/result`, { headers: { Authorization: `Bearer ${KANDINSKY_TOKEN}` } })
+      const r = await fetch(`${VIDEO_BASE_URL}/tasks/${task_id}/result`, {
+        headers: { Authorization: `Bearer ${KANDINSKY_TOKEN}` },
+        signal: AbortSignal.timeout(60_000)
+      })
       if (!r.ok) throw httpErr('UNKNOWN', 'Видео: результат недоступен')
       return Buffer.from(await r.arrayBuffer()).toString('base64')
     }
@@ -366,13 +398,34 @@ async function appendInternalEvent(req, eventName, properties, eventId = randomU
 }
 const registrationLimit = createFixedWindowLimiter({
   windowMs: 60 * 60 * 1000,
-  limit: Number(process.env.REGISTRATION_LIMIT_PER_HOUR || 10),
+  limit: REGISTRATION_LIMIT,
   key: (req) => req.ip
 })
 const apiLimit = createFixedWindowLimiter({
   windowMs: 60 * 1000,
-  limit: Number(process.env.API_LIMIT_PER_MINUTE || 120),
+  limit: API_LIMIT,
   key: (req) => req.installation?.sub || req.ip
+})
+const installationKey = (req) => req.installation?.sub || req.ip
+const aiLimit = createFixedWindowLimiter({
+  windowMs: 60 * 1000,
+  limit: AI_LIMIT,
+  key: installationKey
+})
+const imageLimit = createFixedWindowLimiter({
+  windowMs: 60 * 60 * 1000,
+  limit: IMAGE_LIMIT,
+  key: installationKey
+})
+const videoLimit = createFixedWindowLimiter({
+  windowMs: 60 * 60 * 1000,
+  limit: VIDEO_LIMIT,
+  key: installationKey
+})
+const speechLimit = createFixedWindowLimiter({
+  windowMs: 60 * 1000,
+  limit: SPEECH_LIMIT,
+  key: installationKey
 })
 
 app.get('/health', (_req, res) => {
@@ -428,7 +481,7 @@ app.post('/v2/events/batch', async (req, res) => {
 })
 
 // --- Чат: стриминг через LiteLLM-шлюз (OpenAI /v1/chat/completions) ---
-app.post('/v2/ai/chat/stream', async (req, res) => {
+app.post('/v2/ai/chat/stream', aiLimit, async (req, res) => {
   const startedAt = Date.now()
   let requestId
   try {
@@ -476,7 +529,7 @@ app.post('/v2/ai/chat/stream', async (req, res) => {
 })
 
 // --- Чат: обычный ответ (для разметки/саммари/эмоций) ---
-app.post('/v2/ai/chat/complete', async (req, res) => {
+app.post('/v2/ai/chat/complete', aiLimit, async (req, res) => {
   const startedAt = Date.now()
   let requestId
   try {
@@ -528,7 +581,7 @@ app.post('/v2/ai/chat/complete', async (req, res) => {
 })
 
 // --- SaluteSpeech: синтез сегмента ---
-app.post('/v2/speech/synthesize', async (req, res) => {
+app.post('/v2/speech/synthesize', speechLimit, async (req, res) => {
   try {
     const { text, ssml, voice } = parseSynthesisBody(req.body)
     const isSsml = !!ssml
@@ -566,7 +619,8 @@ async function gigachatImage(prompt) {
   const r = await fetch(`${LLM_BASE_URL}/v1/images/generations`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${LLM_API_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model: 'gigachat-image', prompt: String(prompt).slice(0, 1000) })
+    body: JSON.stringify({ model: 'gigachat-image', prompt: String(prompt).slice(0, 1000) }),
+    signal: AbortSignal.timeout(90_000)
   })
   if (!r.ok) {
     const t = await r.text().catch(() => '')
@@ -581,6 +635,7 @@ async function gigachatImage(prompt) {
 // --- SaluteSpeech: распознавание речи (ASR) ---
 app.post(
   '/v2/speech/recognize',
+  speechLimit,
   express.raw({ type: () => true, limit: '25mb' }),
   async (req, res) => {
     if (!SALUTE_KEY) return res.status(400).json({ error: 'ASR: ключ не задан', code: 'NO_KEY' })
@@ -674,7 +729,7 @@ app.get('/v2/updates/latest', (_req, res) => {
   }
 })
 
-app.post('/v2/media/images', async (req, res) => {
+app.post('/v2/media/images', imageLimit, async (req, res) => {
   try {
     const { prompt, width, height, engine } = parseImageBody(req.body)
     // Вертикальные изображения (обложки) и явный engine='kandinsky' (сцены) — Kandinsky:
@@ -708,7 +763,7 @@ app.post('/v2/media/images', async (req, res) => {
 })
 
 // --- GigaAvatar: портрет + аудио → говорящее видео ---
-app.post('/v2/media/avatar', async (req, res) => {
+app.post('/v2/media/avatar', videoLimit, async (req, res) => {
   try {
     const { image, audio, query } = parseAvatarBody(req.body)
     if (!KANDINSKY_TOKEN) return res.status(400).json({ error: 'Видео: токен не задан на сервере', code: 'NO_KEY' })
@@ -719,7 +774,7 @@ app.post('/v2/media/avatar', async (req, res) => {
 })
 
 // --- Idle-анимация портрета (image → короткое видео, без звука) ---
-app.post('/v2/media/portrait-animation', async (req, res) => {
+app.post('/v2/media/portrait-animation', videoLimit, async (req, res) => {
   try {
     const { image, query, quality } = parsePortraitBody(req.body)
     if (!KANDINSKY_TOKEN) return res.status(400).json({ error: 'Видео: токен не задан на сервере', code: 'NO_KEY' })

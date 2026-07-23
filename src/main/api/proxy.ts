@@ -17,16 +17,23 @@ async function gatewayToken(): Promise<string> {
   if (identity.token && identity.tokenProxyUrl === proxyUrl) return identity.token
   if (registration) return registration
   registration = (async () => {
-    const response = await fetch(`${proxyUrl}/v2/installations/register`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        installation_id: identity.installationId,
-        app_version: app.getVersion(),
-        platform: process.platform,
-        arch: process.arch
+    const { signal, done } = withTimeout(10_000)
+    let response: Response
+    try {
+      response = await fetch(`${proxyUrl}/v2/installations/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          installation_id: identity.installationId,
+          app_version: app.getVersion(),
+          platform: process.platform,
+          arch: process.arch
+        }),
+        signal
       })
-    })
+    } finally {
+      done()
+    }
     if (!response.ok) throw new Error(`Регистрация gateway: ${response.status}`)
     const payload = (await response.json()) as { token?: string }
     if (!payload.token) throw new Error('Gateway не вернул installation token')
