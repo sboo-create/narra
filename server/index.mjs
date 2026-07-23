@@ -320,13 +320,24 @@ app.get('/health', (_req, res) => {
 
 // --- Чат: стриминг через LiteLLM-шлюз (OpenAI /v1/chat/completions) ---
 app.post('/gigachat/chat', async (req, res) => {
+  track('llm-chat', req)
   const { messages, temperature = 0.8 } = req.body || {}
   if (!LLM_API_KEY) return res.status(400).json({ error: 'Не задан ключ LLM-шлюза (LLM_API_KEY)', code: 'NO_KEY' })
   try {
+    let sseTail = ''
+    const sniffUsage = (chunk) => {
+      // копим хвост потока и ищем "usage" в финальных чанках
+      sseTail = (sseTail + chunk).slice(-4000)
+      const m = sseTail.match(/"usage"\s*:\s*\{[^}]*"prompt_tokens"\s*:\s*(\d+)[^}]*"completion_tokens"\s*:\s*(\d+)/)
+      if (m) {
+        trackUsage({ prompt_tokens: Number(m[1]), completion_tokens: Number(m[2]) })
+        sseTail = ''
+      }
+    }
     const upstream = await fetch(`${LLM_BASE_URL}/v1/chat/completions`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${LLM_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: LLM_MODEL, messages, temperature, max_tokens: 1024, stream: true })
+      body: JSON.stringify({ model: LLM_MODEL, messages, temperature, max_tokens: 1024, stream: true, stream_options: { include_usage: true } })
     })
     if (!upstream.ok || !upstream.body) {
       const t = await upstream.text().catch(() => '')
@@ -347,6 +358,7 @@ app.post('/gigachat/chat', async (req, res) => {
 
 // --- Чат: обычный ответ (для разметки/саммари/эмоций) ---
 app.post('/gigachat/complete', async (req, res) => {
+  track('llm-complete', req)
   const { messages, temperature = 0.7 } = req.body || {}
   if (!LLM_API_KEY) return res.status(400).json({ error: 'Не задан ключ LLM-шлюза (LLM_API_KEY)', code: 'NO_KEY' })
   try {
@@ -362,6 +374,8 @@ app.post('/gigachat/complete', async (req, res) => {
       return res.status(502).json({ error: `LLM ${r.status}: ${t.slice(0, 180)}`, code: 'NETWORK' })
     }
     const j = await r.json()
+    trackUsage(j?.usage)
+    if (process.env.DEBUG_USAGE) console.log('[usage]', JSON.stringify(j?.usage))
     res.json({ text: j?.choices?.[0]?.message?.content ?? '' })
   } catch (e) {
     res.status(502).json({ error: String(e.message), code: 'NETWORK' })
@@ -370,6 +384,7 @@ app.post('/gigachat/complete', async (req, res) => {
 
 // --- SaluteSpeech: синтез сегмента ---
 app.post('/salutespeech/synthesize', async (req, res) => {
+  track('tts', req, { ttsChars: String((req.body || {}).text || '').length })
   const { text, ssml, voice = 'Nec' } = req.body || {}
   const isSsml = !!ssml
   const payload = isSsml ? ssml : text || ''
@@ -457,6 +472,79 @@ app.post(
 )
 
 // --- Генерация изображения: gigachat-image (осн.), Kandinsky (фолбэк) ---
+// --- Учёт использования: по дням — запросы, токены LLM, символы озвучки, уникальные IP (≈DAU) ---
+import { writeFileSync, readFileSync as rfs } from 'node:fs'
+const STATS_FILE = new URL(process.env.RAILWAY_VOLUME_MOUNT_PATH ? `${process.env.RAILWAY_VOLUME_MOUNT_PATH}/stats.json` : './stats.json', import.meta.url).pathname
+let STATS = {}
+try { STATS = JSON.parse(rfs(STATS_FILE, 'utf-8')) } catch { STATS = {} }
+let statsDirty = false
+setInterval(() => {
+  if (!statsDirty) return
+  statsDirty = false
+  try { writeFileSync(STATS_FILE, JSON.stringify(STATS)) } catch (e) { console.error('[stats] не сохранилось:', e.message) }
+}, 15000)
+
+function dayStats() {
+  const day = new Date().toISOString().slice(0, 10)
+  if (!STATS[day]) {
+    STATS[day] = { requests: 0, byService: {}, tokensIn: 0, tokensOut: 0, ttsChars: 0, ips: {} }
+  }
+  return STATS[day]
+}
+function track(service, req, extra = {}) {
+  const d = dayStats()
+  d.requests++
+  d.byService[service] = (d.byService[service] || 0) + 1
+  const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '?').split(',')[0].trim()
+  d.ips[ip] = (d.ips[ip] || 0) + 1
+  if (extra.tokensIn) d.tokensIn += extra.tokensIn
+  if (extra.tokensOut) d.tokensOut += extra.tokensOut
+  if (extra.ttsChars) d.ttsChars += extra.ttsChars
+  statsDirty = true
+}
+function trackUsage(usage) {
+  if (!usage) return
+  const d = dayStats()
+  d.tokensIn += usage.prompt_tokens || 0
+  d.tokensOut += usage.completion_tokens || 0
+  statsDirty = true
+}
+
+// сводка: GET /stats (текст) и /stats?format=json
+app.get('/stats', (_req, res) => {
+  const days = Object.keys(STATS).sort()
+  const rows = days.map((day) => {
+    const d = STATS[day]
+    return {
+      day,
+      requests: d.requests,
+      tokensIn: d.tokensIn,
+      tokensOut: d.tokensOut,
+      ttsChars: d.ttsChars,
+      dau: Object.keys(d.ips).length,
+      byService: d.byService
+    }
+  })
+  const total = rows.reduce(
+    (t, r) => ({
+      requests: t.requests + r.requests,
+      tokensIn: t.tokensIn + r.tokensIn,
+      tokensOut: t.tokensOut + r.tokensOut,
+      ttsChars: t.ttsChars + r.ttsChars
+    }),
+    { requests: 0, tokensIn: 0, tokensOut: 0, ttsChars: 0 }
+  )
+  const avgDau = rows.length ? Math.round((rows.reduce((n, r) => n + r.dau, 0) / rows.length) * 10) / 10 : 0
+  if (_req.query.format === 'json') return res.json({ days: rows, total, avgDau, sinceDays: rows.length })
+  const pad = (v, n) => String(v).padStart(n)
+  let out = 'Дата        Запросы   Tokens in   Tokens out   TTS симв.   DAU\n'
+  for (const r of rows) {
+    out += `${r.day}  ${pad(r.requests, 7)}  ${pad(r.tokensIn, 10)}  ${pad(r.tokensOut, 11)}  ${pad(r.ttsChars, 10)}  ${pad(r.dau, 4)}\n`
+  }
+  out += `ИТОГО за ${rows.length} дн.  ${pad(total.requests, 5)}  ${pad(total.tokensIn, 10)}  ${pad(total.tokensOut, 11)}  ${pad(total.ttsChars, 10)}  средн. DAU ${avgDau}\n`
+  res.type('text/plain').send(out)
+})
+
 // --- Автообновление: версия и ссылка на свежий dmg (лежит рядом в updates/) ---
 app.use('/updates', express.static(new URL('./updates', import.meta.url).pathname))
 // контент для команды (тексты, которые нельзя класть в публичный репозиторий);
@@ -520,6 +608,7 @@ app.get('/app/latest', (_req, res) => {
 })
 
 app.post('/kandinsky/generate', async (req, res) => {
+  track('image', req)
   const { prompt, width = 768, height = 1024, engine } = req.body || {}
   // Вертикальные изображения (обложки) и явный engine='kandinsky' (сцены) — Kandinsky:
   // он соблюдает состав кадра, одежду и размер. Портреты — gigachat-image: быстро.
@@ -554,6 +643,7 @@ app.post('/kandinsky/generate', async (req, res) => {
 
 // --- GigaAvatar: портрет + аудио → говорящее видео ---
 app.post('/avatar/generate', async (req, res) => {
+  track('avatar', req)
   const { image, audio, query } = req.body || {}
   if (!KANDINSKY_TOKEN) return res.status(400).json({ error: 'Видео: токен не задан на сервере', code: 'NO_KEY' })
   if (!image || !audio) return res.status(400).json({ error: 'Нужны image и audio (base64)', code: 'UNKNOWN' })
@@ -562,6 +652,7 @@ app.post('/avatar/generate', async (req, res) => {
 
 // --- Idle-анимация портрета (image → короткое видео, без звука) ---
 app.post('/animate/portrait', async (req, res) => {
+  track('video', req)
   const { image, query, quality } = req.body || {}
   if (!KANDINSKY_TOKEN) return res.status(400).json({ error: 'Видео: токен не задан на сервере', code: 'NO_KEY' })
   if (!image) return res.status(400).json({ error: 'Нужен image (base64)', code: 'UNKNOWN' })
