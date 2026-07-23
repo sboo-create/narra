@@ -26,12 +26,19 @@ STATS_PORT=9905
 STATS_ENVIRONMENT=production
 STATS_DB=/srv/stats/narra/data/events.db
 STATS_INGEST_TOKEN=<write-only random token, at least 32 characters>
+STATS_READ_USERNAME=<dashboard operator>
+STATS_READ_PASSWORD=<random password, at least 32 characters>
 STATS_COST_CURRENCY=USD
 ```
 
 On i167 the token belongs in root-owned `/etc/stats/narra.env` (`0600`), not
 in the repository or the systemd unit. The deploy script installs/refreshes
 the unit but preserves that environment file.
+
+Traction's reverse proxy must preserve the authenticated `Authorization`
+header or set the same app-level Basic credentials on the upstream request.
+Terminating proxy auth while stripping the header makes the backend correctly
+return `401`.
 
 The Railway gateway receives matching `TRACTION_INGEST_URL` and
 `TRACTION_INGEST_TOKEN`. There is intentionally no legacy import: Narra was
@@ -91,6 +98,48 @@ Staging uses a separate endpoint/database/token with
 `STATS_ENVIRONMENT=staging`. The gateway sends the matching environment in a
 server-controlled header; a mismatch is rejected before storage so staging
 cannot silently pollute production metrics.
+
+For the separate Railway staging service, first inspect `railway status --json`
+and confirm the Narra project, `stats-narra-staging` service and `staging`
+environment. Then deploy this directory with the target stated explicitly:
+
+```bash
+railway up stats --path-as-root \
+  --service stats-narra-staging \
+  --environment staging
+```
+
+Never rely on the directory's current Railway link: this monorepo also deploys
+the Narra gateway. `--path-as-root` makes `stats` the uploaded root, so
+`railway.json` pins the launcher and `/health` probe instead of letting
+Railpack guess an ASGI module name. If the service is later connected directly
+to GitHub, set its Config File Path to `/stats/railway.json` explicitly; Railway
+does not resolve that path relative to the service Root Directory.
+
+Use a dedicated Volume mounted at `/data` and set:
+
+```text
+STATS_HOST=0.0.0.0
+PORT=9905
+STATS_ENVIRONMENT=staging
+STATS_DB=/data/events.db
+STATS_INGEST_TOKEN=<staging-only random token, at least 32 characters>
+STATS_READ_USERNAME=<staging dashboard operator>
+STATS_READ_PASSWORD=<staging-only random password, at least 32 characters>
+STATS_COST_CURRENCY=USD
+STATS_ALLOW_UNAUTHENTICATED_INGEST=0
+```
+
+Railway may assign `PORT`; it takes precedence over `STATS_PORT`, which remains
+the fallback for non-Railway hosts. The public domain must route to the actual
+listen port. The staging token, database and Volume must never be shared with
+production.
+
+The app itself protects `/`, `/summary` and `/dashboard` with HTTP Basic Auth;
+this prevents the direct Railway domain from bypassing Traction's access
+control. `/health` stays public for Railway and `/events` keeps its independent
+write-only ingest token. Production Traction may terminate the same Basic Auth
+at its reverse proxy, but direct access to this service must remain protected.
 
 Current pre-release dashboard reads the bounded analytics history into memory
 for rolling retention. Before public/high-volume traffic, replace this with

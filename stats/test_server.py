@@ -1,14 +1,19 @@
+import base64
+import json
 import os
+from pathlib import Path
 import tempfile
 import time
 import unittest
 import uuid
+from unittest.mock import patch
 
 os.environ["STATS_DB"] = os.path.join(tempfile.mkdtemp(prefix="narra-stats-"), "events.db")
 os.environ["STATS_ALLOW_UNAUTHENTICATED_INGEST"] = "1"
 os.environ["STATS_ENVIRONMENT"] = "test"
 
 import server  # noqa: E402
+from starlette.requests import Request  # noqa: E402
 
 
 ACTOR_A = "a" * 64
@@ -27,11 +32,79 @@ def add(name, actor=ACTOR_A, session=None, properties=None, ts=None, event_id=No
         server._db.commit()
 
 
+def request_for(path, authorization=None):
+    headers = []
+    if authorization:
+        headers.append((b"authorization", authorization.encode()))
+    return Request({
+        "type": "http",
+        "http_version": "1.1",
+        "method": "GET",
+        "scheme": "http",
+        "path": path,
+        "raw_path": path.encode(),
+        "query_string": b"",
+        "headers": headers,
+        "client": ("127.0.0.1", 12345),
+        "server": ("testserver", 80),
+    })
+
+
 class NarraStatsTest(unittest.TestCase):
     def setUp(self):
         with server.DB_LOCK:
             server._db.execute("DELETE FROM events")
             server._db.commit()
+
+    def test_railway_config_pins_launcher_healthcheck_and_restart_policy(self):
+        config = json.loads((Path(__file__).with_name("railway.json")).read_text())
+        self.assertEqual(config["build"]["builder"], "RAILPACK")
+        self.assertEqual(config["deploy"]["startCommand"], "python server.py")
+        self.assertEqual(config["deploy"]["healthcheckPath"], "/health")
+        self.assertEqual(config["deploy"]["healthcheckTimeout"], 30)
+        self.assertEqual(config["deploy"]["restartPolicyType"], "ON_FAILURE")
+        self.assertEqual(config["deploy"]["restartPolicyMaxRetries"], 10)
+        readme = Path(__file__).with_name("README.md").read_text()
+        self.assertIn("railway up stats --path-as-root", readme)
+        self.assertIn("/stats/railway.json", readme)
+
+    def test_railway_port_takes_precedence_over_local_stats_port(self):
+        with patch.dict(os.environ, {"PORT": "43123", "STATS_PORT": "9905"}):
+            self.assertEqual(server._listen_port(), 43123)
+        with patch.dict(os.environ, {"STATS_PORT": "9905"}, clear=True):
+            self.assertEqual(server._listen_port(), 9905)
+
+    def test_analytics_reads_require_valid_basic_auth_when_configured(self):
+        encoded = base64.b64encode(b"narra-staging:correct-password").decode()
+        wrong = base64.b64encode(b"narra-staging:wrong-password").decode()
+        with patch.object(server, "READ_USERNAME", "narra-staging"), patch.object(
+            server, "READ_PASSWORD", "correct-password"
+        ):
+            self.assertFalse(server._read_authorized(""))
+            self.assertFalse(server._read_authorized("Bearer something"))
+            self.assertFalse(server._read_authorized("Basic malformed"))
+            self.assertFalse(server._read_authorized(f"Basic {wrong}"))
+            self.assertTrue(server._read_authorized(f"Basic {encoded}"))
+
+    def test_read_routes_enforce_basic_auth_while_health_stays_public(self):
+        encoded = base64.b64encode(b"narra-staging:correct-password").decode()
+        with patch.object(server, "READ_USERNAME", "narra-staging"), patch.object(
+            server, "READ_PASSWORD", "correct-password"
+        ):
+            self.assertEqual(server.dashboard(request_for("/")).status_code, 401)
+            self.assertEqual(
+                server.summary(request_for("/summary")).status_code, 401
+            )
+            self.assertEqual(
+                server.dashboard_data(request_for("/dashboard")).status_code, 401
+            )
+            self.assertEqual(
+                server.summary(
+                    request_for("/summary", f"Basic {encoded}")
+                ).status_code,
+                200,
+            )
+            self.assertEqual(server.health().status_code, 200)
 
     def test_canonical_six_count_value_not_app_open_and_dedupe_requests(self):
         session_one = str(uuid.uuid4())

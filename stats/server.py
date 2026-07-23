@@ -8,6 +8,7 @@ are rejected at ingestion.
 """
 from __future__ import annotations
 
+import base64
 import hmac
 import hashlib
 import json
@@ -24,13 +25,23 @@ from typing import Any
 
 import uvicorn
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 
 
 HERE = Path(__file__).resolve().parent
-PORT = int(os.environ.get("STATS_PORT", "9905"))
+HOST = os.environ.get("STATS_HOST", "127.0.0.1").strip()
+
+
+def _listen_port() -> int:
+    """Use Railway's assigned port, with STATS_PORT for non-Railway hosts."""
+    return int(os.environ.get("PORT", os.environ.get("STATS_PORT", "9905")))
+
+
+PORT = _listen_port()
 DB_PATH = Path(os.environ.get("STATS_DB", HERE / "data" / "events.db"))
 INGEST_TOKEN = os.environ.get("STATS_INGEST_TOKEN", "")
+READ_USERNAME = os.environ.get("STATS_READ_USERNAME", "").strip()
+READ_PASSWORD = os.environ.get("STATS_READ_PASSWORD", "")
 ALLOW_OPEN = os.environ.get("STATS_ALLOW_UNAUTHENTICATED_INGEST", "0") == "1"
 CONTRACT_TEST_MODE = os.environ.get("STATS_CONTRACT_TEST_MODE", "0") == "1"
 ENVIRONMENT = os.environ.get("STATS_ENVIRONMENT", "production").strip()
@@ -51,8 +62,18 @@ if CONTRACT_TEST_MODE and ENVIRONMENT != "test":
     raise RuntimeError("STATS_CONTRACT_TEST_MODE requires STATS_ENVIRONMENT=test")
 if not re.fullmatch(r"[A-Z]{3}", COST_CURRENCY):
     raise RuntimeError("STATS_COST_CURRENCY must be a three-letter currency code")
+if not HOST:
+    raise RuntimeError("STATS_HOST must not be empty")
+if not 1 <= PORT <= 65535:
+    raise RuntimeError("PORT/STATS_PORT must be between 1 and 65535")
 if not ALLOW_OPEN and not CONTRACT_TEST_MODE and len(INGEST_TOKEN) < 32:
     raise RuntimeError("STATS_INGEST_TOKEN must contain at least 32 characters")
+if bool(READ_USERNAME) != bool(READ_PASSWORD):
+    raise RuntimeError("STATS_READ_USERNAME and STATS_READ_PASSWORD must be configured together")
+if ENVIRONMENT in {"production", "staging"} and (
+    not READ_USERNAME or len(READ_PASSWORD) < 32
+):
+    raise RuntimeError("analytics reads require a username and a password of at least 32 characters")
 
 EVENT_NAMES = {
     "app_opened", "app_closed", "book_import_started", "book_import_completed",
@@ -180,6 +201,34 @@ RATE: dict[str, deque[float]] = defaultdict(deque)
 
 def _response(value: object, status: int = 200) -> JSONResponse:
     return JSONResponse(value, status_code=status, headers={"Cache-Control": "no-store"})
+
+
+def _read_authorized(header: str) -> bool:
+    if not READ_USERNAME and ENVIRONMENT in {"development", "test"}:
+        return True
+    if not READ_USERNAME or not header.startswith("Basic "):
+        return False
+    try:
+        decoded = base64.b64decode(header[6:], validate=True).decode("utf-8")
+    except (ValueError, UnicodeDecodeError):
+        return False
+    username, separator, password = decoded.partition(":")
+    return bool(separator) and hmac.compare_digest(
+        username.encode(), READ_USERNAME.encode()
+    ) and hmac.compare_digest(password.encode(), READ_PASSWORD.encode())
+
+
+def _read_auth_error(request: Request) -> JSONResponse | None:
+    if _read_authorized(request.headers.get("Authorization", "")):
+        return None
+    return JSONResponse(
+        {"error": "unauthorized"},
+        status_code=401,
+        headers={
+            "Cache-Control": "no-store",
+            "WWW-Authenticate": 'Basic realm="Narra analytics", charset="UTF-8"',
+        },
+    )
 
 
 def _percent(numerator: float, denominator: float) -> float:
@@ -859,9 +908,19 @@ def health() -> JSONResponse:
     with DB_LOCK:
         _db.execute("SELECT 1").fetchone()
     ingest_ready = bool(INGEST_TOKEN) or ALLOW_OPEN
+    reads_ready = bool(READ_USERNAME and READ_PASSWORD) or ENVIRONMENT in {
+        "development", "test"
+    }
+    ready = ingest_ready and reads_ready
     return _response(
-        {"ok": ingest_ready, "version": VERSION, "ingest_configured": ingest_ready, "environment": ENVIRONMENT},
-        200 if ingest_ready else 503,
+        {
+            "ok": ready,
+            "version": VERSION,
+            "ingest_configured": ingest_ready,
+            "read_auth_configured": reads_ready,
+            "environment": ENVIRONMENT,
+        },
+        200 if ready else 503,
     )
 
 
@@ -948,18 +1007,24 @@ async def ingest(request: Request) -> JSONResponse:
 
 
 @app.get("/summary")
-def summary(days: float = 1.0) -> JSONResponse:
+def summary(request: Request, days: float = 1.0) -> JSONResponse:
+    if error := _read_auth_error(request):
+        return error
     data = compute_dashboard(days)
     return _response({key: data[key] for key in ("updated_at", "window_days", "installs", "dau", "events", "errors", "overview", "metrics")})
 
 
 @app.get("/dashboard")
-def dashboard_data(days: float = 1.0) -> JSONResponse:
+def dashboard_data(request: Request, days: float = 1.0) -> JSONResponse:
+    if error := _read_auth_error(request):
+        return error
     return _response(compute_dashboard(days))
 
 
 @app.get("/")
-def dashboard() -> FileResponse:
+def dashboard(request: Request) -> Response:
+    if error := _read_auth_error(request):
+        return error
     return FileResponse(HERE / "index.html", headers={"Cache-Control": "no-store"})
 
 
@@ -969,4 +1034,4 @@ def logo() -> FileResponse:
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=PORT)
+    uvicorn.run(app, host=HOST, port=PORT)
