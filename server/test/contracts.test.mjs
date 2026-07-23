@@ -32,6 +32,14 @@ test('chat contract bounds payload and roles', () => {
     () => parseChatBody({ messages: [{ role: 'user', content: 'x'.repeat(60_001) }] }),
     /длиной/
   )
+  assert.throws(
+    () => parseChatBody({ messages: [{ role: 'user', content: 'hello' }], request_id: 'private-text' }),
+    /UUID v4/
+  )
+  assert.equal(
+    parseChatBody({ messages: [{ role: 'user', content: 'hello' }], request_id: '123e4567-e89b-42d3-a456-426614174001' }).requestId,
+    '123e4567-e89b-42d3-a456-426614174001'
+  )
 })
 
 test('media and speech contracts reject unknown or oversized inputs', () => {
@@ -50,6 +58,7 @@ test('analytics accepts only allowlisted events and properties', () => {
     eventId: '123e4567-e89b-42d3-a456-426614174000',
     name: 'app_opened',
     occurredAt: new Date().toISOString(),
+    sessionId: '123e4567-e89b-42d3-a456-426614174001',
     schemaVersion: 1,
     properties: { app_version: '0.7.7', arch: 'arm64' }
   }
@@ -62,4 +71,32 @@ test('analytics accepts only allowlisted events and properties', () => {
     () => parseEventBatch({ events: [{ ...event, name: 'button_clicked' }] }),
     /name/
   )
+  assert.throws(
+    () => parseEventBatch({ events: [{ ...event, name: 'ai_request_completed', properties: {} }] }),
+    /name/
+  )
+  assert.throws(
+    () => parseEventBatch({ events: [{ ...event, sessionId: { private: 'text' } }] }),
+    /sessionId/
+  )
+  assert.throws(
+    () => parseEventBatch({ events: [{ ...event, properties: { route: 'covert content' } }] }),
+    /не разрешено/
+  )
+  const offline = { ...event, eventId: '223e4567-e89b-42d3-a456-426614174000', occurredAt: new Date(Date.now() - 30 * 86400_000).toISOString() }
+  assert.equal(parseEventBatch({ events: [offline] })[0].event_id, offline.eventId)
+})
+
+test('analytics error codes are closed enums and cannot carry content', () => {
+  const event = {
+    eventId: '123e4567-e89b-42d3-a456-426614174099',
+    name: 'book_import_failed',
+    occurredAt: new Date().toISOString(),
+    sessionId: '123e4567-e89b-42d3-a456-426614174001',
+    schemaVersion: 1,
+    properties: { format: 'epub', source_class: 'file', error_code: 'private-text-fragment' }
+  }
+  assert.throws(() => parseEventBatch({ events: [event] }), /error_code/)
+  event.properties.error_code = 'PARSE'
+  assert.equal(parseEventBatch({ events: [event] })[0].properties.error_code, 'PARSE')
 })

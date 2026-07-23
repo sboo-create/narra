@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { requestChat, routeForPurpose } from '../providers.mjs'
+import { llmRouteReadiness, requestChat, routeForPurpose } from '../providers.mjs'
 
 test('provider route is selected only from server environment', () => {
   const route = routeForPurpose('summary', {
@@ -8,6 +8,17 @@ test('provider route is selected only from server environment', () => {
     LLM_FALLBACK_SUMMARY: 'giga'
   })
   assert.deepEqual(route, ['openrouter', 'giga'])
+})
+
+test('readiness requires a complete configured route for every purpose', () => {
+  const broken = llmRouteReadiness({ OPENROUTER_API_KEY: 'key', LLM_ROUTE_DEFAULT: 'openrouter' })
+  assert.equal(broken.ready, false)
+  assert.equal(broken.purposes.summary.ready, false)
+  const ready = llmRouteReadiness({
+    LLM_ROUTE_DEFAULT: 'giga', LLM_BASE_URL: 'https://giga.test',
+    LLM_API_KEY: 'key', LLM_MODEL: 'model'
+  })
+  assert.equal(ready.ready, true)
 })
 
 test('retryable primary failure falls back and keeps one request identity', async () => {
@@ -46,4 +57,25 @@ test('retryable primary failure falls back and keeps one request identity', asyn
     'https://giga.test/v1/chat/completions'
   ])
   assert.equal(calls.every((call) => call.body.provider === undefined), true)
+})
+
+test('provider-local auth failure falls back to the configured secondary', async () => {
+  let calls = 0
+  const result = await requestChat({
+    messages: [{ role: 'user', content: 'hello' }], purpose: 'summary', stream: false,
+    fetchImpl: async () => {
+      calls += 1
+      return calls === 1
+        ? new Response('expired key', { status: 401 })
+        : new Response('{"choices":[{"message":{"content":"ok"}}]}', { status: 200 })
+    },
+    env: {
+      LLM_ROUTE_SUMMARY: 'openrouter', LLM_FALLBACK_SUMMARY: 'giga',
+      OPENROUTER_API_KEY: 'expired', OPENROUTER_MODEL: 'or-model',
+      LLM_BASE_URL: 'https://giga.test', LLM_API_KEY: 'giga-key', LLM_MODEL: 'giga-model'
+    }
+  })
+  assert.equal(result.provider, 'giga')
+  assert.equal(calls, 2)
+  assert.deepEqual(result.attempts.map((attempt) => attempt.retry_index), [0, 1])
 })

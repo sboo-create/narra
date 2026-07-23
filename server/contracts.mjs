@@ -1,5 +1,6 @@
 const PURPOSES = new Set(['character_chat', 'structured_task', 'summary', 'scenario', 'memory'])
 const ROLES = new Set(['system', 'user', 'assistant'])
+const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 function fail(message) {
   const error = new Error(message)
@@ -50,6 +51,7 @@ export function parseChatBody(input, { stream = false } = {}) {
   const requestId = body.request_id === undefined
     ? undefined
     : string(body.request_id, 'request_id', { max: 80 })
+  if (requestId !== undefined && !UUID_V4.test(requestId)) fail('request_id: нужен UUID v4')
   return { messages, temperature, purpose, requestId }
 }
 

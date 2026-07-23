@@ -7,10 +7,12 @@ export const IPC = {
   getSettings: 'settings:get',
   setSettings: 'settings:set',
   trackEvent: 'telemetry:track',
+  touchTelemetrySession: 'telemetry:touchSession',
 
   // состояние (позиция чтения, история чатов, кэш и т.п.)
   getState: 'state:get',
   setState: 'state:set',
+  deleteAllLocalData: 'privacy:deleteAllLocalData',
 
   // проверка прокси
   testProxy: 'test:proxy',

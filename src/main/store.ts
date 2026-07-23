@@ -1,8 +1,9 @@
 import Store from 'electron-store'
 import { randomUUID } from 'node:crypto'
-import { safeStorage } from 'electron'
+import { app, safeStorage } from 'electron'
 import type { Settings } from '../shared/types'
 import { isEssentialAnalyticsEvent, type AnalyticsEvent } from '../shared/analytics'
+import { boundedTelemetryQueue } from './telemetry-queue'
 
 interface Schema {
   settings: Settings
@@ -13,12 +14,38 @@ interface Schema {
     tokenProxyUrl: string
   }
   telemetryQueue: AnalyticsEvent[]
+  telemetrySession: {
+    id: string
+    lastActivityAt: number
+  }
+  telemetryDeadLetters: Array<{
+    eventId: string
+    name: string
+    occurredAt: string
+    reason: string
+  }>
+  pendingUpdateVersion: string
 }
 
 // URL прокси по умолчанию: локальный сервер для разработки.
 // Для раздачи приложения замени на задеплоенный (Railway) URL — можно через
 // переменную сборки NARRA_PROXY_URL.
 const DEFAULT_PROXY = process.env.NARRA_PROXY_URL || 'http://localhost:8787'
+
+function normalizeProxyUrl(candidate: string): string {
+  const raw = candidate.trim().replace(/\/+$/, '')
+  const url = new URL(raw)
+  if (url.username || url.password || url.search || url.hash) throw new Error('Некорректный URL gateway')
+  if (app.isPackaged) {
+    const releaseOrigin = new URL(DEFAULT_PROXY).origin
+    const allowCustom = process.env.NARRA_ALLOW_CUSTOM_PROXY === 'true'
+    if (url.protocol !== 'https:') throw new Error('Release-сборка подключается только по HTTPS')
+    if (!allowCustom && url.origin !== releaseOrigin) throw new Error('Этот gateway не разрешён release-сборкой')
+  } else if (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname))) {
+    throw new Error('Разрешены HTTPS или локальный HTTP для разработки')
+  }
+  return raw
+}
 
 const defaults: Schema = {
   settings: {
@@ -31,27 +58,41 @@ const defaults: Schema = {
     token: '',
     tokenProxyUrl: ''
   },
-  telemetryQueue: []
+  telemetryQueue: [],
+  telemetrySession: {
+    id: '',
+    lastActivityAt: 0
+  },
+  telemetryDeadLetters: [],
+  pendingUpdateVersion: ''
 }
 
 const store = new Store<Schema>({ defaults, name: 'narra' })
+let memoryGatewayToken = ''
+let privacyResetActive = false
 
 export function getSettings(): Settings {
-  return { ...defaults.settings, ...(store.get('settings') as Partial<Settings>) }
+  const merged = { ...defaults.settings, ...(store.get('settings') as Partial<Settings>) }
+  try {
+    return { ...merged, proxyUrl: normalizeProxyUrl(merged.proxyUrl) }
+  } catch {
+    return { ...merged, proxyUrl: '' }
+  }
 }
 
 export function setSettings(next: Partial<Settings>): Settings {
+  if (privacyResetActive) return getSettings()
+  const proxyUrl = typeof next.proxyUrl === 'string' ? normalizeProxyUrl(next.proxyUrl) : undefined
   const merged = {
     ...getSettings(),
-    ...(typeof next.proxyUrl === 'string' ? { proxyUrl: next.proxyUrl.trim() } : {}),
+    ...(proxyUrl !== undefined ? { proxyUrl } : {}),
     ...(typeof next.extendedTelemetryEnabled === 'boolean'
       ? { extendedTelemetryEnabled: next.extendedTelemetryEnabled }
       : {})
   }
   store.set('settings', merged)
-  if (next.proxyUrl !== undefined && next.proxyUrl.trim() !== store.get('gateway.tokenProxyUrl')) {
-    store.set('gateway.token', '')
-    store.set('gateway.tokenProxyUrl', '')
+  if (proxyUrl !== undefined && proxyUrl !== store.get('gateway.tokenProxyUrl')) {
+    clearGatewayToken()
   }
   if (next.extendedTelemetryEnabled === false) {
     store.set(
@@ -69,7 +110,7 @@ export function getGatewayIdentity(): {
 } {
   const current = store.get('gateway')
   if (current?.installationId) {
-    return { ...current, token: revealGatewayToken(current.token) }
+    return { ...current, token: revealGatewayToken(current.token) || memoryGatewayToken }
   }
   const created = { ...current, installationId: randomUUID() }
   store.set('gateway', created)
@@ -77,7 +118,10 @@ export function getGatewayIdentity(): {
 }
 
 export function setGatewayToken(token: string, tokenProxyUrl: string): void {
-  store.set('gateway.token', protectGatewayToken(token))
+  if (privacyResetActive) return
+  const protectedToken = protectGatewayToken(token)
+  memoryGatewayToken = protectedToken ? '' : token
+  store.set('gateway.token', protectedToken)
   store.set('gateway.tokenProxyUrl', tokenProxyUrl)
 }
 
@@ -86,7 +130,9 @@ function protectGatewayToken(token: string): string {
   if (safeStorage.isEncryptionAvailable()) {
     return `safe:${safeStorage.encryptString(token).toString('base64')}`
   }
-  return `plain:${token}`
+  // Release credentials are never persisted in plaintext. If Keychain is
+  // temporarily unavailable the token remains process-local and is renewed.
+  return app.isPackaged ? '' : `plain:${token}`
 }
 
 function revealGatewayToken(stored: string): string {
@@ -102,16 +148,66 @@ function revealGatewayToken(stored: string): string {
 }
 
 export function clearGatewayToken(): void {
+  memoryGatewayToken = ''
   store.set('gateway.token', '')
   store.set('gateway.tokenProxyUrl', '')
 }
 
+export function resetAllPersistentState(): void {
+  const extendedTelemetryEnabled = getSettings().extendedTelemetryEnabled
+  memoryGatewayToken = ''
+  store.clear()
+  store.set({
+    ...defaults,
+    settings: { ...defaults.settings, extendedTelemetryEnabled }
+  })
+}
+
+export function beginPrivacyReset(): void {
+  privacyResetActive = true
+}
+
+export function setPendingUpdateVersion(version: string): void {
+  if (privacyResetActive) return
+  store.set('pendingUpdateVersion', /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version) ? version : '')
+}
+
+export function consumeInstalledUpdateVersion(currentVersion: string): string {
+  const pending = store.get('pendingUpdateVersion') || ''
+  if (pending && pending === currentVersion) {
+    store.set('pendingUpdateVersion', '')
+    return pending
+  }
+  return ''
+}
+
 export function getTelemetryQueue(): AnalyticsEvent[] {
-  return (store.get('telemetryQueue') || []).slice(0, 500)
+  return boundedTelemetryQueue(store.get('telemetryQueue') || [], isEssentialAnalyticsEvent)
 }
 
 export function setTelemetryQueue(events: AnalyticsEvent[]): void {
-  store.set('telemetryQueue', events.slice(-500))
+  if (privacyResetActive) return
+  store.set('telemetryQueue', boundedTelemetryQueue(events, isEssentialAnalyticsEvent))
+}
+
+export function getTelemetrySession(now = Date.now()): string {
+  const current = store.get('telemetrySession')
+  const expired = !current?.id || now - current.lastActivityAt > 30 * 60 * 1000
+  const id = expired ? randomUUID() : current.id
+  if (!privacyResetActive) store.set('telemetrySession', { id, lastActivityAt: now })
+  return id
+}
+
+export function quarantineTelemetry(events: AnalyticsEvent[], reason: string): void {
+  if (privacyResetActive) return
+  const existing = store.get('telemetryDeadLetters') || []
+  const next = events.map((event) => ({
+    eventId: event.eventId,
+    name: event.name,
+    occurredAt: event.occurredAt,
+    reason: reason.slice(0, 120)
+  }))
+  store.set('telemetryDeadLetters', [...existing, ...next].slice(-100))
 }
 
 export function getAppState(): Record<string, unknown> {
@@ -119,5 +215,6 @@ export function getAppState(): Record<string, unknown> {
 }
 
 export function setAppState(next: Record<string, unknown>): void {
+  if (privacyResetActive) return
   store.set('appState', next)
 }

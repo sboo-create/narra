@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto'
+import { withTimeout } from './concurrency.mjs'
 
 const RETRYABLE = new Set([408, 409, 429, 500, 502, 503, 504])
+const PURPOSES = ['character_chat', 'structured_task', 'summary', 'scenario', 'memory']
 
 function providerConfig(name, purpose, env) {
   if (name === 'openrouter') {
@@ -39,6 +41,26 @@ export function routeForPurpose(purpose, env = process.env) {
   return [primary, fallback].filter((value, index, all) => value && all.indexOf(value) === index)
 }
 
+export function llmRouteReadiness(env = process.env) {
+  const purposes = {}
+  let ready = true
+  for (const purpose of PURPOSES) {
+    try {
+      const route = routeForPurpose(purpose, env)
+      const configured = route.filter((provider) => {
+        const config = providerConfig(provider, purpose, env)
+        return Boolean(config.apiKey && config.baseUrl && config.model)
+      })
+      purposes[purpose] = { route, configured, ready: configured.length > 0 }
+      if (!configured.length) ready = false
+    } catch (error) {
+      purposes[purpose] = { route: [], configured: [], ready: false, error: String(error?.message || error) }
+      ready = false
+    }
+  }
+  return { ready, purposes }
+}
+
 export async function requestChat({
   messages,
   temperature,
@@ -47,18 +69,20 @@ export async function requestChat({
   requestId,
   env = process.env,
   fetchImpl = fetch,
-  onAttempt = async () => {}
+  onAttempt = async () => {},
+  signal
 }) {
   const id = requestId || randomUUID()
   const attempts = []
   let last
-  for (const providerName of routeForPurpose(purpose, env)) {
+  const route = routeForPurpose(purpose, env)
+  for (const [retryIndex, providerName] of route.entries()) {
     const config = providerConfig(providerName, purpose, env)
     const attemptId = randomUUID()
     const started = Date.now()
     if (!config.apiKey || !config.baseUrl || !config.model) {
       last = { status: 503, error: `${providerName}: provider is not configured`, code: 'NO_KEY' }
-      attempts.push({ attempt_id: attemptId, provider: providerName, model: config.model, status: 'not_configured' })
+      attempts.push({ attempt_id: attemptId, provider: providerName, model: config.model, status: 'not_configured', retry_index: retryIndex })
       await onAttempt(attempts.at(-1))
       continue
     }
@@ -77,7 +101,7 @@ export async function requestChat({
           max_tokens: stream ? 1024 : 6000,
           stream
         }),
-        signal: AbortSignal.timeout(stream ? 180_000 : 120_000)
+        signal: withTimeout(signal, stream ? 180_000 : 120_000)
       })
       const attempt = {
         attempt_id: attemptId,
@@ -86,6 +110,7 @@ export async function requestChat({
         status: response.ok ? 'completed' : 'failed',
         http_status: response.status,
         latency_ms: Date.now() - started
+        ,retry_index: retryIndex
       }
       attempts.push(attempt)
       console.info(JSON.stringify({ type: 'provider_attempt', request_id: id, purpose, ...attempt }))
@@ -97,7 +122,10 @@ export async function requestChat({
         error: `${providerName} ${response.status}: ${detail}`,
         code: response.status === 429 ? 'RATE' : response.status === 401 || response.status === 403 ? 'AUTH' : 'NETWORK'
       }
-      if (!RETRYABLE.has(response.status)) break
+      // Authentication and model availability failures belong to this provider;
+      // a configured fallback may still be healthy. Other non-retryable 4xx
+      // usually mean the shared request itself is invalid and must stop.
+      if (!RETRYABLE.has(response.status) && ![401, 403, 404].includes(response.status)) break
     } catch (error) {
       const attempt = {
         attempt_id: attemptId,
@@ -106,6 +134,7 @@ export async function requestChat({
         status: 'failed',
         error_code: error?.name === 'TimeoutError' ? 'TIMEOUT' : 'NETWORK',
         latency_ms: Date.now() - started
+        ,retry_index: retryIndex
       }
       attempts.push(attempt)
       console.info(JSON.stringify({ type: 'provider_attempt', request_id: id, purpose, ...attempt }))

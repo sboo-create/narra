@@ -203,12 +203,27 @@ function uid(): string {
 }
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null
+let pendingStateWrite: Promise<unknown> = Promise.resolve()
+let persistenceSuspended = false
 function persist(p: Persisted) {
+  if (persistenceSuspended) return
   if (saveTimer) clearTimeout(saveTimer)
   saveTimer = setTimeout(() => {
-    window.narra.setState(p as unknown as Record<string, unknown>)
+    saveTimer = null
+    if (persistenceSuspended) return
+    pendingStateWrite = window.narra
+      .setState(p as unknown as Record<string, unknown>)
+      .catch(() => undefined)
   }, 350)
 }
+
+export async function suspendStatePersistence(): Promise<void> {
+  persistenceSuspended = true
+  if (saveTimer) clearTimeout(saveTimer)
+  saveTimer = null
+  await pendingStateWrite.catch(() => undefined)
+}
+
 
 export const useStore = create<StoreState>((set, get) => ({
   ready: false,
@@ -422,7 +437,6 @@ export const useStore = create<StoreState>((set, get) => ({
     persist(p)
   },
   deleteBook: async (bookId) => {
-    const res = await window.narra.deleteBook(bookId)
     const st = get().persisted
     // подчищаем всё, что связано с книгой (прогресс, саммари, сценарии, закладки)
     const belongsToBook = (key: string) =>
@@ -456,10 +470,22 @@ export const useStore = create<StoreState>((set, get) => ({
       anchorLists: dropBook(st.anchorLists),
       // встроенную книгу удалить с диска нельзя — прячем её с полки
       hiddenBooks:
-        res.ok && res.data!.builtin ? [...new Set([...st.hiddenBooks, bookId])] : st.hiddenBooks
+        !bookId.startsWith('u-') ? [...new Set([...st.hiddenBooks, bookId])] : st.hiddenBooks
+    }
+    const res = await window.narra.deleteBook(bookId, p as unknown as Record<string, unknown>)
+    if (!res.ok) {
+      const message = res.error || 'Не удалось удалить локальные данные книги'
+      get().toast({ type: 'error', title: 'Книга не удалена', message })
+      throw new Error(message)
     }
     set({ persisted: p })
-    persist(p)
+    if (res.data?.cleanupPending) {
+      get().toast({
+        type: 'info',
+        title: 'Книга скрыта',
+        message: 'Остаток файла будет повторно удалён при следующем запуске.'
+      })
+    }
     await get().reloadBooks()
   },
 

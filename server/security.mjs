@@ -91,6 +91,38 @@ export function createFixedWindowLimiter({ windowMs, limit, key, now = () => Dat
   }
 }
 
+/**
+ * Conservatively reserves a fixed number of bytes for every accepted request.
+ * Failed/short requests still consume the reservation: this keeps the abuse
+ * ceiling deterministic and avoids an attacker winning quota back with aborts.
+ */
+export function createFixedWindowByteBudget({ windowMs, maxBytes, reserveBytes, key, now = () => Date.now() }) {
+  const buckets = new Map()
+  return (req, res, next) => {
+    const bucketKey = key(req)
+    const timestamp = now()
+    const current = buckets.get(bucketKey)
+    const bucket = !current || current.resetAt <= timestamp
+      ? { bytes: 0, resetAt: timestamp + windowMs }
+      : current
+    if (bucket.bytes + reserveBytes > maxBytes) {
+      res.setHeader('RateLimit-Byte-Limit', String(maxBytes))
+      res.setHeader('RateLimit-Byte-Remaining', String(Math.max(0, maxBytes - bucket.bytes)))
+      return res.status(429).json({ error: 'Дневной лимит загрузок исчерпан', code: 'RATE' })
+    }
+    bucket.bytes += reserveBytes
+    buckets.set(bucketKey, bucket)
+    res.setHeader('RateLimit-Byte-Limit', String(maxBytes))
+    res.setHeader('RateLimit-Byte-Remaining', String(Math.max(0, maxBytes - bucket.bytes)))
+    if (buckets.size > 10_000) {
+      for (const [candidate, value] of buckets) {
+        if (value.resetAt <= timestamp) buckets.delete(candidate)
+      }
+    }
+    next()
+  }
+}
+
 export function requireGatewayAuth(tokenService) {
   return (req, res, next) => {
     const identity = tokenService.verify(bearerToken(req.headers.authorization))

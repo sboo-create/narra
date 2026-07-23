@@ -24,10 +24,14 @@ const api = {
     name: AnalyticsEventName,
     properties: Record<string, SafeAnalyticsValue> = {}
   ): Promise<{ ok: boolean }> => ipcRenderer.invoke(IPC.trackEvent, name, properties),
+  touchTelemetrySession: (): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke(IPC.touchTelemetrySession),
 
   getState: (): Promise<Record<string, unknown>> => ipcRenderer.invoke(IPC.getState),
   setState: (next: Record<string, unknown>): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke(IPC.setState, next),
+  deleteAllLocalData: (): Promise<ApiResult<{ deleted: true }>> =>
+    ipcRenderer.invoke(IPC.deleteAllLocalData),
 
   testProxy: (): Promise<ApiResult<ProxyHealth>> => ipcRenderer.invoke(IPC.testProxy),
 
@@ -77,12 +81,12 @@ const api = {
     ipcRenderer.invoke(IPC.deleteCachedVideo, cacheKey),
   saveCachedVideo: (cacheKey: string, dataUrl: string): Promise<ApiResult<{ ok: true }>> =>
     ipcRenderer.invoke(IPC.saveCachedVideo, cacheKey, dataUrl),
-  checkAppUpdate: (): Promise<ApiResult<{ hasUpdate: boolean; version: string; url: string }>> =>
+  checkAppUpdate: (): Promise<ApiResult<{ hasUpdate: boolean; version: string }>> =>
     ipcRenderer.invoke(IPC.checkAppUpdate),
-  installUpdate: (url: string): Promise<ApiResult<{ started: true }>> =>
-    ipcRenderer.invoke(IPC.installUpdate, url),
-  deleteBook: (bookId: string): Promise<ApiResult<{ builtin: boolean }>> =>
-    ipcRenderer.invoke(IPC.deleteBook, bookId),
+  installUpdate: (): Promise<ApiResult<{ started: true; version: string }>> =>
+    ipcRenderer.invoke(IPC.installUpdate),
+  deleteBook: (bookId: string, nextState: Record<string, unknown>): Promise<ApiResult<{ builtin: boolean; cleanupPending?: boolean }>> =>
+    ipcRenderer.invoke(IPC.deleteBook, bookId, nextState),
   bookExcerpt: (bookId: string): Promise<ApiResult<{ title: string; author: string; excerpt: string }>> =>
     ipcRenderer.invoke(IPC.bookExcerpt, bookId),
   importBookFromUrl: (
@@ -97,7 +101,7 @@ const api = {
     ipcRenderer.invoke(IPC.saveBookCharacters, bookId, characters),
 
   chat: (messages: LlmMessage[], handlers: ChatHandlers, temperature?: number): (() => void) => {
-    const requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+    const requestId = crypto.randomUUID()
     const onChunk = (_e: unknown, p: { requestId: string; delta: string }) => {
       if (p.requestId === requestId) handlers.onChunk(p.delta)
     }

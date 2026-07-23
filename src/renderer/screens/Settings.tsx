@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useStore } from '../store/useStore'
+import { suspendStatePersistence, useStore } from '../store/useStore'
 
 export function Settings() {
   const settings = useStore((s) => s.settings)
@@ -14,12 +14,17 @@ export function Settings() {
     settings?.extendedTelemetryEnabled ?? true
   )
   const [saved, setSaved] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   async function save() {
-    await window.narra.setSettings({ proxyUrl: proxyUrl.trim(), extendedTelemetryEnabled })
-    await reloadSettings()
-    setSaved(true)
-    setTimeout(() => setSaved(false), 1600)
+    try {
+      await window.narra.setSettings({ proxyUrl: proxyUrl.trim(), extendedTelemetryEnabled })
+      await reloadSettings()
+      setSaved(true)
+      setTimeout(() => setSaved(false), 1600)
+    } catch (error) {
+      toast({ type: 'error', title: 'Адрес gateway не сохранён', message: (error as Error).message })
+    }
   }
 
   async function test() {
@@ -28,6 +33,19 @@ export function Settings() {
     const h = useStore.getState().health
     if (h) toast({ type: 'success', title: 'Сервер отвечает' })
     else toast({ type: 'error', title: 'Нет связи с сервером', message: 'Проверь URL и что прокси запущен.' })
+  }
+
+  async function deleteLocalData() {
+    if (!window.confirm('Удалить все локальные книги, заметки, чаты, медиа-кэши и служебную очередь Narra? Это действие нельзя отменить.')) return
+    setDeleting(true)
+    await suspendStatePersistence()
+    const result = await window.narra.deleteAllLocalData()
+    if (!result.ok) {
+      setDeleting(false)
+      toast({ type: 'error', title: 'Данные не удалены', message: result.error })
+      return
+    }
+    window.location.reload()
   }
 
   const services = [
@@ -82,7 +100,7 @@ export function Settings() {
         </div>
 
         <div className="settings-block__sub" style={{ marginTop: 14 }}>
-          Локально: запусти прокси <code>cd server &amp;&amp; npm run dev</code> и впиши ключи в{' '}
+          Локально: из корня репозитория запусти <code>npm run proxy</code> и впиши ключи в{' '}
           <code>server/.env</code>. Для раздачи приложения задеплой <code>server/</code> на Railway
           и укажи здесь его URL — тогда у всех получателей всё работает без ключей.
         </div>
@@ -108,6 +126,21 @@ export function Settings() {
           версия, квалифицированное чтение, AI-запросы без содержимого, ошибки и обновления.
           Никогда не отправляются тексты книг, названия и файлы, заметки, переписка, промпты,
           ответы, изображения, аудио или видео.
+        </div>
+      </div>
+
+      <div className="card settings-block">
+        <div className="settings-block__head">
+          <h3>Локальные данные</h3>
+        </div>
+        <div className="settings-block__sub">
+          Удаляет импортированные книги, прогресс, заметки, чаты и память персонажей,
+          изображения, аудио, видео, очередь статистики и локальный токен gateway.
+        </div>
+        <div className="settings-block__actions" style={{ marginTop: 14 }}>
+          <button className="btn btn--ghost btn--sm" onClick={deleteLocalData} disabled={deleting}>
+            {deleting ? 'Удаляем…' : 'Удалить все локальные данные'}
+          </button>
         </div>
       </div>
     </div>

@@ -127,10 +127,16 @@ export function installDevShim(): void {
     getSettings: async () => ({ proxyUrl: PROXY, extendedTelemetryEnabled: true }),
     setSettings: async () => ({ proxyUrl: PROXY, extendedTelemetryEnabled: true }),
     trackEvent: async () => ({ ok: true }),
+    touchTelemetrySession: async () => ({ ok: true }),
     getState: async () => lsGet(),
     setState: async (next: Record<string, unknown>) => {
       localStorage.setItem('narra-state', JSON.stringify(next))
       return { ok: true }
+    },
+    deleteAllLocalData: async () => {
+      localStorage.removeItem('narra-state')
+      mem.clear()
+      return { ok: true, data: { deleted: true as const } }
     },
     testProxy: async () => {
       try {
@@ -167,7 +173,7 @@ export function installDevShim(): void {
     deleteCachedImage: async () => ({ ok: true, data: { ok: true } }),
     deleteCachedVideo: async () => ({ ok: true, data: { ok: true } }),
     saveCachedVideo: async () => ({ ok: true, data: { ok: true } }),
-    checkAppUpdate: async () => ({ ok: true, data: { hasUpdate: false, version: '', url: '' } }),
+    checkAppUpdate: async () => ({ ok: true, data: { hasUpdate: false, version: '' } }),
     installUpdate: async () => ({ ok: false, error: 'только в приложении', code: 'UNKNOWN' }),
     deleteBook: async () => ({ ok: true, data: { builtin: true } }),
     bookExcerpt: async () => ({ ok: false, error: 'только в приложении', code: 'UNKNOWN' }),

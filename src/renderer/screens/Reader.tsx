@@ -111,13 +111,53 @@ export function Reader() {
   useEffect(() => {
     const bookKind = fanfic.id.startsWith('u-') ? 'imported' : 'builtin'
     void window.narra.trackEvent('book_opened', { book_kind: bookKind })
-    const qualified = setTimeout(() => {
-      void window.narra.trackEvent('reading_session_qualified', {
+    void window.narra.trackEvent('reading_session_started', { book_kind: bookKind })
+    let active = document.visibilityState === 'visible' && document.hasFocus()
+    let inactiveSince = active ? 0 : Date.now()
+    let activeSeconds = 0
+    let qualified = false
+    const emitEnded = () => {
+      const durationBucket = activeSeconds < 60 ? '<1m' : activeSeconds < 300 ? '1-4m' : activeSeconds < 900 ? '5-14m' : '15m+'
+      void window.narra.trackEvent('reading_session_ended', {
         book_kind: bookKind,
-        duration_seconds: 60
+        duration_seconds: activeSeconds,
+        duration_bucket: durationBucket
       })
-    }, 60_000)
-    return () => clearTimeout(qualified)
+    }
+    const updateActive = () => {
+      const nextActive = document.visibilityState === 'visible' && document.hasFocus()
+      if (nextActive && !active && inactiveSince && Date.now() - inactiveSince > 30 * 60 * 1000) {
+        emitEnded()
+        activeSeconds = 0
+        qualified = false
+        void window.narra.trackEvent('reading_session_started', { book_kind: bookKind })
+      }
+      if (!nextActive && active) inactiveSince = Date.now()
+      active = nextActive
+    }
+    const timer = setInterval(() => {
+      if (!active) return
+      activeSeconds += 1
+      if (activeSeconds % 60 === 0) void window.narra.touchTelemetrySession()
+      if (!qualified && activeSeconds >= 60) {
+        qualified = true
+        void window.narra.trackEvent('reading_session_qualified', {
+          book_kind: bookKind,
+          duration_seconds: 60,
+          duration_bucket: '1-4m'
+        })
+      }
+    }, 1_000)
+    document.addEventListener('visibilitychange', updateActive)
+    window.addEventListener('focus', updateActive)
+    window.addEventListener('blur', updateActive)
+    return () => {
+      clearInterval(timer)
+      document.removeEventListener('visibilitychange', updateActive)
+      window.removeEventListener('focus', updateActive)
+      window.removeEventListener('blur', updateActive)
+      emitEnded()
+    }
   }, [fanfic.id])
 
   const blocks = useMemo(() => parseBlocks(chapter?.text || ''), [chapter])

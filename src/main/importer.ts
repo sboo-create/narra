@@ -1,17 +1,47 @@
 import { app, dialog } from 'electron'
-import { promises as fs } from 'fs'
-import { execFile } from 'child_process'
-import { promisify } from 'util'
+import { createReadStream, createWriteStream, promises as fs } from 'fs'
 import os from 'os'
 import path from 'path'
+import { Worker } from 'node:worker_threads'
+import { Transform } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
+import unzipper from 'unzipper'
 import type { ApiResult, Chapter, Character, Fanfic } from '../shared/types'
+import { cleanupStagedDeleteTombstones, stagedDeleteFiles } from './staged-delete'
+import { setAppState } from './store'
+import { ArchiveByteQuota, validateArchiveEntry } from './archive-security'
+import { runLocalDataWrite } from './local-data-barrier'
 
-const execFileP = promisify(execFile)
 const MAX_ARCHIVE_FILES = 2_000
 const MAX_ARCHIVE_BYTES = 200 * 1024 * 1024
+const MAX_BOOK_FILE_BYTES = 40 * 1024 * 1024
 
 export function userBooksDir(): string {
   return path.join(app.getPath('userData'), 'books')
+}
+
+export function cleanupPendingBookDeletes(): Promise<number> {
+  return cleanupStagedDeleteTombstones(userBooksDir())
+}
+
+function validBookId(bookId: string): boolean {
+  return /^u-[a-zA-Z0-9_-]{1,116}$/.test(bookId)
+}
+
+function userBookPath(bookId: string, suffix = ''): string {
+  if (!validBookId(bookId)) throw new Error('Некорректный идентификатор книги')
+  const root = path.resolve(userBooksDir())
+  const candidate = path.resolve(root, `${bookId}${suffix}.json`)
+  if (!candidate.startsWith(`${root}${path.sep}`)) throw new Error('Путь книги вышел за каталог')
+  return candidate
+}
+
+async function readBoundedLocal(filePath: string): Promise<Buffer> {
+  const info = await fs.stat(filePath)
+  if (!info.isFile() || info.size > MAX_BOOK_FILE_BYTES) {
+    throw new Error('Файл книги превышает лимит 40 МБ')
+  }
+  return fs.readFile(filePath)
 }
 
 async function extractZipSafely(filePath: string, prefix: string): Promise<{
@@ -19,60 +49,68 @@ async function extractZipSafely(filePath: string, prefix: string): Promise<{
   files: string[]
   cleanup: () => Promise<void>
 }> {
-  const [{ stdout: namesOutput }, { stdout: sizesOutput }, archiveStat] = await Promise.all([
-    execFileP('/usr/bin/unzip', ['-Z1', filePath], { maxBuffer: 4 * 1024 * 1024 }),
-    execFileP('/usr/bin/unzip', ['-l', filePath], { maxBuffer: 4 * 1024 * 1024 }),
-    fs.stat(filePath)
-  ])
-  const names = namesOutput.split(/\r?\n/).filter(Boolean)
-  if (!names.length || names.length > MAX_ARCHIVE_FILES) throw new Error('Архив содержит слишком много файлов')
-  for (const name of names) {
-    const normalized = name.replace(/\\/g, '/')
-    const parts = normalized.split('/')
-    if (
-      normalized.startsWith('/') ||
-      normalized.length > 500 ||
-      parts.some((part) => part === '..' || part === '') && !normalized.endsWith('/')
-    ) {
-      throw new Error('Архив содержит небезопасный путь')
-    }
-  }
-  const totalMatch = sizesOutput.match(/^\s*(\d+)\s+\d+\s+files?\s*$/m)
-  if (!totalMatch) throw new Error('Не удалось проверить размер архива')
-  const unpackedBytes = Number(totalMatch[1])
+  const archiveStat = await fs.stat(filePath)
+  if (!archiveStat.isFile() || archiveStat.size > MAX_BOOK_FILE_BYTES) throw new Error('Архив превышает лимит 40 МБ')
   const ratioLimit = Math.max(20 * 1024 * 1024, archiveStat.size * 100)
-  if (unpackedBytes > MAX_ARCHIVE_BYTES || unpackedBytes > ratioLimit) {
-    throw new Error('Архив слишком большой или имеет опасную степень сжатия')
-  }
-
   const directory = await fs.mkdtemp(path.join(os.tmpdir(), prefix))
   const cleanup = () => fs.rm(directory, { recursive: true, force: true })
   try {
-    await execFileP('/usr/bin/unzip', ['-qq', '-n', filePath, '-d', directory], {
-      maxBuffer: 4 * 1024 * 1024
-    })
     const files: string[] = []
-    let actualBytes = 0
-    const visit = async (current: string): Promise<void> => {
-      for (const entry of await fs.readdir(current, { withFileTypes: true })) {
-        const candidate = path.join(current, entry.name)
-        const stat = await fs.lstat(candidate)
-        if (stat.isSymbolicLink()) throw new Error('Архив содержит символическую ссылку')
-        const real = await fs.realpath(candidate)
-        if (real !== directory && !real.startsWith(`${directory}${path.sep}`)) {
+    const byteQuota = new ArchiveByteQuota(MAX_ARCHIVE_BYTES, ratioLimit)
+    let entries = 0
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(new Error('Таймаут распаковки архива')), 60_000)
+    try {
+      const archive = createReadStream(filePath).pipe(unzipper.Parse({ forceStream: true }))
+      controller.signal.addEventListener('abort', () => archive.destroy(controller.signal.reason), { once: true })
+      for await (const entry of archive) {
+        entries += 1
+        let normalized
+        try {
+          normalized = validateArchiveEntry(
+            entry.path,
+            entry.vars?.externalFileAttributes,
+            entries,
+            MAX_ARCHIVE_FILES
+          )
+        } catch (error) {
+          entry.autodrain()
+          throw error
+        }
+        const candidate = path.resolve(directory, normalized)
+        if (candidate !== directory && !candidate.startsWith(`${directory}${path.sep}`)) {
+          entry.autodrain()
           throw new Error('Файл архива вышел за временный каталог')
         }
-        if (stat.isDirectory()) await visit(candidate)
-        else if (stat.isFile()) {
-          actualBytes += stat.size
-          if (files.length >= MAX_ARCHIVE_FILES || actualBytes > MAX_ARCHIVE_BYTES) {
-            throw new Error('Распакованный архив превышает лимит')
-          }
-          files.push(candidate)
+        if (entry.type === 'Directory') {
+          await fs.mkdir(candidate, { recursive: true, mode: 0o700 })
+          entry.autodrain()
+          continue
         }
+        if (entry.type !== 'File') {
+          entry.autodrain()
+          throw new Error('Архив содержит неподдерживаемый тип записи')
+        }
+        await fs.mkdir(path.dirname(candidate), { recursive: true, mode: 0o700 })
+        const quota = new Transform({
+          transform(chunk, _encoding, callback) {
+            try {
+              byteQuota.add(chunk.length)
+              callback(null, chunk)
+            } catch (error) {
+              callback(error as Error)
+            }
+          }
+        })
+        await pipeline(entry, quota, createWriteStream(candidate, { flags: 'wx', mode: 0o600 }), {
+          signal: controller.signal
+        })
+        files.push(candidate)
       }
+    } finally {
+      clearTimeout(timeout)
     }
-    await visit(directory)
+    if (!files.length) throw new Error('Архив не содержит файлов')
     return { directory, files, cleanup }
   } catch (error) {
     await cleanup()
@@ -274,12 +312,38 @@ async function parseEpub(filePath: string): Promise<{ title: string; author: str
 
 // ---------- PDF ----------
 async function parsePdf(filePath: string): Promise<{ title: string; author: string; chapters: Chapter[] }> {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const pdfParse = require('pdf-parse') as (b: Buffer) => Promise<{ text: string; info?: { Title?: string; Author?: string } }>
-  const data = await pdfParse(await fs.readFile(filePath))
+  const bytes = await readBoundedLocal(filePath)
+  const data = await new Promise<{ text: string; title: string; author: string }>((resolve, reject) => {
+    const worker = new Worker(path.join(__dirname, 'pdf-worker.js'), {
+      resourceLimits: { maxOldGenerationSizeMb: 256, stackSizeMb: 4 }
+    })
+    let settled = false
+    const finish = (error?: Error, value?: { text: string; title: string; author: string }) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      void worker.terminate()
+      if (error) reject(error)
+      else resolve(value!)
+    }
+    const timer = setTimeout(() => finish(new Error('PDF parsing timed out')), 20_000)
+    worker.once('error', () => finish(new Error('PDF worker failed')))
+    worker.once('exit', (code) => {
+      if (!settled && code !== 0) finish(new Error('PDF worker exited unexpectedly'))
+    })
+    worker.once('message', (result: unknown) => {
+      if (!result || typeof result !== 'object') return finish(new Error('PDF worker returned invalid data'))
+      const parsed = result as { ok?: boolean; text?: unknown; title?: unknown; author?: unknown; error?: unknown }
+      if (!parsed.ok || typeof parsed.text !== 'string' || typeof parsed.title !== 'string' || typeof parsed.author !== 'string') {
+        return finish(new Error(typeof parsed.error === 'string' ? parsed.error : 'PDF worker rejected the file'))
+      }
+      finish(undefined, { text: parsed.text, title: parsed.title, author: parsed.author })
+    })
+    worker.postMessage({ bytes })
+  })
   const base = path.basename(filePath).replace(/\.pdf$/i, '')
-  const parsed = parseTxt(data.text || '', data.info?.Title || base)
-  if (data.info?.Author) parsed.author = String(data.info.Author)
+  const parsed = parseTxt(data.text, data.title || base)
+  if (data.author) parsed.author = data.author
   return parsed
 }
 
@@ -353,16 +417,9 @@ function buildExcerpt(chapters: Chapter[], description?: string): string {
 // ---------- импорт по ссылке (AO3 / Фикбук) ----------
 import { deleteBookCache, gatewayFetch } from './api/proxy'
 
-const BROWSER_HEADERS = {
-  'User-Agent':
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
-  Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,application/epub+zip,*/*;q=0.8',
-  'Accept-Language': 'ru-RU,ru;q=0.9,en;q=0.8'
-}
-
 /**
- * Тянем страницу через прокси, а если тот упёрся в антифлуд — пробуем напрямую
- * с компьютера пользователя (у него другой IP, часто это спасает) и наоборот.
+ * Тянем страницу только через gateway: там единая redirect/DNS/byte policy.
+ * Прямой fallback из Electron обходил бы эту защиту и мог съесть память main.
  */
 async function fetchViaProxy(target: string): Promise<Buffer> {
   let proxyErr = ''
@@ -376,12 +433,6 @@ async function fetchViaProxy(target: string): Promise<Buffer> {
     }
   } catch (e) {
     proxyErr = (e as Error).message
-  }
-  try {
-    const direct = await fetch(target, { headers: BROWSER_HEADERS, redirect: 'follow' })
-    if (direct.ok) return Buffer.from(await direct.arrayBuffer())
-  } catch {
-    /* прямой доступ тоже не вышел (например, сайт заблокирован) */
   }
   throw new Error(proxyErr || 'загрузка не удалась')
 }
@@ -472,11 +523,19 @@ async function importFromFicbook(
   return { title, author, chapters, description, pairing, tags }
 }
 
-export async function importBookFromUrl(url: string): Promise<ApiResult<ImportedBookMeta>> {
+async function importBookFromUrlInternal(url: string): Promise<ApiResult<ImportedBookMeta>> {
   try {
     const clean = url.trim()
-    const ao3 = clean.match(/archiveofourown\.org\/works\/(\d+)/)
-    const fb = clean.match(/ficbook\.net\/readfic\/\d+/)
+    const parsedUrl = new URL(clean)
+    if (parsedUrl.protocol !== 'https:' || (parsedUrl.port && parsedUrl.port !== '443') || parsedUrl.username || parsedUrl.password) {
+      throw new Error('Ссылка должна использовать HTTPS без логина и нестандартного порта')
+    }
+    const ao3 = ['archiveofourown.org', 'www.archiveofourown.org'].includes(parsedUrl.hostname)
+      ? parsedUrl.pathname.match(/^\/works\/(\d+)(?:\/|$)/)
+      : null
+    const fb = ['ficbook.net', 'www.ficbook.net'].includes(parsedUrl.hostname)
+      ? parsedUrl.pathname.match(/^\/readfic\/[0-9a-zA-Z-]+(?:\/|$)/)
+      : null
     if (!ao3 && !fb) {
       return { ok: false, error: 'Поддерживаются ссылки AO3 (archiveofourown.org/works/…) и Фикбука (ficbook.net/readfic/…)', code: 'PARSE' }
     }
@@ -502,8 +561,10 @@ export async function importBookFromUrl(url: string): Promise<ApiResult<Imported
       coverPrompt: `обложка книги «${parsed.title}» (${parsed.author}), атмосферная, по духу произведения`,
       chapters: parsed.chapters
     }
-    await fs.mkdir(userBooksDir(), { recursive: true })
-    await fs.writeFile(path.join(userBooksDir(), `${id}.json`), JSON.stringify(book), 'utf8')
+    await runLocalDataWrite(async () => {
+      await fs.mkdir(userBooksDir(), { recursive: true })
+      await fs.writeFile(path.join(userBooksDir(), `${id}.json`), JSON.stringify(book), 'utf8')
+    })
     const excerpt = buildExcerpt(parsed.chapters, book.description)
     return { ok: true, data: { id, title: parsed.title, author: parsed.author, chapters: parsed.chapters.length, words, excerpt } }
   } catch (e) {
@@ -521,7 +582,7 @@ export interface ImportedBookMeta {
   excerpt: string // первые главы для авторазметки персонажей
 }
 
-export async function importBook(): Promise<ApiResult<ImportedBookMeta>> {
+async function importBookInternal(): Promise<ApiResult<ImportedBookMeta>> {
   const pick = await dialog.showOpenDialog({
     title: 'Выбери книгу',
     filters: [{ name: 'Книги', extensions: ['fb2', 'txt', 'epub', 'pdf', 'zip'] }],
@@ -550,7 +611,7 @@ export async function importBook(): Promise<ApiResult<ImportedBookMeta>> {
     if (low.endsWith('.epub')) parsed = await parseEpub(filePath)
     else if (low.endsWith('.pdf')) parsed = await parsePdf(filePath)
     else {
-      const text = decode(await fs.readFile(filePath))
+      const text = decode(await readBoundedLocal(filePath))
       const base = path.basename(filePath).replace(/\.(fb2|txt)$/i, '')
       parsed = low.endsWith('.fb2') ? parseFb2(text) : parseTxt(text, base)
     }
@@ -569,8 +630,10 @@ export async function importBook(): Promise<ApiResult<ImportedBookMeta>> {
       coverPrompt: `обложка книги «${parsed.title}» (${parsed.author}), атмосферная, по духу произведения`,
       chapters: parsed.chapters
     }
-    await fs.mkdir(userBooksDir(), { recursive: true })
-    await fs.writeFile(path.join(userBooksDir(), `${id}.json`), JSON.stringify(book), 'utf8')
+    await runLocalDataWrite(async () => {
+      await fs.mkdir(userBooksDir(), { recursive: true })
+      await fs.writeFile(path.join(userBooksDir(), `${id}.json`), JSON.stringify(book), 'utf8')
+    })
 
     const excerpt = buildExcerpt(parsed.chapters)
     return { ok: true, data: { id, title: parsed.title, author: parsed.author, chapters: parsed.chapters.length, words, excerpt } }
@@ -581,10 +644,20 @@ export async function importBook(): Promise<ApiResult<ImportedBookMeta>> {
   }
 }
 
+export function importBookFromUrl(url: string): Promise<ApiResult<ImportedBookMeta>> {
+  return runLocalDataWrite(() => importBookFromUrlInternal(url))
+}
+
+export function importBook(): Promise<ApiResult<ImportedBookMeta>> {
+  // The full parse task is tracked, not only the final userData write. A
+  // delete-all waits through archive/PDF finally-cleanup before relaunch.
+  return runLocalDataWrite(importBookInternal)
+}
+
 /** Выборка текста уже импортированной книги — для повторной разметки героев. */
 export async function bookExcerpt(bookId: string): Promise<ApiResult<{ title: string; author: string; excerpt: string }>> {
   try {
-    const raw = await fs.readFile(path.join(userBooksDir(), `${bookId}.json`), 'utf8')
+    const raw = await fs.readFile(userBookPath(bookId), 'utf8')
     const book = JSON.parse(raw) as Fanfic
     return { ok: true, data: { title: book.title, author: book.author, excerpt: buildExcerpt(book.chapters, book.description) } }
   } catch (e) {
@@ -593,27 +666,31 @@ export async function bookExcerpt(bookId: string): Promise<ApiResult<{ title: st
 }
 
 /** Удалить книгу пользователя с диска. Встроенные книги удалить нельзя — их прячет renderer. */
-export async function deleteBook(bookId: string): Promise<ApiResult<{ builtin: boolean }>> {
+export async function deleteBook(
+  bookId: string,
+  nextState: Record<string, unknown>
+): Promise<ApiResult<{ builtin: boolean; cleanupPending?: boolean }>> {
   try {
     if (!/^[a-zA-Z0-9_-]{1,120}$/.test(bookId)) {
       return { ok: false, error: 'Некорректный идентификатор книги', code: 'UNKNOWN' }
     }
-    const base = userBooksDir()
-    const main = path.join(base, `${bookId}.json`)
-    let existed = false
-    try {
-      await fs.unlink(main)
-      existed = true
-    } catch {
-      /* не пользовательская книга */
+    if (!validBookId(bookId)) {
+      await deleteBookCache(bookId)
+      setAppState(nextState)
+      return { ok: true, data: { builtin: true } }
     }
-    try {
-      await fs.unlink(path.join(base, `${bookId}-characters.json`))
-    } catch {
-      /* героев могло не быть */
+    const originals = [userBookPath(bookId), userBookPath(bookId, '-characters')]
+    // Stage files first. If cache cleanup fails, the helper restores them before
+    // the renderer receives an honest failure result and keeps its local state.
+    const deleted = await runLocalDataWrite(() => stagedDeleteFiles(
+      originals,
+      () => deleteBookCache(bookId),
+      { commit: () => setAppState(nextState) }
+    ))
+    return {
+      ok: true,
+      data: { builtin: !deleted.has(originals[0]), cleanupPending: deleted.cleanupPending }
     }
-    await deleteBookCache(bookId)
-    return { ok: true, data: { builtin: !existed } }
   } catch (e) {
     return { ok: false, error: (e as Error).message, code: 'UNKNOWN' }
   }
@@ -622,7 +699,20 @@ export async function deleteBook(bookId: string): Promise<ApiResult<{ builtin: b
 /** Сохранить персонажей импортированной книги; unlockChapter считается по тексту. */
 export async function saveBookCharacters(bookId: string, characters: Character[]): Promise<ApiResult<{ ok: true }>> {
   try {
-    const bookRaw = await fs.readFile(path.join(userBooksDir(), `${bookId}.json`), 'utf8')
+    if (!Array.isArray(characters) || characters.length > 100) throw new Error('Слишком много персонажей')
+    const serialized = JSON.stringify(characters)
+    if (Buffer.byteLength(serialized, 'utf8') > 512 * 1024) throw new Error('Описание персонажей слишком большое')
+    for (const character of characters) {
+      if (!character || typeof character !== 'object' || !/^[a-zA-Z0-9_-]{1,120}$/.test(character.id)) {
+        throw new Error('Некорректный персонаж')
+      }
+      for (const field of ['name', 'fullName', 'role', 'speechStyle', 'appearancePrompt'] as const) {
+        if (typeof character[field] !== 'string' || character[field].length > 20_000) {
+          throw new Error(`Некорректное поле персонажа: ${field}`)
+        }
+      }
+    }
+    const bookRaw = await fs.readFile(userBookPath(bookId), 'utf8')
     const book = JSON.parse(bookRaw) as Fanfic
     // основы имён без окончаний; фамилия, общая для нескольких героев, не считается
     const stemsOf = (c: Character) =>
@@ -643,11 +733,11 @@ export async function saveBookCharacters(bookId: string, characters: Character[]
       }
       c.unlockChapter = unlock
     }
-    await fs.writeFile(
-      path.join(userBooksDir(), `${bookId}-characters.json`),
+    await runLocalDataWrite(() => fs.writeFile(
+      userBookPath(bookId, '-characters'),
       JSON.stringify({ narratorVoice: 'Pon', characters }),
       'utf8'
-    )
+    ))
     return { ok: true, data: { ok: true } }
   } catch (e) {
     return { ok: false, error: (e as Error).message, code: 'UNKNOWN' }

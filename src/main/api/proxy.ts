@@ -1,15 +1,28 @@
 import { app } from 'electron'
 import { promises as fs } from 'fs'
 import path from 'path'
+import { randomUUID } from 'node:crypto'
 import { clearGatewayToken, getGatewayIdentity, getSettings, setGatewayToken } from '../store'
 import type { ApiResult, LlmMessage, LlmPurpose, ProxyHealth } from '../../shared/types'
 import type { AnalyticsEvent } from '../../shared/analytics'
+import { runLocalDataWrite } from '../local-data-barrier'
 
 function base(): string {
   return getSettings().proxyUrl.replace(/\/+$/, '')
 }
 
 let registration: Promise<string> | null = null
+let registrationController: AbortController | null = null
+let gatewayActivityController = new AbortController()
+let localDataResetting = false
+
+export function cancelGatewayActivity(): void {
+  localDataResetting = true
+  gatewayActivityController.abort(new Error('local data reset'))
+  registrationController?.abort(new Error('local data reset'))
+  registrationController = null
+  registration = null
+}
 
 async function gatewayToken(): Promise<string> {
   const proxyUrl = base()
@@ -18,6 +31,7 @@ async function gatewayToken(): Promise<string> {
   if (registration) return registration
   registration = (async () => {
     const { signal, done } = withTimeout(10_000)
+    registrationController = new AbortController()
     let response: Response
     try {
       response = await fetch(`${proxyUrl}/v2/installations/register`, {
@@ -27,9 +41,10 @@ async function gatewayToken(): Promise<string> {
           installation_id: identity.installationId,
           app_version: app.getVersion(),
           platform: process.platform,
-          arch: process.arch
+          arch: process.arch,
+          activation_token: process.env.NARRA_ACTIVATION_TOKEN || ''
         }),
-        signal
+        signal: AbortSignal.any([signal, registrationController.signal])
       })
     } finally {
       done()
@@ -44,6 +59,7 @@ async function gatewayToken(): Promise<string> {
     return await registration
   } finally {
     registration = null
+    registrationController = null
   }
 }
 
@@ -52,10 +68,18 @@ export async function gatewayFetch(
   init: RequestInit = {},
   retryAuth = true
 ): Promise<Response> {
+  if (localDataResetting) throw new Error('local data reset in progress')
   const token = await gatewayToken()
   const headers = new Headers(init.headers)
   headers.set('Authorization', `Bearer ${token}`)
-  const response = await fetch(`${base()}${pathname}`, { ...init, headers })
+  const suppliedSignal = init.signal
+  const response = await fetch(`${base()}${pathname}`, {
+    ...init,
+    headers,
+    signal: suppliedSignal
+      ? AbortSignal.any([suppliedSignal, gatewayActivityController.signal])
+      : gatewayActivityController.signal
+  })
   if (response.status === 401 && retryAuth) {
     clearGatewayToken()
     return gatewayFetch(pathname, init, false)
@@ -65,8 +89,8 @@ export async function gatewayFetch(
 
 export async function sendTelemetryBatch(
   events: AnalyticsEvent[]
-): Promise<ApiResult<{ accepted: number }>> {
-  if (!events.length) return { ok: true, data: { accepted: 0 } }
+): Promise<ApiResult<{ accepted: number; rejected: Array<{ event_id: string }> }>> {
+  if (!events.length) return { ok: true, data: { accepted: 0, rejected: [] } }
   try {
     const response = await gatewayFetch('/v2/events/batch', {
       method: 'POST',
@@ -74,7 +98,7 @@ export async function sendTelemetryBatch(
       body: JSON.stringify({ events })
     })
     if (!response.ok) return parseErr(response)
-    return { ok: true, data: (await response.json()) as { accepted: number } }
+    return { ok: true, data: (await response.json()) as { accepted: number; rejected: Array<{ event_id: string }> } }
   } catch (error) {
     return netErr(error)
   }
@@ -131,7 +155,8 @@ export async function chatStream(
   onChunk: (delta: string) => void,
   signal: { aborted: boolean },
   temperature = 0.8,
-  purpose: LlmPurpose = 'character_chat'
+  purpose: LlmPurpose = 'character_chat',
+  requestId = randomRequestId()
 ): Promise<ApiResult<{ text: string }>> {
   if (!base()) return noProxy()
   const ctrl = new AbortController()
@@ -142,7 +167,7 @@ export async function chatStream(
     const res = await gatewayFetch('/v2/ai/chat/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages, temperature, purpose }),
+      body: JSON.stringify({ messages, temperature, purpose, request_id: requestId }),
       signal: ctrl.signal
     })
     if (!res.ok || !res.body) {
@@ -185,7 +210,8 @@ export async function chatStream(
 export async function chatComplete(
   messages: LlmMessage[],
   temperature = 0.7,
-  purpose: LlmPurpose = 'structured_task'
+  purpose: LlmPurpose = 'structured_task',
+  requestId = randomRequestId()
 ): Promise<ApiResult<{ text: string }>> {
   if (!base()) return noProxy()
   const { signal, done } = withTimeout(120000)
@@ -193,7 +219,7 @@ export async function chatComplete(
     const res = await gatewayFetch('/v2/ai/chat/complete', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages, temperature, purpose }),
+      body: JSON.stringify({ messages, temperature, purpose, request_id: requestId }),
       signal
     })
     done()
@@ -209,8 +235,9 @@ export async function chatComplete(
 // ================= GigaChat: JSON-задача =================
 export async function chatJson<T = unknown>(messages: LlmMessage[], attempts = 3): Promise<ApiResult<T>> {
   let lastErr = ''
+  const requestId = randomRequestId()
   for (let i = 0; i < attempts; i++) {
-    const r = await chatComplete(messages, 0.5)
+    const r = await chatComplete(messages, 0.5, 'structured_task', requestId)
     if (!r.ok) {
       if (r.code === 'NO_PROXY' || r.code === 'NO_KEY' || r.code === 'AUTH') return r as ApiResult<T>
       lastErr = r.error || 'ошибка'
@@ -221,6 +248,10 @@ export async function chatJson<T = unknown>(messages: LlmMessage[], attempts = 3
     lastErr = 'Модель вернула невалидный JSON'
   }
   return { ok: false, error: lastErr, code: 'PARSE' }
+}
+
+function randomRequestId(): string {
+  return randomUUID()
 }
 
 // ================= FusionBrain: изображения =================
@@ -269,9 +300,11 @@ export async function generateImage(
     if (!res.ok) return parseErr(res)
     const j = (await res.json()) as { image: string }
     if (!j.image) return { ok: false, error: 'Пустой результат', code: 'UNKNOWN' }
-    if (cacheKey) {
-      await fs.mkdir(imagesDir(), { recursive: true })
-      await fs.writeFile(imgPath(cacheKey), Buffer.from(j.image, 'base64'))
+    if (cacheKey && !localDataResetting) {
+      await runLocalDataWrite(async () => {
+        await fs.mkdir(imagesDir(), { recursive: true })
+        await fs.writeFile(imgPath(cacheKey), Buffer.from(j.image, 'base64'))
+      })
     }
     return { ok: true, data: { dataUrl: `data:image/png;base64,${j.image}`, cached: false } }
   } catch (e) {
@@ -317,9 +350,11 @@ export async function synthesize(
     done()
     if (!res.ok) return parseErr(res)
     const buf = Buffer.from(await res.arrayBuffer())
-    if (cacheKey) {
-      await fs.mkdir(audioDir(), { recursive: true })
-      await fs.writeFile(audioPath(cacheKey), buf)
+    if (cacheKey && !localDataResetting) {
+      await runLocalDataWrite(async () => {
+        await fs.mkdir(audioDir(), { recursive: true })
+        await fs.writeFile(audioPath(cacheKey), buf)
+      })
     }
     return { ok: true, data: { dataUrl: `data:audio/wav;base64,${buf.toString('base64')}`, cached: false } }
   } catch (e) {
@@ -344,13 +379,20 @@ export async function deleteBookCache(bookId: string): Promise<void> {
     let entries: string[] = []
     try {
       entries = await fs.readdir(directory)
-    } catch {
-      continue
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue
+      throw error
     }
     await Promise.all(
       entries
         .filter(belongsToBook)
-        .map((filename) => fs.unlink(path.join(directory, filename)).catch(() => undefined))
+        .map(async (filename) => {
+          try {
+            await fs.unlink(path.join(directory, filename))
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+          }
+        })
     )
   }
 }
@@ -366,9 +408,12 @@ export async function deleteCachedImage(cacheKey: string): Promise<ApiResult<{ o
 
 export async function saveCachedVideo(cacheKey: string, dataUrl: string): Promise<ApiResult<{ ok: true }>> {
   try {
-    await fs.mkdir(videoDir(), { recursive: true })
-    const b64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl
-    await fs.writeFile(videoPath(cacheKey), Buffer.from(b64, 'base64'))
+    if (localDataResetting) throw new Error('local data reset in progress')
+    await runLocalDataWrite(async () => {
+      await fs.mkdir(videoDir(), { recursive: true })
+      const b64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl
+      await fs.writeFile(videoPath(cacheKey), Buffer.from(b64, 'base64'))
+    })
     return { ok: true, data: { ok: true } }
   } catch (e) {
     return netErr(e)
@@ -418,11 +463,14 @@ export async function generateAvatar(
     const j = (await res.json()) as { video?: string; error?: string; code?: string }
     if (j.error) return { ok: false, error: j.error, code: (j.code as never) || 'UNKNOWN' }
     if (!j.video) return { ok: false, error: 'Пустой результат', code: 'UNKNOWN' }
-    if (cacheKey) {
-      await fs.mkdir(videoDir(), { recursive: true })
-      await fs.writeFile(videoPath(cacheKey), Buffer.from(j.video, 'base64'))
+    const video = j.video
+    if (cacheKey && !localDataResetting) {
+      await runLocalDataWrite(async () => {
+        await fs.mkdir(videoDir(), { recursive: true })
+        await fs.writeFile(videoPath(cacheKey), Buffer.from(video, 'base64'))
+      })
     }
-    return { ok: true, data: { dataUrl: `data:video/mp4;base64,${j.video}`, cached: false } }
+    return { ok: true, data: { dataUrl: `data:video/mp4;base64,${video}`, cached: false } }
   } catch (e) {
     done()
     return netErr(e)
@@ -454,11 +502,14 @@ export async function animatePortrait(
     const j = (await res.json()) as { video?: string; error?: string; code?: string }
     if (j.error) return { ok: false, error: j.error, code: (j.code as never) || 'UNKNOWN' }
     if (!j.video) return { ok: false, error: 'Пустой результат', code: 'UNKNOWN' }
-    if (cacheKey) {
-      await fs.mkdir(videoDir(), { recursive: true })
-      await fs.writeFile(videoPath(cacheKey), Buffer.from(j.video, 'base64'))
+    const video = j.video
+    if (cacheKey && !localDataResetting) {
+      await runLocalDataWrite(async () => {
+        await fs.mkdir(videoDir(), { recursive: true })
+        await fs.writeFile(videoPath(cacheKey), Buffer.from(video, 'base64'))
+      })
     }
-    return { ok: true, data: { dataUrl: `data:video/mp4;base64,${j.video}`, cached: false } }
+    return { ok: true, data: { dataUrl: `data:video/mp4;base64,${video}`, cached: false } }
   } catch (e) {
     done()
     return netErr(e)
@@ -520,48 +571,4 @@ function extractJson<T>(text: string): T | null {
     }
   }
   return null
-}
-
-/** Проверка обновления приложения через авторизованный gateway v2. */
-export async function checkAppUpdate(
-  current: string
-): Promise<ApiResult<{ hasUpdate: boolean; version: string; url: string }>> {
-  if (!base()) return noProxy()
-  const { signal, done } = withTimeout(15000)
-  try {
-    const res = await gatewayFetch('/v2/updates/latest', { signal })
-    done()
-    if (!res.ok) return parseErr(res)
-    const j = (await res.json()) as { version?: string; url?: string }
-    const latest = (j.version || '').trim()
-    const newer = (a: string, b: string) => {
-      const pa = a.split('.').map(Number)
-      const pb = b.split('.').map(Number)
-      for (let i = 0; i < 3; i++) {
-        if ((pa[i] || 0) > (pb[i] || 0)) return true
-        if ((pa[i] || 0) < (pb[i] || 0)) return false
-      }
-      return false
-    }
-    return {
-      ok: true,
-      data: { hasUpdate: !!latest && !!j.url && newer(latest, current), version: latest, url: j.url || '' }
-    }
-  } catch (e) {
-    done()
-    return netErr(e)
-  }
-}
-
-/**
- * Обновление в один клик: качаем dmg, отдаём его внешнему скрипту (он ждёт выхода
- * приложения, подменяет .app в «Программах», снимает карантин и запускает снова).
- */
-export async function installUpdate(url: string): Promise<ApiResult<{ started: true }>> {
-  void url
-  return {
-    ok: false,
-    error: 'Небезопасный legacy-updater отключён. Обновление появится после подписи Developer ID и notarization.',
-    code: 'UNKNOWN'
-  }
 }

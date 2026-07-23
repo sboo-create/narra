@@ -11,7 +11,8 @@ export function httpsRequest(urlStr, opts = {}) {
     timeoutMs = 60000,
     insecure = false,
     onChunk,
-    binary = false
+    binary = false,
+    signal
   } = opts
 
   return new Promise((resolve, reject) => {
@@ -52,6 +53,10 @@ export function httpsRequest(urlStr, opts = {}) {
     )
 
     req.setTimeout(timeoutMs, () => req.destroy(new Error('TIMEOUT')))
+    if (signal) {
+      if (signal.aborted) req.destroy(signal.reason || new Error('ABORTED'))
+      else signal.addEventListener('abort', () => req.destroy(signal.reason || new Error('ABORTED')), { once: true })
+    }
     req.on('error', reject)
     if (body) req.write(body)
     req.end()

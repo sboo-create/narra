@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
   bearerToken,
+  createFixedWindowByteBudget,
   createFixedWindowLimiter,
   createTokenService,
   isInstallationId
@@ -15,6 +16,25 @@ test('installation token is signed, scoped and expires', () => {
   assert.equal(service.verify(token, 1_030_000)?.sub, INSTALLATION_ID)
   assert.equal(service.verify(`${token}x`, 1_030_000), null)
   assert.equal(service.verify(token, 1_061_000), null)
+})
+
+test('fixed-window byte budget reserves a strict worst-case import allowance', () => {
+  const middleware = createFixedWindowByteBudget({
+    windowMs: 1_000, maxBytes: 60, reserveBytes: 30, key: () => 'installation', now: () => 100
+  })
+  const response = () => ({
+    statusCode: 200, setHeader() {},
+    status(code) { this.statusCode = code; return this },
+    json(payload) { this.payload = payload; return this }
+  })
+  for (let index = 0; index < 2; index++) {
+    let called = false
+    middleware({}, response(), () => { called = true })
+    assert.equal(called, true)
+  }
+  const blocked = response()
+  middleware({}, blocked, () => assert.fail('budget must stop the third reservation'))
+  assert.equal(blocked.statusCode, 429)
 })
 
 test('bearer and installation formats are strict', () => {

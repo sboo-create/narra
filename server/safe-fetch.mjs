@@ -35,14 +35,16 @@ export async function assertSafeImportUrl(input, allowedHosts, lookupImpl = look
 
 export async function fetchWithRedirectPolicy(
   input,
-  { allowedHosts, headers, maxRedirects = 5, timeoutMs = 30_000, fetchImpl = fetch, lookupImpl = lookup }
+  { allowedHosts, headers, maxRedirects = 5, timeoutMs = 30_000, fetchImpl = fetch, lookupImpl = lookup, signal }
 ) {
   let url = await assertSafeImportUrl(input, allowedHosts, lookupImpl)
   for (let redirect = 0; redirect <= maxRedirects; redirect++) {
     const response = await fetchImpl(url, {
       headers,
       redirect: 'manual',
-      signal: AbortSignal.timeout(timeoutMs)
+      signal: signal
+        ? AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)])
+        : AbortSignal.timeout(timeoutMs)
     })
     if (![301, 302, 303, 307, 308].includes(response.status)) return response
     await response.body?.cancel().catch(() => {})
@@ -55,13 +57,17 @@ export async function fetchWithRedirectPolicy(
   throw Object.assign(new Error('Перенаправление не удалось'), { status: 502, code: 'NETWORK' })
 }
 
-export async function readBoundedBody(response, maxBytes) {
+export async function readBoundedBody(response, maxBytes, signal) {
   const declared = Number(response.headers.get('content-length') || 0)
   if (declared > maxBytes) throw Object.assign(new Error('Файл больше 30 МБ'), { status: 413, code: 'VALIDATION' })
   if (!response.body) return Buffer.alloc(0)
   const chunks = []
   let total = 0
   for await (const chunk of response.body) {
+    if (signal?.aborted) {
+      await response.body.cancel().catch(() => {})
+      throw signal.reason || Object.assign(new Error('Загрузка отменена'), { status: 499, code: 'CANCELLED' })
+    }
     const buffer = Buffer.from(chunk)
     total += buffer.length
     if (total > maxBytes) {
