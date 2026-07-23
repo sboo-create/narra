@@ -735,7 +735,7 @@ export async function saveBookCharacters(bookId: string, characters: Character[]
     }
     await runLocalDataWrite(() => fs.writeFile(
       userBookPath(bookId, '-characters'),
-      JSON.stringify({ narratorVoice: 'Pon', characters }),
+      JSON.stringify({ narratorVoice: 'Che', characters }),
       'utf8'
     ))
     return { ok: true, data: { ok: true } }

@@ -3,6 +3,8 @@
 > Обновлено 23 июля 2026
 > Рабочая ветка: `feat/narra-release-foundation`
 > Статус: foundation и staging готовы; Narra подключена к production Traction; публичный macOS-релиз ещё не выпущен.
+> Классификация: внутренний рабочий документ. Перед внешней публикацией удалить
+> имена владельцев, Apple Team ID, инфраструктурный IP и DNS verification data.
 
 ## Коротко
 
@@ -17,7 +19,8 @@
 | Notarized macOS | ⏳ Credentials | Для публичного DMG всё ещё нужен matching Team API key Жени |
 | Giga через LiteLLM | ⏳ Transport | Адаптер сохранён; до защищённого relay используется OpenRouter |
 | Video в public release | ⏳ Transport/capacity | В staging работает по явно разрешённому HTTP; для public нужен HTTPS edge relay и durable queue |
-| Production gateway | ⏳ One-time cutover | Не миграция старых пользователей, а отдельная проверяемая публикация нового production-контура |
+| Production hostname | ✅ TLS reserved | `narra.multitool.works` изолированно отвечает `503 not_ready`; staging/legacy не проксируются |
+| Production gateway | ⏳ One-time cutover | Новый v2-сервис ещё не подключён к production hostname |
 
 ---
 
@@ -71,8 +74,9 @@ Production Narra пока не получала пользовательских
 - очереди Kandinsky/video находятся в памяти и теряются при restart;
 - video фактически обрабатывает один job одновременно;
 - кэш существует только на текущем Mac;
-- TTS cache key не содержит голос, sample rate и версию prosody;
-- смена голоса может вернуть аудио старого голоса;
+- исторический TTS cache key не учитывал голос/sample rate/prosody; в текущей
+  ветке это исправлено versioned fingerprint по rendered text + voice + 48 kHz
+  + prosody version;
 - главный герой определяется недостаточно надёжно для правил Сони.
 
 ## Целевой book preparation pipeline
@@ -218,6 +222,33 @@ throughput ≈ 60 минут / средняя длительность job
 
 ---
 
+## Какие модели используются и сколько они стоят
+
+23 июля конфигурация staging проверена внутри Railway без вывода секретов:
+sanitized snapshot сохранён в
+`docs/evidence/railway-staging-provider-config-2026-07-23.json`, SHA-256
+`bc19e573bb77ea5e5fba3aff0462b2dbcc82af297efd89b9711f4535454b08ca`.
+
+| Функция | Фактическая модель / сервис | Активность | Стоимость |
+|---|---|---|---|
+| Разметка, чат, summary, scenario, memory | `deepseek/deepseek-v4-flash` через OpenRouter | Активный default для всех LLM purposes | Платная: на странице OpenRouter сейчас около `$0.09/$0.18` за 1 млн input/output tokens |
+| Giga fallback | `gigachat-3-ultra` через team LiteLLM | Адаптер есть, но staging health routes сейчас ведут только в OpenRouter | Для Narra отдельная цена неизвестна: зависит от team LiteLLM/контракта |
+| Обложки и портреты | `k6-image-t2i` на внутреннем Kandinsky endpoint | Активен | Публичной цены в переданном контракте нет; это не основание считать генерацию бесплатной |
+| Оживление | `k5-i2v-hd` / `k5-i2v-lite` | Активно в staging | Публичной цены/квоты нет; критичнее стоимость GPU-time и лимит слотов |
+| Озвучка | SaluteSpeech YourVoice, 48 kHz | Активно | Публичный corporate tariff: 0.000186 ₽/символ; фактический `gigacons` contract может отличаться |
+| Распознавание речи | SaluteSpeech `universal_turbo` | Настроено | Зависит от тарифа/ключа SaluteSpeech |
+
+Источники стоимости: [OpenRouter: DeepSeek V4 Flash](https://openrouter.ai/deepseek/deepseek-v4-flash/pricing),
+[SaluteSpeech для юридических лиц](https://developers.sber.ru/docs/ru/salutespeech/tariffs/legal-tariffs),
+[GigaChat 3 Ultra](https://developers.sber.ru/docs/ru/gigachat/models/gigachat-3-ultra).
+Цены динамические; перед нагрузочным тестом перепроверяем их и задаём денежный
+лимит. Пробный прогон 94 голосов на двух sample rates использовал короткий текст
+61 символ: 100 успешных синтезов — примерно 6 100 тарифицируемых символов, или
+около 1.13 ₽ по публичному corporate tariff, если оплачиваются только успешные
+ответы. Это оценка, не выписка по внутреннему ключу.
+
+---
+
 ## Workaround без HTTPS tunnel
 
 ### LiteLLM
@@ -288,14 +319,19 @@ Railway Gateway
 Разделяем имена:
 
 - `narra-staging.multitool.works` → изолированный Railway staging;
-- `narra.multitool.works` → предполагаемое production-имя, но текущий target
-  ещё не подтверждён как будущий Narra gateway.
+- `narra.multitool.works` → зарезервированное production-имя на общем Caddy
+  server `158.160.163.167`.
 
-Production-имя сейчас имеет `A 158.160.163.167`: HTTP отвечает Caddy `308`, а
-HTTPS не проходит TLS handshake. Не считаем этот host готовым или
-принадлежащим будущему production-контуру, пока владелец IP/маршрута не
-подтверждён. К staging его не направляем. 23 июля записи staging уже добавлены
-и видны в authoritative DNS:
+23 июля на общем сервере аккуратно добавлен отдельный exact-host Caddy block.
+TLS-сертификат валиден, `/health` отвечает точным
+`503 {"ok":false,"status":"not_ready","service":"narra-production"}` с
+`Cache-Control: no-store`, а остальные пути — отдельным JSON 503. Reverse proxy
+отсутствует: имя намеренно не ведёт ни на legacy Railway, ни на staging. До
+production cutover этот URL нельзя зашивать в клиент. После reload соседние
+`gw`, `stats`, основной Multitool, share и disrupt сохранили прежние статусы.
+Конфигурация и runbook лежат в `ops/caddy/`.
+
+23 июля записи staging уже добавлены и видны в authoritative DNS:
 
 | Type | Name | Value |
 |---|---|---|
@@ -642,8 +678,9 @@ Raw latency rows, мс: `24 kHz = [2095, 1922, 2199, 1939, 1960]`;
 - остальные — по полу и приоритету;
 - unnamed extras — narrator;
 - Markov/Pirat — manual-only;
-- в целевом registry детским персонажам назначается Safronova по
-  детерминированному правилу ниже;
+- в целевом registry детским персонажам назначается `Ksa` по мужскому полу,
+  `Saf/Bsa` по женскому и сказочному профилю; решение фиксируется
+  детерминированным правилом ниже;
 - voice plan закрепляется на всю книгу;
 - ручная смена инвалидирует только аудио этого героя.
 
@@ -651,8 +688,9 @@ Raw latency rows, мс: `24 kHz = [2095, 1922, 2199, 1939, 1960]`;
 подключении нового registry. Для narrator/главного героя используются
 ассистентские голоса Афина, Сбер и Джой. Остальные герои получают по полу только
 обычные второстепенные герои получают по полу мужские
-`Ast/Gal/Bez/Ego/Izv` или женские `Ste/Tso/Chr`. `Saf` не входит в обычный
-gender pool и назначается только отдельным детерминированным child-rule.
+`Ast/Gal/Bez/Ego/Izv` или женские `Ste/Tso/Chr`. `Ksa/Saf/Bsa` не входят в
+обычный gender pool и назначаются только отдельным детерминированным
+child-rule.
 Фокин и Ковалев исключены из v1 из-за отсутствия рабочего 48 kHz-варианта.
 Марков и Пират не участвуют в автоназначении и остаются ручными пасхалками.
 
@@ -660,27 +698,35 @@ gender pool и назначается только отдельным детер
 |---|---:|---:|---|
 | Главные роли / assistant | 1 | 2 | Сбер; Афина, Джой |
 | Второстепенные, обычный auto-pool | 5 | 3 | `Ast/Gal/Bez/Ego/Izv`; `Ste/Tso/Chr` |
-| Детское исключение | 0 | 1 | `Saf` |
+| Детский auto-pool | 1 | 2 | `Ksa`; `Saf/Bsa` |
 | Ручные пасхалки | 2 | 0 | `Mar`, `Kas` |
 | Исключены из v1 | 2 | 0 | `Efo`, `Kov` |
 
-Итого в активном v1 — 14 доступных голосов: 8 мужских и 6 женских, включая
-ручные пасхалки. Без ручных пасхалок автоматическая система использует 12:
-6 мужских и 6 женских. У главных ролей известен продуктовый пол, но exact
-technical mapping `Che/She→Афина/Сбер` ещё требует подтверждения; Джой — `Erm`.
+Итого в активном 48 kHz registry — **16 голосов: 9 мужских и 7 женских**.
+Из них главные/assistant — **1 мужской + 2 женских**; второстепенные обычные —
+**5 + 3**; детские варианты — **1 + 2**; ручные пасхалки — **2 + 0**.
+После реализации child/assistant assignment целевой auto-eligible set без
+ручных пасхалок составит 14 голосов: 7 мужских и 7 женских. **Текущий runtime**
+автоматически назначает только 8 обычных library-голосов (5 мужских + 3
+женских), а narrator по умолчанию — Афина `Che`; UI выбора narrator и
+детерминированный child assignment ещё остаются в P0. Присланный provider UI
+подтверждает exact mapping:
+`Che→Афина`, `She→Сбер`, `Erm→Джой`.
 
 На staging key в 48 kHz успешно проверены exact-case base codes:
 `Che`, `She`, `Erm`, `Gal`, `Ast`, `Ste`, `Tso`, `Bez`, `Ego`, `Izv`, `Chr`,
 `Saf`, `Ksa`, `Bsa`, `Mar`, `Kas`.
 
-Десять новых скриншотов voice picker вместе с ранее полученным скриншотом Джой
-закрыли mapping целевого библиотечного пула. Все 11 файлов зафиксированы как
+Одиннадцать новых скриншотов voice picker вместе с ранее полученным скриншотом
+Джой закрыли mapping целевого библиотечного пула. Все 12 файлов зафиксированы как
 evidence; используем именно YourVoice-варианты там, где picker показывает
 дубликаты:
 
 | Продуктовый голос | Exact base code | Auto-assignment | Проверка на staging key |
 |---|---|---|---|
-| Джой | `Erm` | assistant / narrator / protagonist | `48000` — HTTP 200 |
+| Афина | `Che` | assistant / narrator / protagonist | provider UI + `48000` HTTP 200 |
+| Сбер | `She` | assistant / narrator / protagonist | provider UI + `48000` HTTP 200 |
+| Джой | `Erm` | assistant / narrator / protagonist | provider UI + `48000` HTTP 200 |
 | Фокин | `Efo` | excluded from v1 | picker подтверждён; `24000` — gateway HTTP 502, `48000` — HTTP 400 |
 | Стерлинг | `Ast` | library | `48000` — HTTP 200; альтернативный `Gst` не используем |
 | Галустян | `Gal` | library | `48000` — HTTP 200 |
@@ -691,17 +737,22 @@ evidence; используем именно YourVoice-варианты там, �
 | Чернышова | `Chr` | library | `48000` — HTTP 200 |
 | Изволов | `Izv` | library | `48000` — HTTP 200 |
 | Сафронова | `Saf` | child-role exception | `48000` — HTTP 200 |
+| kid Сафронов | `Ksa` | male child auto-pool | `48000` — HTTP 200 |
+| Сафронова сказки | `Bsa` | female child / fairy-tale auto-pool | `48000` — HTTP 200 |
 | Ковалев | `Kov` | excluded from v1 | `24000` — HTTP 200; `48000` — HTTP 400 |
 | Марков | `Mar` | manual-only | `48000` — HTTP 200 |
 | Пират Касперович | `Kas` | manual-only | `48000` — HTTP 200 |
 
-Имена файлов, SHA-256 скриншотов и сырые строки probe-результатов сохранены в
-artifact/HTML как отдельные evidence datasets; таблица выше ссылается на них по
-стабильным evidence ID.
+Имена файлов, SHA-256 скриншотов и все 188 первичных probe-строк сохранены в
+artifact/HTML как отдельные evidence datasets. Неизменяемая копия находится в
+`docs/evidence/salutespeech-voice-probe-2026-07-23.csv`, SHA-256
+`30fee1f23901f5e8eda7790a8fdcee7e89d36da19d20a1e6e6a78732bad51bcc`.
+Таблица выше ссылается на evidence ID.
 
-В picker также видны `Gst→Стерлинг`, `Bsa→Сафронова сказки` и
-`Ksa→kid Сафронов`. Это отдельные варианты, а не замены выбранным `Ast`, `Saf`
-и детскому правилу Narra. `Pik/Boc/Kha/Kud` подтверждены как ПИК/Бочаров/
+В picker также виден `Gst→Стерлинг`, но этот вариант не отвечает на текущем
+ключе. `Bsa→Сафронова сказки` и `Ksa→kid Сафронов` успешно синтезируют 48 kHz
+и добавлены как отдельные детские варианты, а не замены `Saf`.
+`Pik/Boc/Kha/Kud` подтверждены как ПИК/Бочаров/
 Хачатрян/Кудряшова, но в утверждённый автоматический пул Сони не входят.
 Для `Ste` сохраняем продуктовое написание Сони «Стремпаржевская», а также
 буквальное provider-display-name из picker «Стемпаржевская», чтобы различие не
@@ -717,28 +768,43 @@ library pool, поэтому в v1 исключаем оба голоса цел
 большим числом персонажей раньше включится разрешённое повторение голоса с
 изменённой просодией.
 
-### Детерминированное правило Safronova
+### Расширенный probe всех голосов со скриншотов
+
+На том же staging key протестированы **94 exact-case code** с одинаковым
+61-символьным текстом:
+
+- 48 kHz: **16/94** ответили HTTP 200 и реальным WAV 48 kHz;
+- 24 kHz: **84/94** ответили HTTP 200 и реальным WAV 24 kHz;
+- не работают даже в 24 kHz:
+  `Ast/Bsa/Efo/Evi/Gst/Hek/Lli/Lpe/Man/Vsh`;
+- `Ast` и `Bsa` при этом работают в 48 kHz: capability зависит не только от
+  base code, но и от конкретного sample rate/provisioning.
+
+Рабочий длинный 24 kHz pool нельзя автоматически раздать по полу по одним
+фамилиям. Он остаётся **candidate pool**: коды проверены технически, но Соне
+нужно прослушать выбранные варианты и подтвердить пол/тембр/допустимость.
+Смешивать 24 и 48 kHz внутри главы не будем. Текущий код выпуска использует
+закрытый allowlist из 16 проверенных 48 kHz голосов; suffix выбирает только
+gateway, клиент не может подставить произвольную provider model.
+
+### Детерминированное правило детского пула
 
 - `child=true`, если подтверждённый возраст персонажа `≤12` **или** book-level
   анализ вернул закрытый `age_group=child` с confidence `≥0.8`;
 - при неизвестном возрасте либо меньшей confidence используется обычный
-  gender-compatible library pool, а не Safronova;
-- Safronova — осознанное продуктовое исключение для child-role независимо от
-  пола персонажа; ручное переопределение остаётся доступным;
+  gender-compatible library pool, а не детский;
+- мальчику назначается `Ksa`, девочке — `Saf`; `Bsa` приоритетен для девочки в
+  сказочном/детском жанре. Пол голоса не нарушаем; ручное переопределение
+  остаётся доступным;
 - результат и `child_rule_version` фиксируются в voice plan на всю книгу, чтобы
   повторный импорт или новая модель не меняли голос без явной миграции.
 
 Нерешённое правило: `Sber narrator + male third-person protagonist`. Среди оставшихся assistant voices нет мужского. Рекомендация — дать protagonist первому мужскому library voice, а не нарушать пол и не дублировать narrator.
 
-Перед включением registry оставшаяся проверка:
-
-- подтвердить technical codes Афины и Сбера: для `Che/She` API-probe успешен,
-  но display-name mapping на присланных скриншотах отсутствует;
-- на одном фиксированном тексте и текущем SSML проверить каждый оставшийся
-  автоматический и assistant voice;
-- сохранить HTTP status/content type и фактические WAV sample rate/duration;
-- дать Соне прослушать одинаковые audible samples и подтвердить gender pool,
-  тембр и отсутствие неприемлемых голосов.
+Перед включением расширенного 24 kHz candidate pool остаётся дать Соне
+прослушать одинаковые audible samples и утвердить конкретные коды. Техническая
+проверка 94 кодов, HTTP status, content type и фактический WAV sample rate уже
+выполнены.
 
 ---
 
@@ -754,7 +820,8 @@ library pool, поэтому в v1 исключаем оба голоса цел
 - [x] Local Developer ID identity для signed QA
 - [ ] Local matching Apple Team API key/profile для notarization
 - [x] Все шесть Traction slots видны постоянно
-- [ ] Voice registry и исправленные cache keys
+- [x] Server-side 48 kHz voice registry, allowlist и миграция старых голосов
+- [x] Versioned TTS cache keys с text/voice/sample-rate/prosody
 - [ ] Background-разметка первой главы после импорта
 - [ ] Bounded parallel/streaming chapter markup
 - [ ] Progressive TTS first-audio
@@ -770,7 +837,7 @@ library pool, поэтому в v1 исключаем оба голоса цел
 - [ ] Import/media instrumentation
 - [ ] Signed/notarized universal RC
 - [ ] Clean install на Apple Silicon
-- [ ] Intel install/launch verification
+- [ ] Intel install/launch verification — Intel Mac отсутствует, риск принят до появления устройства
 - [ ] First-release updater canary после публикации, но до внешней раздачи
 - [ ] Отдельный HTTPS RC-feed до второго публичного обновления
 - [ ] Upgrade test с сохранением книг, notes, cache policy и settings
@@ -790,10 +857,10 @@ library pool, поэтому в v1 исключаем оба голоса цел
 
 ### От Макса
 
-1. Перед production cutover выбрать судьбу `narra.multitool.works`: либо
-   направить его на новый Railway production service по выданным Railway
-   CNAME/TXT, либо подтвердить владельца `158.160.163.167` и дать возможность
-   настроить там Caddy/TLS. Текущую A-запись клиент не использует.
+1. Перед production cutover выбрать target нового Railway v2 production
+   service. TLS-заглушка на `158.160.163.167` уже готова и не проксирует
+   staging/legacy; после создания service меняем только upstream exact-host
+   блока и проводим отдельный canary.
 2. Согласовать безопасный способ локальной notarization с Apple Team Жени:
    credentials не присылать в чат и не коммитить, а вместе с владельцем Team
    создать локальный `notarytool` profile либо положить matching Team API key в
@@ -801,25 +868,23 @@ library pool, поэтому в v1 исключаем оба голоса цел
 3. Назвать денежный либо запросный лимит capacity benchmark
    `1 → 2 → 5 → 10` и разрешённое окно теста, чтобы проверка не создала
    неожиданный расход у провайдеров.
-4. Найти один Intel Mac для install/launch smoke либо явно принять отсутствие
-   Intel-проверки как release risk.
+4. Intel Mac сейчас отсутствует: универсальную сборку продолжаем готовить, но
+   отсутствие install/launch smoke фиксируем как принятый release risk.
 5. Уточнить, означает ли «APK» отдельное Android-приложение. Текущая Narra —
    Electron desktop; Android/iOS не получаются из universal macOS build и
    требуют отдельного клиентского проекта.
 
 ### От Сони
 
-1. Подтвердить по provider UI или у SaluteSpeech, какой exact code из
-   `Che/She` соответствует Афине, а какой — Сберу. Оба кода технически отвечают,
-   но угадывать их имена нельзя.
-2. Утвердить fallback для комбинации `Sber narrator + male third-person
+1. Утвердить fallback для комбинации `Sber narrator + male third-person
    protagonist`. Рекомендация: главному герою назначать первый доступный мужской
    library voice, а не женский assistant voice и не голос narrator.
-3. Прослушать одинаковые 48 kHz samples оставшегося v1-пула и подтвердить:
-   мужской pool `Ast/Gal/Bez/Ego/Izv`, женский pool `Ste/Tso/Chr`, а `Saf`
-   используется как child-role exception. Фокин `Efo` и Ковалев `Kov` из v1
-   исключены и дополнительного запроса к SaluteSpeech по ним не требуется.
-4. Подтвердить объём автоматических портретов. Текущая рекомендация: главный
+2. Прослушать одинаковые samples и подтвердить основной 48 kHz registry:
+   мужской pool `Ast/Gal/Bez/Ego/Izv`, женский `Ste/Tso/Chr`, детские
+   `Ksa/Saf/Bsa`, manual-only `Mar/Kas`. Отдельно выбрать дополнительные
+   голоса из технически рабочего 24 kHz candidate pool, если важнее разнообразие,
+   чем единое высокое качество.
+3. Подтвердить объём автоматических портретов. Текущая рекомендация: главный
    герой плюс 2–3 основных персонажа при импорте; остальные — по запросу при
    открытии карточки.
 

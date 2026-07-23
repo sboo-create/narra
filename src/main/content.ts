@@ -1,7 +1,13 @@
 import { app } from 'electron'
 import { promises as fs } from 'fs'
 import path from 'path'
-import type { Fanfic, CharactersFile, BookContent } from '../shared/types'
+import {
+  normalizeCharacterVoices,
+  normalizeNarratorVoice,
+  type Fanfic,
+  type CharactersFile,
+  type BookContent
+} from '../shared/types'
 import { userBooksDir } from './importer'
 
 function contentDir(): string {
@@ -44,7 +50,11 @@ async function scanDir(dir: string): Promise<BookContent[]> {
       const cfRaw = await fs.readFile(path.join(dir, cFile), 'utf8')
       const fanfic = JSON.parse(fanficRaw) as Fanfic
       const cf = JSON.parse(cfRaw) as CharactersFile
-      out.push({ fanfic, narratorVoice: cf.narratorVoice, characters: cf.characters })
+      out.push({
+        fanfic,
+        narratorVoice: normalizeNarratorVoice(cf.narratorVoice),
+        characters: normalizeCharacterVoices(cf.characters)
+      })
     } catch {
       /* битая пара — пропускаем */
     }

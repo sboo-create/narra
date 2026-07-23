@@ -1,0 +1,10 @@
+narra.multitool.works {
+	header {
+		Content-Type application/json
+		Cache-Control "no-store"
+		X-Content-Type-Options nosniff
+	}
+
+	respond /health `{"ok":false,"status":"not_ready","service":"narra-production"}` 503
+	respond `{"error":"Narra production gateway is not cut over"}` 503
+}

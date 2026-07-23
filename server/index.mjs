@@ -856,16 +856,17 @@ app.post('/v2/speech/synthesize', speechLimit, speechDailyLimit, express.json({ 
   let release
   try {
     release = await speechGate.acquire(clientSignal)
-    const { text, ssml, voice } = parseSynthesisBody(req.body)
+    const { text, ssml, providerVoice } = parseSynthesisBody(req.body)
     const isSsml = !!ssml
     const payload = isSsml ? ssml : text || ''
     const token = await getToken('SALUTE_SPEECH_PERS', SALUTE_KEY, SALUTE_OAUTH_URL)
-    const url = `${SALUTE_SYNTH_URL}?format=wav16&voice=${encodeURIComponent(voice)}_24000`
+    const url = `${SALUTE_SYNTH_URL}?format=wav16&voice=${encodeURIComponent(providerVoice)}`
     const r = await httpsRequest(url, {
       method: 'POST',
       insecure: INSECURE,
       ca: sberCaBundle,
       timeoutMs: 60000,
+      maxResponseBytes: 16 * 1024 * 1024,
       signal: clientSignal,
       binary: true,
       headers: {

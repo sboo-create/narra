@@ -1,3 +1,9 @@
+import {
+  normalizeCharacterVoices,
+  normalizeNarratorVoice,
+  type Character
+} from '@shared/types'
+
 /*
  * Браузерная заглушка window.narra — позволяет открыть renderer в обычном
  * браузере (vite dev, localhost:5173) и проверять UI без Electron.
@@ -116,8 +122,12 @@ export function installDevShim(): void {
       for (const [f, c] of pairs) {
         try {
           const fanfic = (await loadJson(f)) as Record<string, unknown>
-          const cf = (await loadJson(c)) as { narratorVoice: string; characters: unknown[] }
-          data.push({ fanfic, narratorVoice: cf.narratorVoice, characters: cf.characters })
+          const cf = (await loadJson(c)) as { narratorVoice: string; characters: Character[] }
+          data.push({
+            fanfic,
+            narratorVoice: normalizeNarratorVoice(cf.narratorVoice),
+            characters: normalizeCharacterVoices(cf.characters)
+          })
         } catch {
           /* нет пары — пропускаем */
         }

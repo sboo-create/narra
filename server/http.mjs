@@ -8,6 +8,65 @@ export function createHttpsAgent({ insecure = false, ca } = {}) {
   })
 }
 
+export function createResponseBuffer({ binary = false, onChunk, maxResponseBytes } = {}) {
+  const limit = maxResponseBytes === undefined ? Number.POSITIVE_INFINITY : Number(maxResponseBytes)
+  if (!(limit > 0)) throw new Error('maxResponseBytes must be positive')
+  const chunks = []
+  let total = 0
+  return {
+    push(data) {
+      total += Buffer.isBuffer(data) ? data.length : Buffer.byteLength(data)
+      if (total > limit) {
+        throw Object.assign(new Error('Upstream response exceeded the gateway limit'), {
+          code: 'NETWORK',
+          status: 502
+        })
+      }
+      if (onChunk) onChunk(data)
+      else chunks.push(binary ? data : Buffer.from(data))
+    },
+    value() {
+      if (onChunk) return null
+      return binary ? Buffer.concat(chunks) : chunks.join('')
+    }
+  }
+}
+
+export function consumeResponse(res, { binary = false, onChunk, maxResponseBytes } = {}) {
+  return new Promise((resolve, reject) => {
+    const accumulator = createResponseBuffer({ binary, onChunk, maxResponseBytes })
+    let settled = false
+    const fail = (error) => {
+      if (settled) return
+      settled = true
+      reject(error)
+    }
+
+    if (!binary) res.setEncoding('utf8')
+    res.on('data', (data) => {
+      if (settled) return
+      try {
+        accumulator.push(data)
+      } catch (error) {
+        fail(error)
+        res.destroy()
+      }
+    })
+    res.on('error', fail)
+    res.on('aborted', () => {
+      fail(Object.assign(new Error('Upstream response was aborted'), {
+        code: 'NETWORK',
+        status: 502
+      }))
+    })
+    res.on('end', () => {
+      if (settled) return
+      settled = true
+      resolve(accumulator.value())
+    })
+  })
+}
+
 // Низкоуровневый HTTPS-запрос с настраиваемым TLS-агентом (сертификаты НУЦ Минцифры
 // у Сбера) и поддержкой потокового чтения (SSE).
 export function httpsRequest(urlStr, opts = {}) {
@@ -20,6 +79,7 @@ export function httpsRequest(urlStr, opts = {}) {
     ca,
     onChunk,
     binary = false,
+    maxResponseBytes,
     signal
   } = opts
 
@@ -44,19 +104,13 @@ export function httpsRequest(urlStr, opts = {}) {
         agent
       },
       (res) => {
-        const chunks = []
-        if (!binary) res.setEncoding('utf8')
-        res.on('data', (d) => {
-          if (onChunk) onChunk(d)
-          else chunks.push(binary ? d : Buffer.from(d))
-        })
-        res.on('end', () => {
-          resolve({
+        consumeResponse(res, { binary, onChunk, maxResponseBytes })
+          .then((body) => resolve({
             status: res.statusCode || 0,
-            body: onChunk ? null : binary ? Buffer.concat(chunks) : chunks.join(''),
+            body,
             headers: res.headers
-          })
-        })
+          }))
+          .catch(reject)
       }
     )
 

@@ -1,4 +1,11 @@
-import type { Character, Gender, LlmMessage, SaluteVoice } from '@shared/types'
+import {
+  AUTO_FEMALE_VOICES,
+  AUTO_MALE_VOICES,
+  type Character,
+  type Gender,
+  type LlmMessage,
+  type SaluteVoice
+} from '@shared/types'
 
 /*
  * Авторазметка загруженной книги: GigaChat строит 4–6 профилей главных героев
@@ -21,8 +28,8 @@ function slugify(s: string): string {
     .slice(0, 24)
 }
 
-const MALE: SaluteVoice[] = ['Bys', 'Tur', 'Pon']
-const FEMALE: SaluteVoice[] = ['Ost', 'May', 'Nec']
+const MALE: readonly SaluteVoice[] = AUTO_MALE_VOICES
+const FEMALE: readonly SaluteVoice[] = AUTO_FEMALE_VOICES
 
 function markupPrompt(title: string, author: string, excerpt: string): LlmMessage[] {
   return [

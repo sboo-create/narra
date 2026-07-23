@@ -6,6 +6,7 @@ import { clearGatewayToken, getGatewayIdentity, getSettings, setGatewayToken } f
 import type { ApiResult, LlmMessage, LlmPurpose, ProxyHealth } from '../../shared/types'
 import type { AnalyticsEvent } from '../../shared/analytics'
 import { runLocalDataWrite } from '../local-data-barrier'
+import { versionedAudioCacheKey } from '../audio-cache-key'
 import { consumeOpenAiSse } from './sse-protocol'
 
 function base(): string {
@@ -319,8 +320,9 @@ export async function synthesize(
   payload: { text?: string; ssml?: string; voice: string },
   cacheKey?: string
 ): Promise<ApiResult<{ dataUrl: string; cached: boolean }>> {
-  if (cacheKey) {
-    const c = await getCachedAudio(cacheKey)
+  const resolvedCacheKey = cacheKey ? versionedAudioCacheKey(cacheKey, payload) : undefined
+  if (resolvedCacheKey) {
+    const c = await getCachedAudio(resolvedCacheKey)
     if (c.ok) return { ok: true, data: { dataUrl: c.data!.dataUrl, cached: true } }
   }
   if (!base()) return noProxy()
@@ -335,10 +337,10 @@ export async function synthesize(
     done()
     if (!res.ok) return parseErr(res)
     const buf = Buffer.from(await res.arrayBuffer())
-    if (cacheKey && !localDataResetting) {
+    if (resolvedCacheKey && !localDataResetting) {
       await runLocalDataWrite(async () => {
         await fs.mkdir(audioDir(), { recursive: true })
-        await fs.writeFile(audioPath(cacheKey), buf)
+        await fs.writeFile(audioPath(resolvedCacheKey), buf)
       })
     }
     return { ok: true, data: { dataUrl: `data:audio/wav;base64,${buf.toString('base64')}`, cached: false } }

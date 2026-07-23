@@ -9,6 +9,7 @@ import type {
   SaluteVoice,
   Settings
 } from '@shared/types'
+import { DEFAULT_NARRATOR_VOICE, isSaluteVoice } from '@shared/types'
 
 export interface CharStat {
   asked: number
@@ -189,12 +190,15 @@ function migrateCharKeys(p: Persisted, books: BookContent[]): Persisted {
     }
     return out
   }
+  const migratedVoices = Object.fromEntries(
+    Object.entries(fix(p.voiceOverrides)).filter((entry): entry is [string, SaluteVoice] => isSaluteVoice(entry[1]))
+  )
   return {
     ...p,
     chats: fix(p.chats),
     memories: fix(p.memories),
     stats: fix(p.stats),
-    voiceOverrides: fix(p.voiceOverrides)
+    voiceOverrides: migratedVoices
   }
 }
 
@@ -231,7 +235,7 @@ export const useStore = create<StoreState>((set, get) => ({
   activeBookId: '',
   fanfic: null,
   characters: [],
-  narratorVoice: 'Pon',
+  narratorVoice: DEFAULT_NARRATOR_VOICE,
   chapter: 1,
   settings: null,
   health: null,
@@ -264,7 +268,7 @@ export const useStore = create<StoreState>((set, get) => ({
         activeBookId: active?.fanfic.id || '',
         fanfic: active?.fanfic || null,
         characters: active?.characters || [],
-        narratorVoice: active?.narratorVoice || 'Pon',
+        narratorVoice: active?.narratorVoice || DEFAULT_NARRATOR_VOICE,
         chapter: active ? persisted.chapters[active.fanfic.id] || 1 : 1,
         settings,
         persisted: migrated

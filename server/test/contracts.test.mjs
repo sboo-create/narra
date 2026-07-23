@@ -48,7 +48,14 @@ test('media and speech contracts reject unknown or oversized inputs', () => {
   })
   assert.throws(() => parseImageBody({ prompt: 'scene', provider: 'x' }), /неизвестное поле/)
   assert.throws(() => parseSynthesisBody({ text: 'a', ssml: '<speak>a</speak>' }), /ровно одно/)
-  assert.equal(parseSynthesisBody({ text: 'hello', voice: 'Nec' }).voice, 'Nec')
+  assert.deepEqual(parseSynthesisBody({ text: 'hello', voice: 'Che' }), {
+    text: 'hello',
+    ssml: undefined,
+    voice: 'Che',
+    providerVoice: 'Che_48000'
+  })
+  assert.throws(() => parseSynthesisBody({ text: 'hello', voice: 'Nec' }), /не поддерживается/)
+  assert.throws(() => parseSynthesisBody({ text: 'hello', voice: 'Che_24000' }), /не поддерживается/)
   assert.equal(parseAvatarBody({ image: 'a', audio: 'b' }).image, 'a')
   assert.throws(() => parsePortraitBody({ image: 'a', quality: '4k' }), /lite или hd/)
 })

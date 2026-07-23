@@ -20,7 +20,26 @@ export interface Fanfic {
 }
 
 export type Gender = 'male' | 'female'
-export type SaluteVoice = 'Nec' | 'Bys' | 'May' | 'Tur' | 'Ost' | 'Pon'
+export const ASSISTANT_VOICES = ['Che', 'She', 'Erm'] as const
+export const AUTO_MALE_VOICES = ['Ast', 'Gal', 'Bez', 'Ego', 'Izv'] as const
+export const AUTO_FEMALE_VOICES = ['Ste', 'Tso', 'Chr'] as const
+export const CHILD_MALE_VOICES = ['Ksa'] as const
+export const CHILD_FEMALE_VOICES = ['Saf', 'Bsa'] as const
+export const MANUAL_MALE_VOICES = ['Mar', 'Kas'] as const
+export const SALUTE_VOICES = [
+  ...ASSISTANT_VOICES,
+  ...AUTO_MALE_VOICES,
+  ...AUTO_FEMALE_VOICES,
+  ...CHILD_MALE_VOICES,
+  ...CHILD_FEMALE_VOICES,
+  ...MANUAL_MALE_VOICES
+] as const
+export type SaluteVoice = (typeof SALUTE_VOICES)[number]
+export const DEFAULT_NARRATOR_VOICE: SaluteVoice = 'Che'
+
+export function isSaluteVoice(value: unknown): value is SaluteVoice {
+  return typeof value === 'string' && (SALUTE_VOICES as readonly string[]).includes(value)
+}
 
 export interface ExampleTurn {
   user: string
@@ -54,6 +73,21 @@ export interface Character {
   greeting?: string
   exampleDialogue?: ExampleTurn[]
   idleAnimation?: string
+}
+
+export function normalizeNarratorVoice(value: unknown): SaluteVoice {
+  return isSaluteVoice(value) ? value : DEFAULT_NARRATOR_VOICE
+}
+
+export function normalizeCharacterVoices(characters: Character[]): Character[] {
+  let male = 0
+  let female = 0
+  return characters.map((character) => {
+    if (isSaluteVoice(character.voice)) return character
+    const pool = character.gender === 'female' ? AUTO_FEMALE_VOICES : AUTO_MALE_VOICES
+    const index = character.gender === 'female' ? female++ : male++
+    return { ...character, voice: pool[index % pool.length] }
+  })
 }
 
 export interface CharactersFile {

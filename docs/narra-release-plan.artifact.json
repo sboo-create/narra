@@ -100,12 +100,14 @@
         "query": {
           "engine": "evidence-join",
           "sql": "SELECT r.priority, r.product_voice, r.base_code, r.assignment, r.picker_evidence_id, r.probe_evidence_id, r.supporting_probe_evidence_id, r.staging_result FROM voice_registry r LEFT JOIN voice_screenshot_evidence s ON s.evidence_id = r.picker_evidence_id LEFT JOIN voice_probe_results p ON p.evidence_id = r.probe_evidence_id LEFT JOIN voice_probe_results p2 ON p2.evidence_id = r.supporting_probe_evidence_id ORDER BY r.priority",
-          "description": "Все десять новых picker screenshots и один ранее полученный скриншот Джой сохранены как filename + SHA-256 + observed mappings; raw probe rows содержат code/sample-rate/HTTP status/content type. Решения registry ссылаются на evidence_id. Ключи не читались и не печатались.",
+          "description": "Одиннадцать новых picker screenshots и один ранее полученный скриншот Джой сохранены как filename + SHA-256 + observed mappings; все 188 raw probe rows содержат code/sample-rate/HTTP status/content type/actual WAV rate. Immutable CSV SHA-256: 30fee1f23901f5e8eda7790a8fdcee7e89d36da19d20a1e6e6a78732bad51bcc. Ключи не читались и не печатались.",
           "executed_at": "2026-07-23T16:20:00+03:00",
           "language": "image/JavaScript",
           "tables_used": [
             "voice_screenshot_evidence",
             "voice_probe_results",
+            "voice_probe_raw",
+            "docs/evidence/salutespeech-voice-probe-2026-07-23.csv",
             "voice_registry"
           ]
         }
@@ -121,12 +123,31 @@
           "tables_used": [
             "server/http.mjs",
             "server/sber-tls.mjs",
-            "https://smartspeech.sber.ru/rest/v1/text:synthesize"
+            "https://smartspeech.sber.ru/rest/v1/text:synthesize",
+            "voice_probe_raw",
+            "docs/evidence/salutespeech-voice-probe-2026-07-23.csv (SHA-256 30fee1f23901f5e8eda7790a8fdcee7e89d36da19d20a1e6e6a78732bad51bcc)"
           ],
           "metric_definitions": [
             "latency_ms = wall-clock duration одного synchronous synthesis request",
             "avg_bytes = средний размер полученного WAV",
             "Один текст и пять последовательных запусков на качество; это направляющий тест, не полный load benchmark"
+          ]
+        }
+      },
+      {
+        "id": "provider_models_pricing",
+        "label": "Официальные страницы моделей и тарифов — проверено 23 июля 2026",
+        "href": "https://openrouter.ai/deepseek/deepseek-v4-flash/pricing",
+        "query": {
+          "engine": "official-web-docs",
+          "description": "Проверены текущая OpenRouter цена DeepSeek V4 Flash, corporate tariff SaluteSpeech и статус GigaChat 3 Ultra. Фактические staging model/route names зафиксированы в sanitized Railway evidence SHA-256 bc19e573bb77ea5e5fba3aff0462b2dbcc82af297efd89b9711f4535454b08ca. Для внутренних Kandinsky image/video endpoints публичной цены в переданных контрактах нет.",
+          "executed_at": "2026-07-23T17:50:00+03:00",
+          "language": "web",
+          "tables_used": [
+            "https://openrouter.ai/deepseek/deepseek-v4-flash/pricing",
+            "https://developers.sber.ru/docs/ru/salutespeech/tariffs/legal-tariffs",
+            "https://developers.sber.ru/docs/ru/gigachat/models/gigachat-3-ultra",
+            "docs/evidence/railway-staging-provider-config-2026-07-23.json"
           ]
         }
       },
@@ -208,9 +229,23 @@
         "title": "Матрица провайдеров",
         "subtitle": "OpenRouter добавляется без удаления Giga; изображения, speech и video остаются отдельными контурами",
         "dataset": "provider_matrix",
+        "sourceId": "provider_models_pricing",
         "source": {
-          "label": "Проектная матрица провайдеров Narra",
-          "query": { "engine": "artifact-snapshot", "sql": "SELECT capability, primary, fallback, measurement FROM provider_matrix ORDER BY order", "description": "Читает proposed provider routing matrix из reviewed plan snapshot." }
+          "id": "provider_models_pricing",
+          "label": "Официальные OpenRouter/Sber тарифы + sanitized Railway model config",
+          "href": "https://openrouter.ai/deepseek/deepseek-v4-flash/pricing",
+          "query": {
+            "engine": "artifact-snapshot",
+            "sql": "SELECT capability, primary, fallback, measurement FROM provider_matrix ORDER BY order",
+            "description": "Сводит проверенные staging model names с официальными страницами тарифов; внутренние Kandinsky endpoints помечены как не имеющие опубликованной цены.",
+            "tables_used": [
+              "provider_matrix",
+              "docs/evidence/railway-staging-provider-config-2026-07-23.json",
+              "https://openrouter.ai/deepseek/deepseek-v4-flash/pricing",
+              "https://developers.sber.ru/docs/ru/salutespeech/tariffs/legal-tariffs",
+              "https://developers.sber.ru/docs/ru/gigachat/models/gigachat-3-ultra"
+            ]
+          }
         },
         "defaultSort": { "field": "capability", "direction": "asc" },
         "density": "spacious",
@@ -400,12 +435,12 @@
       {
         "id": "title",
         "type": "markdown",
-          "body": "# Narra: план безопасного релиза и аналитики\n\n**Обновлено:** 23 июля 2026 · **Статус:** gateway и stats staging прошли E2E; Narra активна в production Traction; 48 kHz проверен; публичный клиентский релиз ждёт installation registry, защищённый video transport, local notarization credentials и production cutover"
+        "body": "# Narra: план безопасного релиза и аналитики\n\n**Обновлено:** 23 июля 2026 · **Статус:** gateway и stats staging прошли E2E; Narra активна в production Traction; production hostname получил TLS и намеренно отвечает `503 not_ready`; 16 голосов 48 kHz проверены и закрыты server-side allowlist; публичный клиентский релиз ждёт installation registry, защищённый video transport, local notarization credentials и production cutover.\n\n**Внутренний рабочий документ:** перед внешней публикацией удалить имена владельцев, Apple Team ID, инфраструктурный IP и DNS verification data."
       },
       {
         "id": "technical_summary",
         "type": "markdown",
-          "body": "## Техническое резюме\n\n- **Release foundation реализован и проверен.** Gateway v2, server-side routing, hardening, telemetry/outbox и stats-narra покрыты тестами и agent gates.\n- **Traction показывает все шесть canonical-слотов.** `Ever used`, `DAU`, `WAU`, `MAU`, `Sessions / DAU`, `Tools / DAU` всегда видимы; при `DAU = 0` ratios показываются как `—`.\n- **Essential telemetry всегда включена; opt-out отключает только extended.** Целевой enum `origin=user|background` исключает фоновые jobs из activity/session/Tools; его реализация остаётся P0.\n- **No-invite beta — принятое целевое решение, ещё не готовый продукт.** До внешней раздачи нужны auto-enrollment/revocation, короткие bearer, quotas, cohort-token grace и global budget.\n- **Быстрый first-audio — целевой pipeline, ещё не реализованный.** План: bootstrap 600–900 символов, первый audio segment 150–300 символов и остальная разметка параллельно; один prefetch проверяется benchmark.\n- **48 kHz принято для будущего registry.** Staging-тест Joy/Erm показал медиану 2 179 мс против 1 960 мс; текущий код всё ещё 24 kHz и будет изменён отдельным P0.\n- **Plaintext video остаётся только внутренним staging.** Server-to-server скрывает ключи от клиента, но не даёт confidentiality; внешняя beta ждёт TLS relay.\n- **Local release path теперь соответствует политике credentials.** Hosted CI делает только manual unsigned preflight; подпись/notarization и draft upload выполняются локально. Signed артефакт ещё не собран.\n- **Исторического backfill нет.** Narra ещё не релизнута: аналитика начинается с чистой даты cutover."
+          "body": "## Техническое резюме\n\n- **Release foundation реализован и проверен.** Gateway v2, server-side routing, hardening, telemetry/outbox и stats-narra покрыты тестами и agent gates.\n- **Traction показывает все шесть canonical-слотов.** `Ever used`, `DAU`, `WAU`, `MAU`, `Sessions / DAU`, `Tools / DAU` всегда видимы; при `DAU = 0` ratios показываются как `—`.\n- **Essential telemetry всегда включена; opt-out отключает только extended.** Целевой enum `origin=user|background` исключает фоновые jobs из activity/session/Tools; его реализация остаётся P0.\n- **No-invite beta — принятое целевое решение, ещё не готовый продукт.** До внешней раздачи нужны auto-enrollment/revocation, короткие bearer, quotas, cohort-token grace и global budget.\n- **Быстрый first-audio — целевой pipeline, ещё не реализованный.** План: bootstrap 600–900 символов, первый audio segment 150–300 символов и остальная разметка параллельно; один prefetch проверяется benchmark.\n- **48 kHz registry и versioned TTS cache уже реализованы.** Gateway закрывает 16 проверенных base codes и сам выбирает `_48000`; staging-тест Joy/Erm показал медиану 2 179 мс против 1 960 мс.\n- **Plaintext video остаётся только внутренним staging.** Server-to-server скрывает ключи от клиента, но не даёт confidentiality; внешняя beta ждёт TLS relay.\n- **Local release path теперь соответствует политике credentials.** Hosted CI делает только manual unsigned preflight; подпись/notarization и draft upload выполняются локально. Signed артефакт ещё не собран.\n- **Исторического backfill нет.** Narra ещё не релизнута: аналитика начинается с чистой даты cutover."
       },
       {
         "id": "decisions_heading",
@@ -421,7 +456,7 @@
       {
         "id": "architecture_heading",
         "type": "markdown",
-      "body": "## Целевая архитектура: один защищённый вход, раздельные контуры\n\n```text\nElectron Narra\n  ├─ локальные книги, заметки и медиа-кэш остаются на устройстве\n  ├─ priority bounded event queue ────────────────┐\n  └─ AI-запросы + per-install token ──────────────┤\n                                                  ▼\n                                  Narra Gateway (Railway)\n                    ┌───────────────┼───────────────┬───────────────┐\n                    ▼               ▼               ▼               ▼\n             Giga / LiteLLM    OpenRouter      SaluteSpeech   Kandinsky / Video\n                    └───────────────┬───────────────┴───────────────┘\n                                    ▼\n                 Rotated JSONL audit + segmented outbox (/data)\n                                    ▼\n                     stats-narra /events → Traction hub\n```\n\nЦелевой post-import pipeline готовит book-level voice plan, bootstrap первой главы, cover и 2–3 основных portraits; audio остаётся on-demand. Сейчас эти bootstrap/voice-registry изменения ещё не реализованы.\n\nTraction token уже хранится только на gateway. Auto-enrolled revocable installation record, короткий bearer и quota checks — обязательный P0 до внешней no-invite beta."
+      "body": "## Целевая архитектура: один защищённый вход, раздельные контуры\n\n```text\nElectron Narra\n  ├─ локальные книги, заметки и медиа-кэш остаются на устройстве\n  ├─ priority bounded event queue ────────────────┐\n  └─ AI-запросы + per-install token ──────────────┤\n                                                  ▼\n                                  Narra Gateway (Railway)\n                    ┌───────────────┼───────────────┬───────────────┐\n                    ▼               ▼               ▼               ▼\n             Giga / LiteLLM    OpenRouter      SaluteSpeech   Kandinsky / Video\n                    └───────────────┬───────────────┴───────────────┘\n                                    ▼\n                 Rotated JSONL audit + segmented outbox (/data)\n                                    ▼\n                     stats-narra /events → Traction hub\n```\n\n48 kHz voice registry и миграция legacy voice IDs уже реализованы. Целевой post-import pipeline дополнительно должен подготовить book-level assistant/child voice plan, bootstrap первой главы, cover и 2–3 основных portraits; audio остаётся on-demand. Эти bootstrap/voice-plan изменения ещё не реализованы.\n\nTraction token уже хранится только на gateway. Auto-enrolled revocable installation record, короткий bearer и quota checks — обязательный P0 до внешней no-invite beta."
       },
       { "id": "architecture", "type": "table", "tableId": "architecture_table" },
       {
@@ -468,20 +503,20 @@
       "id": "tts_quality_heading",
       "type": "markdown",
       "sourceId": "salutespeech_staging_benchmark",
-      "body": "## 48 kHz принято для будущего registry после staging-теста\n\nПроверенный exact-case код Joy — `Erm_48000`. Медианная задержка 48 kHz выросла примерно на 11%, средняя — примерно на 30% из-за run 4 = 3 877 мс, а WAV стал почти вдвое больше. Целевой registry использует единое 48 kHz качество и 150–300-char first segment; текущий код пока остаётся 24 kHz.\n\nНовые screenshots закрыли библиотечный mapping без позиционных догадок. Старый `Get` не является Фокиным: picker показывает `Efo→Фокин`. На текущем key `Efo_48000` возвращает HTTP 400, а `Efo_24000` — gateway HTTP 502 с пока неустановленной причиной; `Kov→Ковалев` работает в 24 kHz, но возвращает 400 в 48 kHz. На эти два обычных library voice не завязана отдельная продуктовая логика, поэтому `Efo` и `Kov` целиком исключены из v1 вместо требования provisioning. Technical display mapping `Che/She→Афина/Сбер` ещё нужно подтвердить.\n\nРазбивка активного v1: главные assistant-роли — 1 мужской Сбер и 2 женских Афина/Джой; обычные второстепенные — 5 мужских `Ast/Gal/Bez/Ego/Izv` и 3 женских `Ste/Tso/Chr`; `Saf` — отдельное женское child-role exception; `Mar/Kas` — 2 мужских manual-only. Итого 14 активных голосов: 8 мужских и 6 женских с пасхалками либо 12 автоматических: 6 и 6.\n\nSafronova (`Saf`) — целевое child-role exception: age ≤12 либо `age_group=child` с confidence ≥0.8; `Bsa` — отдельная «Сафронова сказки», `Ksa` — `kid Сафронов`, они не подменяют выбранное правило. Markov/Pirat остаются manual-only."
+      "body": "## 48 kHz registry включён после staging-теста\n\nProvider UI и API вместе подтвердили exact assistant mapping: `Che→Афина`, `She→Сбер`, `Erm→Джой`. Медианная задержка 48 kHz выросла примерно на 11%, средняя — примерно на 30% из-за run 4 = 3 877 мс, а WAV стал почти вдвое больше. Gateway теперь сам добавляет `_48000` и принимает только закрытый base-code allowlist; произвольную provider model клиент подставить не может.\n\nИз 94 exact-case codes 16 синтезируют реальный WAV 48 kHz, а 84 — WAV 24 kHz. Рабочий high-quality registry: 9 мужских и 7 женских. Главные assistant-роли — 1+2; обычные второстепенные — 5+3; детские `Ksa/Saf/Bsa` — 1+2; manual-only `Mar/Kas` — 2+0. После реализации child/assistant assignment целевой auto-eligible set без пасхалок будет 7+7. Текущий runtime автоматически назначает только 5+3 обычных library-голоса и default narrator Che; child assignment и narrator UI ещё P0.\n\nВсе 188 первичных probe rows сохранены в bounded snapshot и immutable CSV SHA-256 `30fee1f...51bcc`. `Efo→Фокин` и `Kov→Ковалев` исключены: 48 kHz возвращает HTTP 400, отдельной продуктовой логики на них нет. Длинный 24 kHz pool остаётся candidate pool до прослушивания Сони: picker не доказывает пол/тембр, а смешивать качество внутри главы нельзя."
     },
     { "id": "tts_quality_benchmark", "type": "table", "tableId": "tts_quality_benchmark_table" },
     {
       "id": "voice_registry_heading",
       "type": "markdown",
       "sourceId": "voice_registry_review",
-      "body": "## Picker mapping определён; два недоступных 48 kHz голоса исключены из v1\n\nДля дубликатов выбираются YourVoice-варианты: `Ast`, а не общий `Gst`, для Стерлинга; `Saf`, а не `Bsa`, для детского exception. `Pik/Boc/Kha/Kud` распознаны, но не входят в утверждённый автоматический пул Сони. `Efo` и `Kov` остаются в evidence-таблице как проверенные mappings, но assignment помечен `excluded from v1`: приложение их не назначает и не зависит от их provisioning."
+      "body": "## Picker mapping и технический probe закрыты\n\nДля Стерлинга используется рабочий 48 kHz `Ast`, а не неработающий `Gst`. `Saf`, `Bsa` и `Ksa` — три самостоятельных проверенных детских варианта. `Pik/Boc/Kha/Kud` и ещё десятки кодов технически работают в 24 kHz, но не входят в auto-assignment без прослушивания и утверждения пола. `Efo` и `Kov` остаются evidence-only и не являются provisioning gate."
     },
     { "id": "voice_registry", "type": "table", "tableId": "voice_registry_table" },
     {
       "id": "transport_workaround",
       "type": "markdown",
-      "body": "## Workaround без HTTPS-туннеля\n\n### LiteLLM\n\nДо защищённого транспорта все LLM purposes идут через OpenRouter по HTTPS. Giga adapter остаётся server-side и возвращается без пересборки клиента после защищённого endpoint.\n\n### Video\n\n`клиент → HTTPS Railway → HTTP <video-origin>` скрывает master credential от клиента, но второй hop остаётся plaintext. HMAC/allowlist ограничивают replay/tampering, но не дают confidentiality. Поэтому HTTP разрешён только внутреннему staging с контролируемыми test data; внешняя no-invite beta ждёт HTTPS edge relay рядом с video host.\n\n### Поддомен MultiTool\n\n`narra-staging.multitool.works` направлен в Railway staging: CNAME/TXT добавлены, custom TLS выпущен, `/health` отвечает 200 и подтверждает SaluteSpeech, Kandinsky, video и OpenRouter routes. Прямой CNAME target без custom Host закономерно возвращает Railway fallback 404. Статус production-имени `narra.multitool.works` не считаем определённым: сейчас оно имеет `A 158.160.163.167`, HTTP отвечает Caddy 308, а HTTPS не проходит handshake. До подтверждения владельца/маршрута и reviewed cutover этот host не используется клиентом."
+      "body": "## Workaround без HTTPS-туннеля\n\n### LiteLLM\n\nДо защищённого транспорта все LLM purposes идут через OpenRouter по HTTPS. Staging использует `deepseek/deepseek-v4-flash`; Giga adapter `gigachat-3-ultra` остаётся server-side и возвращается без пересборки клиента после защищённого endpoint.\n\n### Video\n\n`клиент → HTTPS Railway → HTTP <video-origin>` скрывает master credential от клиента, но второй hop остаётся plaintext. HMAC/allowlist ограничивают replay/tampering, но не дают confidentiality. Поэтому HTTP разрешён только внутреннему staging с контролируемыми test data; внешняя no-invite beta ждёт HTTPS edge relay рядом с video host.\n\n### Поддомен MultiTool\n\n`narra-staging.multitool.works` направлен в Railway staging и отвечает 200. На общем Caddy server для `narra.multitool.works` выпущен валидный TLS, но exact-host block намеренно fail-closed: `/health` и все остальные пути отвечают JSON 503, reverse proxy отсутствует. Ни staging, ни legacy Railway не подключены; соседние домены после reload сохранили прежние статусы."
     },
     {
       "id": "client_credentials_access",
@@ -531,17 +566,17 @@
     {
       "id": "limitations",
       "type": "markdown",
-      "body": "## Ограничения и неизвестные\n\n- Production gateway/cutover ещё не выполнен; custom staging DNS/TLS уже live.\n- Plaintext video разрешён только внутреннему staging; внешняя beta ждёт TLS relay.\n- Video 4–6 jobs/hour и ускорение полной LLM-разметки 2–4× — расчёт до load benchmark; один TTS prefetch — проверяемая гипотеза.\n- TTS 24/48 kHz измерен на одном 708-char тексте и пяти последовательных runs; raw latency rows сохранены в snapshot.\n- Production Traction live, но база пуста до первого клиента; staging events не переносятся.\n- Библиотечный voice mapping закрыт screenshots; остаётся `Che/She→Афина/Сбер`. `Efo/Kov` исключены из v1, а не являются provisioning gate.\n- Auto-enrollment/revocation, origin allowlist, first-audio и 48 kHz registry пока P0, а не работающие функции.\n- Matching local Apple notarization profile/API key пока не найден; signed artifact ещё не собран.\n- Формулировка «закрыть все уязвимости» недоказуема; gate покрывает известные находки и abuse-сценарии."
+      "body": "## Ограничения и неизвестные\n\n- Production hostname TLS готов, но gateway/cutover ещё не выполнен: 503 является ожидаемой безопасной заглушкой.\n- Plaintext video разрешён только внутреннему staging; внешняя beta ждёт TLS relay.\n- Video 4–6 jobs/hour и ускорение полной LLM-разметки 2–4× — расчёт до load benchmark; один TTS prefetch — проверяемая гипотеза.\n- TTS 24/48 kHz измерен на одном 708-char тексте; capability probe — на одном 61-char тексте. Это техническая доступность, не оценка качества голоса.\n- Production Traction live, но база пуста до первого клиента; staging events не переносятся.\n- Assistant mapping закрыт: Che=Афина, She=Сбер, Erm=Джой. Server-side 16-voice 48 kHz allowlist и versioned text/voice/sample-rate/prosody cache key готовы; first-audio ещё P0.\n- 84 кода работают в 24 kHz, но их gender/тембр не утверждены; нельзя угадывать auto-pool по фамилиям.\n- Intel Mac отсутствует; universal x64 packaging остаётся без install/launch smoke и фиксируется как принятый риск.\n- Matching local Apple notarization profile/API key пока не найден; signed artifact ещё не собран.\n- Формулировка «закрыть все уязвимости» недоказуема; gate покрывает известные находки и abuse-сценарии."
       },
     {
       "id": "next_steps",
       "type": "markdown",
-      "body": "## Следующие шаги после уже завершённого foundation\n\n1. **Готово:** gateway v2, custom staging HTTPS, all-OpenRouter routes, media E2E, telemetry/outbox, stats staging, production Traction с шестью slots, local release script и manual unsigned CI preflight.\n2. Добавить обязательный `origin=user|background` allowlist/tiering и canonical exclusions.\n3. Подтвердить `Che/She→Афина/Сбер`, исключить `Efo/Kov` из назначения и внедрить reviewed 48 kHz registry, deterministic Safronova rule и cache keys.\n4. Реализовать bootstrap/first-audio/parallel markup/prefetch/coalescing и подтвердить underrun/p95 benchmark.\n5. Реализовать auto-enrollment/revocation, short bearer, multi-version cohort grace и cost controls.\n6. Перед внешней beta поставить HTTPS video relay: custom gateway TLS не шифрует второй hop до video host.\n7. Получить local notarization profile/API key, собрать signed/notarized universal RC и проверить Apple Silicon/Intel.\n8. Провести capacity benchmark, production gateway cutover и только после gates загрузить/опубликовать release."
+      "body": "## Следующие шаги после уже завершённого foundation\n\n1. **Готово:** gateway v2, custom staging HTTPS, fail-closed production TLS hostname, all-OpenRouter routes, media E2E, telemetry/outbox, stats staging, production Traction с шестью slots, 16-voice 48 kHz registry, versioned TTS cache keys, local release script и manual unsigned CI preflight.\n2. Добавить обязательный `origin=user|background` allowlist/tiering и canonical exclusions.\n3. Доделать deterministic child assignment и UI выбора narrator/manual voice; расширять 24 kHz pool только после прослушивания Сони.\n4. Реализовать bootstrap/first-audio/parallel markup/prefetch/coalescing и подтвердить underrun/p95 benchmark.\n5. Реализовать auto-enrollment/revocation, short bearer, multi-version cohort grace и cost controls.\n6. Перед внешней beta поставить HTTPS video relay: custom gateway TLS не шифрует второй hop до video host.\n7. Получить local notarization profile/API key, собрать signed/notarized universal RC и проверить Apple Silicon; отсутствие Intel smoke зафиксировать как риск.\n8. Провести capacity benchmark, подключить новый v2 upstream к production hostname и только после gates загрузить/опубликовать release."
       },
     {
       "id": "further_questions",
       "type": "markdown",
-      "body": "## Оставшиеся внешние входы\n\n### От Макса\n- Выбрать production routing для `narra.multitool.works`: Railway CNAME/TXT либо подтверждённый владелец и TLS на `158.160.163.167`.\n- Согласовать локальный Apple Team Жени notarization path; key material не получать и не передавать в чат/репозиторий.\n- Задать бюджет/окно benchmark `1 → 2 → 5 → 10`, найти Intel Mac либо принять риск, уточнить отдельный Android scope.\n\n### От Сони\n- Подтвердить `Che/She→Афина/Сбер`, fallback для `Sber narrator + male protagonist`, gender pools после одинакового 48 kHz прослушивания и portrait preload count.\n- `Efo/Kov` исключены из v1; их provisioning больше не требуется.\n\n### От владельца video host\n- Поставить HTTPS relay рядом с `<video-origin>:5051`, самому записать отдельный Narra credential прямо в Railway secret/secret manager без передачи значения и подтвердить concurrency limit.\n\n### От владельца Apple Team\n- Разрешить `com.narra.app` под Team `LTS79DWRGJ`, самостоятельно сохранить credentials на release Mac через `notarytool store-credentials` и сообщить только имя `APPLE_KEYCHAIN_PROFILE`; key material не передаётся."
+      "body": "## Оставшиеся внешние входы\n\n### От Макса\n- После создания нового Railway v2 production service дать его upstream для reviewed Caddy cutover; TLS hostname уже готов и fail-closed.\n- Согласовать локальный Apple Team Жени notarization path; key material не получать и не передавать в чат/репозиторий.\n- Задать бюджет/окно benchmark `1 → 2 → 5 → 10`; отсутствие Intel smoke уже принято как риск; уточнить отдельный Android scope.\n\n### От Сони\n- Утвердить fallback для `Sber narrator + male protagonist`, прослушать основной 48 kHz pool и при желании выбрать дополнительные варианты из 84 технически рабочих 24 kHz кодов.\n- Подтвердить portrait preload count. Assistant mapping уже закрыт: Che=Афина, She=Сбер, Erm=Джой; Efo/Kov provisioning не требуется.\n\n### От владельца video host\n- Поставить HTTPS relay рядом с `<video-origin>:5051`, самому записать отдельный Narra credential прямо в Railway secret/secret manager без передачи значения и подтвердить concurrency limit.\n\n### От владельца Apple Team\n- Разрешить `com.narra.app` под Team `LTS79DWRGJ`, самостоятельно сохранить credentials на release Mac через `notarytool store-credentials` и сообщить только имя `APPLE_KEYCHAIN_PROFILE`; key material не передаётся."
       }
     ]
   },
@@ -564,7 +599,9 @@
         { "order": 11, "area": "Staging credentials", "decision": "Отдельных upstream staging keys не будет", "consequence": "Копируются только конкретные credentials без раскрытия; unsafe public HTTP URLs и Giga fallbacks не копируются; Narra/Traction secrets, environment и данные отдельные" },
         { "order": 12, "area": "Apple", "decision": "Подписывать локально Developer ID Жени — Evgeny Tsapnikov (LTS79DWRGJ)", "consequence": "Credentials не выгружаются; для notarization нужен локальный matching Team API key/profile и разрешение на com.narra.app" },
         { "order": 13, "area": "Beta-доступ", "decision": "Цель: без приглашений и аккаунтов", "consequence": "Auto-enrollment registry, short bearer, revocation, multi-token grace, quotas и global budget обязательны до внешней раздачи" },
-        { "order": 14, "area": "SaluteSpeech", "decision": "Для будущего registry выбрано 48 kHz; Safronova для подтверждённых child-role; Efo/Kov исключены из v1", "consequence": "Текущий код ещё 24 kHz; first-audio, Che/She display mapping и child_rule_version остаются P0; provisioning Efo/Kov не требуется" }
+        { "order": 14, "area": "SaluteSpeech", "decision": "Закрытый registry из 16 проверенных 48 kHz голосов; Efo/Kov исключены", "consequence": "Che=Афина, She=Сбер, Erm=Джой; gateway сам выбирает suffix; versioned cache key готов; 84-code 24 kHz pool и first-audio ждут следующих этапов" },
+        { "order": 15, "area": "Production DNS/TLS", "decision": "Hostname зарезервирован fail-closed Caddy block", "consequence": "Валидный TLS и exact JSON 503 без reverse proxy; v2 upstream подключается только отдельным reviewed cutover" },
+        { "order": 16, "area": "Intel QA", "decision": "Intel Mac отсутствует", "consequence": "Universal x64 артефакт продолжаем собирать; отсутствие install/launch smoke принято как явный release risk" }
       ],
       "tts_quality_benchmark": [
         { "sample_rate_hz": 24000, "quality": "24 kHz", "provider_code": "Erm_24000", "runs": 5, "chars": 708, "avg_ms": 2023, "median_ms": 1960, "avg_wav_bytes": 2250092, "avg_wav_mb": 2.25, "success": "5/5 HTTP 200" },
@@ -583,6 +620,7 @@
         { "sample_rate_hz": 48000, "provider_code": "Erm_48000", "run": 5, "latency_ms": 2117 }
       ],
       "voice_screenshot_evidence": [
+        { "evidence_id": "picker-assistants", "filename": "codex-clipboard-230697c9-e53e-42f8-b769-00c05e1af0c9.png", "sha256": "49c336d8ac9baada299d424a6bf17f46b7dbe5cd9e0b3b59386defb4ddb3520f", "captured_at": "2026-07-23", "observed_mappings": "Che→Афина; She→Сбер; Erm→Джой" },
         { "evidence_id": "picker-joy-prior", "filename": "codex-clipboard-89c4cbce-48ef-4700-b0f2-14f973e0f8d3.png", "sha256": "b575951438fcc61f9ea382d493129193af027a35cbb992e076b4baa4c141d44a", "captured_at": "2026-07-23", "observed_mappings": "Erm→Джой; Gal→Галустян; Saf→Сафронова; Ast→Стерлинг; Boc→Бочаров; Kha→Хачатрян; Kud→Кудряшова; Ste→Стемпаржевская" },
         { "evidence_id": "picker-154536", "filename": "Снимок экрана 2026-07-23 в 15.45.36.png", "sha256": "8c3df36b7dc94bb0bb837e688f45d6e70a2e646040b025225b6626b975363000", "captured_at": "2026-07-23T15:45:36+03:00", "observed_mappings": "Pik→Голос для ПИК; Gal→Галустян; Saf→Сафронова; Ast→Стерлинг; Boc→Бочаров; Kha→Хачатрян; Kud→Кудряшова; Ste→Стемпаржевская; Tso→Цокаева" },
         { "evidence_id": "picker-154545", "filename": "Снимок экрана 2026-07-23 в 15.45.45.png", "sha256": "f47065bee0eb48dd3194d19a85d5c1a499a162342bccdda51bfc9bc14ccc1d31", "captured_at": "2026-07-23T15:45:45+03:00", "observed_mappings": "Tso→Цокаева; Gst→Стерлинг; Bez→Безлепкин; Ego→Егоров; Mar→Марков; Efo→Фокин" },
@@ -620,23 +658,219 @@
         { "evidence_id": "probe-Kha-48000", "batch": "picker-followup-48k", "provider_code": "Kha_48000", "sample_rate_hz": 48000, "http_status": 400, "content_type": "application/json", "observed_at": "2026-07-23T16:25:00+03:00" },
         { "evidence_id": "probe-Kud-48000", "batch": "picker-followup-48k", "provider_code": "Kud_48000", "sample_rate_hz": 48000, "http_status": 400, "content_type": "application/json", "observed_at": "2026-07-23T16:25:00+03:00" },
         { "evidence_id": "probe-Efo-24000", "batch": "gateway-followup-24k", "provider_code": "Efo_24000", "sample_rate_hz": 24000, "http_status": 502, "content_type": "application/json", "observed_at": "2026-07-23T16:29:00+03:00" },
-        { "evidence_id": "probe-Kov-24000", "batch": "gateway-followup-24k", "provider_code": "Kov_24000", "sample_rate_hz": 24000, "http_status": 200, "content_type": "audio/wav", "observed_at": "2026-07-23T16:29:00+03:00" }
+        { "evidence_id": "probe-Kov-24000", "batch": "gateway-followup-24k", "provider_code": "Kov_24000", "sample_rate_hz": 24000, "http_status": 200, "content_type": "audio/wav", "observed_at": "2026-07-23T16:29:00+03:00" },
+        { "evidence_id": "probe-all-48k-summary", "batch": "all-screenshot-codes", "provider_code": "94 exact-case base codes", "sample_rate_hz": 48000, "http_status": 200, "content_type": "16 audio/wav; 78 application/json", "observed_at": "2026-07-23T17:30:00+03:00", "result": "16/94 success; actual WAV sample rate verified 48000" },
+        { "evidence_id": "probe-all-24k-summary", "batch": "all-screenshot-codes", "provider_code": "94 exact-case base codes", "sample_rate_hz": 24000, "http_status": 200, "content_type": "84 audio/wav; 10 application/json", "observed_at": "2026-07-23T17:45:00+03:00", "result": "84/94 success; actual WAV sample rate verified 24000; failures Ast/Bsa/Efo/Evi/Gst/Hek/Lli/Lpe/Man/Vsh" }
+      ],
+      "voice_probe_raw": [
+        {"base_code":"Aer","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Aer","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Ana","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Ana","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Ann","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Ann","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Aso","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Aso","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Ast","sample_rate_hz":24000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Ast","sample_rate_hz":48000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":48000,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Bai","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Bai","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Bal","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Bal","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Bek","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Bek","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Bez","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Bez","sample_rate_hz":48000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":48000,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Bik","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Bik","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Boc","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Boc","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Bol","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Bol","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Bsa","sample_rate_hz":24000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Bsa","sample_rate_hz":48000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":48000,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Buz","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Buz","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Che","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Che","sample_rate_hz":48000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":48000,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Chp","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Chp","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Chr","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Chr","sample_rate_hz":48000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":48000,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Dad","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Dad","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Dsu","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Dsu","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Dyu","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Dyu","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Efo","sample_rate_hz":24000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Efo","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Ego","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Ego","sample_rate_hz":48000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":48000,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Erm","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Erm","sample_rate_hz":48000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":48000,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Evi","sample_rate_hz":24000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Evi","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Gal","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Gal","sample_rate_hz":48000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":48000,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Gav","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Gav","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Gri","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Gri","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Gst","sample_rate_hz":24000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Gst","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Gur","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Gur","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Hek","sample_rate_hz":24000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Hek","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Igr","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Igr","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Izv","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Izv","sample_rate_hz":48000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":48000,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Kab","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Kab","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Kai","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Kai","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Kar","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Kar","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Kas","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Kas","sample_rate_hz":48000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":48000,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Kbu","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Kbu","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Ker","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Ker","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Kha","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Kha","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Kis","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Kis","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Kka","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Kka","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Kkr","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Kkr","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Klu","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Klu","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Kor","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Kor","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Kov","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Kov","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Koz","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Koz","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Ksa","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Ksa","sample_rate_hz":48000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":48000,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Ktr","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Ktr","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Kud","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Kud","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Lil","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Lil","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Lli","sample_rate_hz":24000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Lli","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Lpe","sample_rate_hz":24000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Lpe","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Mak","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Mak","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Man","sample_rate_hz":24000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Man","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Mar","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Mar","sample_rate_hz":48000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":48000,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Mel","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Mel","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Min","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Min","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Mir","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Mir","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Nag","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Nag","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Ore","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Ore","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Ovs","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Ovs","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Peh","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Peh","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Pik","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Pik","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Pot","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Pot","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Pru","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Pru","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Rab","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Rab","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Res","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Res","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Roz","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Roz","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Rum","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Rum","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Saf","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Saf","sample_rate_hz":48000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":48000,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"San","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"San","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Sdo","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Sdo","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Shc","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Shc","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"She","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"She","sample_rate_hz":48000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":48000,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Shi","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Shi","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Shl","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Shl","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Sid","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Sid","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Sko","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Sko","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Smi","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Smi","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Sne","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Sne","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Sta","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Sta","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Ste","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Ste","sample_rate_hz":48000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":48000,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Sto","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Sto","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Str","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Str","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Tar","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Tar","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Tob","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Tob","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Tre","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Tre","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Tso","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Tso","sample_rate_hz":48000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":48000,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Tya","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Tya","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Uso","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Uso","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Ved","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Ved","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Vol","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Vol","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Voy","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Voy","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Vsh","sample_rate_hz":24000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Vsh","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"}
       ],
       "voice_registry": [
-        { "priority": 1, "product_voice": "Джой", "base_code": "Erm", "assignment": "assistant / narrator / protagonist", "picker_evidence_id": "picker-joy-prior", "probe_evidence_id": "probe-Erm-48000", "staging_result": "48000 HTTP 200" },
-        { "priority": 2, "product_voice": "Фокин", "base_code": "Efo", "assignment": "excluded from v1", "picker_evidence_id": "picker-154545", "probe_evidence_id": "probe-Efo-48000", "supporting_probe_evidence_id": "probe-Efo-24000", "staging_result": "24000 gateway 502; 48000 HTTP 400" },
-        { "priority": 3, "product_voice": "Стерлинг", "base_code": "Ast", "assignment": "library auto; Gst excluded", "picker_evidence_id": "picker-154536", "probe_evidence_id": "probe-Ast-48000", "staging_result": "48000 HTTP 200" },
-        { "priority": 4, "product_voice": "Галустян", "base_code": "Gal", "assignment": "library auto", "picker_evidence_id": "picker-154536", "probe_evidence_id": "probe-Gal-48000", "staging_result": "48000 HTTP 200" },
-        { "priority": 5, "product_voice": "Стремпаржевская (picker: Стемпаржевская)", "base_code": "Ste", "assignment": "library auto", "picker_evidence_id": "picker-154536", "probe_evidence_id": "probe-Ste-48000", "staging_result": "48000 HTTP 200" },
-        { "priority": 6, "product_voice": "Цокаева", "base_code": "Tso", "assignment": "library auto", "picker_evidence_id": "picker-154536", "probe_evidence_id": "probe-Tso-48000", "staging_result": "48000 HTTP 200" },
-        { "priority": 7, "product_voice": "Безлепкин", "base_code": "Bez", "assignment": "library auto", "picker_evidence_id": "picker-154545", "probe_evidence_id": "probe-Bez-48000", "staging_result": "48000 HTTP 200" },
-        { "priority": 8, "product_voice": "Егоров", "base_code": "Ego", "assignment": "library auto", "picker_evidence_id": "picker-154545", "probe_evidence_id": "probe-Ego-48000", "staging_result": "48000 HTTP 200" },
-        { "priority": 9, "product_voice": "Чернышова", "base_code": "Chr", "assignment": "library auto", "picker_evidence_id": "picker-154552", "probe_evidence_id": "probe-Chr-48000", "staging_result": "48000 HTTP 200" },
-        { "priority": 10, "product_voice": "Изволов", "base_code": "Izv", "assignment": "library auto", "picker_evidence_id": "picker-154552", "probe_evidence_id": "probe-Izv-48000", "staging_result": "48000 HTTP 200" },
-        { "priority": 11, "product_voice": "Сафронова", "base_code": "Saf", "assignment": "child-role exception", "picker_evidence_id": "picker-154536", "probe_evidence_id": "probe-Saf-48000", "staging_result": "48000 HTTP 200" },
-        { "priority": 12, "product_voice": "Ковалев", "base_code": "Kov", "assignment": "excluded from v1", "picker_evidence_id": "picker-154610", "probe_evidence_id": "probe-Kov-48000", "supporting_probe_evidence_id": "probe-Kov-24000", "staging_result": "24000 HTTP 200; 48000 HTTP 400" },
-        { "priority": 13, "product_voice": "Марков", "base_code": "Mar", "assignment": "manual-only", "picker_evidence_id": "picker-154545", "probe_evidence_id": "probe-Mar-48000", "staging_result": "48000 HTTP 200" },
-        { "priority": 14, "product_voice": "Пират Касперович", "base_code": "Kas", "assignment": "manual-only", "picker_evidence_id": "picker-154639", "probe_evidence_id": "probe-Kas-48000", "staging_result": "48000 HTTP 200" }
+        { "priority": 1, "product_voice": "Афина", "base_code": "Che", "assignment": "female assistant / narrator / protagonist", "picker_evidence_id": "picker-assistants", "probe_evidence_id": "probe-Che-48000", "staging_result": "48000 HTTP 200" },
+        { "priority": 2, "product_voice": "Сбер", "base_code": "She", "assignment": "male assistant / narrator / protagonist", "picker_evidence_id": "picker-assistants", "probe_evidence_id": "probe-She-48000", "staging_result": "48000 HTTP 200" },
+        { "priority": 3, "product_voice": "Джой", "base_code": "Erm", "assignment": "female assistant / narrator / protagonist", "picker_evidence_id": "picker-assistants", "probe_evidence_id": "probe-Erm-48000", "staging_result": "48000 HTTP 200" },
+        { "priority": 4, "product_voice": "Стерлинг", "base_code": "Ast", "assignment": "male library auto; Gst excluded", "picker_evidence_id": "picker-154536", "probe_evidence_id": "probe-Ast-48000", "staging_result": "48000 HTTP 200" },
+        { "priority": 5, "product_voice": "Галустян", "base_code": "Gal", "assignment": "male library auto", "picker_evidence_id": "picker-154536", "probe_evidence_id": "probe-Gal-48000", "staging_result": "48000 HTTP 200" },
+        { "priority": 6, "product_voice": "Безлепкин", "base_code": "Bez", "assignment": "male library auto", "picker_evidence_id": "picker-154545", "probe_evidence_id": "probe-Bez-48000", "staging_result": "48000 HTTP 200" },
+        { "priority": 7, "product_voice": "Егоров", "base_code": "Ego", "assignment": "male library auto", "picker_evidence_id": "picker-154545", "probe_evidence_id": "probe-Ego-48000", "staging_result": "48000 HTTP 200" },
+        { "priority": 8, "product_voice": "Изволов", "base_code": "Izv", "assignment": "male library auto", "picker_evidence_id": "picker-154552", "probe_evidence_id": "probe-Izv-48000", "staging_result": "48000 HTTP 200" },
+        { "priority": 9, "product_voice": "Стремпаржевская (picker: Стемпаржевская)", "base_code": "Ste", "assignment": "female library auto", "picker_evidence_id": "picker-154536", "probe_evidence_id": "probe-Ste-48000", "staging_result": "48000 HTTP 200" },
+        { "priority": 10, "product_voice": "Цокаева", "base_code": "Tso", "assignment": "female library auto", "picker_evidence_id": "picker-154536", "probe_evidence_id": "probe-Tso-48000", "staging_result": "48000 HTTP 200" },
+        { "priority": 11, "product_voice": "Чернышова", "base_code": "Chr", "assignment": "female library auto", "picker_evidence_id": "picker-154552", "probe_evidence_id": "probe-Chr-48000", "staging_result": "48000 HTTP 200" },
+        { "priority": 12, "product_voice": "kid Сафронов", "base_code": "Ksa", "assignment": "male child auto", "picker_evidence_id": "picker-154559", "probe_evidence_id": "probe-Ksa-48000", "staging_result": "48000 HTTP 200" },
+        { "priority": 13, "product_voice": "Сафронова", "base_code": "Saf", "assignment": "female child auto", "picker_evidence_id": "picker-154536", "probe_evidence_id": "probe-Saf-48000", "staging_result": "48000 HTTP 200" },
+        { "priority": 14, "product_voice": "Сафронова сказки", "base_code": "Bsa", "assignment": "female child / fairy-tale auto", "picker_evidence_id": "picker-154552", "probe_evidence_id": "probe-Bsa-48000", "staging_result": "48000 HTTP 200" },
+        { "priority": 15, "product_voice": "Марков", "base_code": "Mar", "assignment": "male manual-only", "picker_evidence_id": "picker-154545", "probe_evidence_id": "probe-Mar-48000", "staging_result": "48000 HTTP 200" },
+        { "priority": 16, "product_voice": "Пират Касперович", "base_code": "Kas", "assignment": "male manual-only", "picker_evidence_id": "picker-154639", "probe_evidence_id": "probe-Kas-48000", "staging_result": "48000 HTTP 200" },
+        { "priority": 17, "product_voice": "Фокин", "base_code": "Efo", "assignment": "excluded from v1", "picker_evidence_id": "picker-154545", "probe_evidence_id": "probe-Efo-48000", "supporting_probe_evidence_id": "probe-Efo-24000", "staging_result": "24000/48000 unavailable" },
+        { "priority": 18, "product_voice": "Ковалев", "base_code": "Kov", "assignment": "excluded from v1", "picker_evidence_id": "picker-154610", "probe_evidence_id": "probe-Kov-48000", "supporting_probe_evidence_id": "probe-Kov-24000", "staging_result": "24000 HTTP 200; 48000 HTTP 400" }
       ],
       "architecture": [
         { "order": 1, "layer": "Electron client", "owns": "UI, локальные книги/заметки/кэш, installation identity, always-on essential + default-on extended telemetry, bounded offline event queue", "never": "Не содержит provider keys/Traction token и не выбирает provider/model", "state": "Реализовано локально; unsigned universal QA пройден" },
@@ -647,11 +881,11 @@
         { "order": 6, "layer": "Traction hub", "owns": "Overview, health polling, общий доступ и сравнимость продуктов", "never": "Не угадывает продуктовые определения Narra", "state": "Production slot active с логотипом; poller healthy, dashboard за Basic Auth, health public, ingest token-protected" }
       ],
       "provider_matrix": [
-        { "order": 1, "capability": "Персонажный чат", "primary": "OpenRouter HTTPS + ZDR/data-deny в staging", "fallback": "Нет Giga fallback до HTTPS/private tunnel LiteLLM", "measurement": "request success + outcome coverage/grace, p50/p95, input/output/total tokens, exact USD cost + source/coverage; answer feedback producer planned" },
-        { "order": 2, "capability": "Разметка, summary, structured JSON", "primary": "Каждый task purpose явно направлен в OpenRouter на staging", "fallback": "Giga adapter сохраняется, но включается только после защищённого транспорта; shared validation 4xx всегда terminal", "measurement": "валидность JSON, attempts/request, fallback rate, cost/result" },
-        { "order": 3, "capability": "Портреты и сцены", "primary": "GigaChat Image / Kandinsky", "fallback": "Только при технической ошибке; CENSOR всегда terminal", "measurement": "success, censor/rate errors, queue wait, latency, cost" },
-        { "order": 4, "capability": "Говорящий аватар и idle video", "primary": "Проверенный Kandinsky video server; временно HTTP", "fallback": "Без смены модели; censor=true; public release ждёт HTTPS", "measurement": "task type, transport security, queue wait, generation latency, failures, bytes" },
-        { "order": 5, "capability": "TTS / ASR", "primary": "SaluteSpeech с fingerprint-verified root/sub CA Минцифры", "fallback": "Нет скрытого cross-provider fallback и нет insecure TLS", "measurement": "CA readiness, seconds/chars, success, latency, provider cost" },
+        { "order": 1, "capability": "Персонажный чат", "primary": "OpenRouter HTTPS · deepseek/deepseek-v4-flash", "fallback": "GigaChat 3 Ultra adapter ждёт HTTPS/private LiteLLM", "measurement": "Платный OpenRouter: около $0.09/$0.18 за 1M input/output tokens на 23.07; exact usage.cost, p50/p95, coverage" },
+        { "order": 2, "capability": "Разметка, summary, structured JSON", "primary": "Все staging purposes · deepseek/deepseek-v4-flash", "fallback": "gigachat-3-ultra настроен, но не является active staging route", "measurement": "валидность JSON, attempts/request, fallback rate, exact cost/result" },
+        { "order": 3, "capability": "Портреты и сцены", "primary": "Kandinsky · k6-image-t2i", "fallback": "Только при технической ошибке; CENSOR terminal", "measurement": "Публичной цены внутреннего endpoint нет; success, censor/rate, queue wait, latency, owner quota" },
+        { "order": 4, "capability": "Говорящий аватар и idle video", "primary": "Kandinsky video · k5-i2v-hd / k5-i2v-lite", "fallback": "Без смены модели; public release ждёт HTTPS", "measurement": "Публичной цены/квоты нет; GPU service time, queue wait, jobs/hour, failures, bytes" },
+        { "order": 5, "capability": "TTS / ASR", "primary": "SaluteSpeech YourVoice 48 kHz / universal_turbo", "fallback": "Нет скрытого cross-provider fallback и нет insecure TLS", "measurement": "Corporate public tariff 0.000186 ₽/char; фактический gigacons contract уточняется; latency/success/chars" },
         { "order": 6, "capability": "Ручной rollback", "primary": "Railway variables/feature flags", "fallback": "Мгновенный возврат маршрута без пересборки клиента", "measurement": "route version, change timestamp, error delta" }
       ],
       "canonical_metrics": [
@@ -805,12 +1039,14 @@
       "query": {
         "engine": "evidence-join",
         "sql": "SELECT r.priority, r.product_voice, r.base_code, r.assignment, r.picker_evidence_id, r.probe_evidence_id, r.supporting_probe_evidence_id, r.staging_result FROM voice_registry r LEFT JOIN voice_screenshot_evidence s ON s.evidence_id = r.picker_evidence_id LEFT JOIN voice_probe_results p ON p.evidence_id = r.probe_evidence_id LEFT JOIN voice_probe_results p2 ON p2.evidence_id = r.supporting_probe_evidence_id ORDER BY r.priority",
-        "description": "Все десять новых picker screenshots и один ранее полученный скриншот Джой сохранены как filename + SHA-256 + observed mappings; raw probe rows содержат code/sample-rate/HTTP status/content type. Решения registry ссылаются на evidence_id. Ключи не читались и не печатались.",
+        "description": "Одиннадцать новых picker screenshots и один ранее полученный скриншот Джой сохранены как filename + SHA-256 + observed mappings; все 188 raw probe rows содержат code/sample-rate/HTTP status/content type/actual WAV rate. Immutable CSV SHA-256: 30fee1f23901f5e8eda7790a8fdcee7e89d36da19d20a1e6e6a78732bad51bcc. Ключи не читались и не печатались.",
         "executed_at": "2026-07-23T16:20:00+03:00",
         "language": "image/JavaScript",
         "tables_used": [
           "voice_screenshot_evidence",
           "voice_probe_results",
+          "voice_probe_raw",
+          "docs/evidence/salutespeech-voice-probe-2026-07-23.csv",
           "voice_registry"
         ]
       }
@@ -823,11 +1059,28 @@
         "description": "Пять последовательных синтезов одного текста длиной 708 символов для Erm_24000 и Erm_48000; затем exact-case probe присланных private voice codes. Credentials не извлекались из Railway и не печатались.",
         "executed_at": "2026-07-23T18:30:00+03:00",
         "language": "JavaScript",
-        "tables_used": ["server/http.mjs", "server/sber-tls.mjs", "https://smartspeech.sber.ru/rest/v1/text:synthesize"],
+        "tables_used": ["server/http.mjs", "server/sber-tls.mjs", "https://smartspeech.sber.ru/rest/v1/text:synthesize", "voice_probe_raw", "docs/evidence/salutespeech-voice-probe-2026-07-23.csv (SHA-256 30fee1f23901f5e8eda7790a8fdcee7e89d36da19d20a1e6e6a78732bad51bcc)"],
         "metric_definitions": [
           "latency_ms = wall-clock duration одного synchronous synthesis request",
           "avg_bytes = средний размер полученного WAV",
           "Один текст и пять последовательных запусков на качество; это направляющий тест, не полный load benchmark"
+        ]
+      }
+    },
+    {
+      "id": "provider_models_pricing",
+      "label": "Официальные страницы моделей и тарифов — проверено 23 июля 2026",
+      "href": "https://openrouter.ai/deepseek/deepseek-v4-flash/pricing",
+      "query": {
+        "engine": "official-web-docs",
+        "description": "Проверены текущая OpenRouter цена DeepSeek V4 Flash, corporate tariff SaluteSpeech и статус GigaChat 3 Ultra. Фактические staging model/route names зафиксированы в sanitized Railway evidence SHA-256 bc19e573bb77ea5e5fba3aff0462b2dbcc82af297efd89b9711f4535454b08ca. Для внутренних Kandinsky image/video endpoints публичной цены в переданных контрактах нет.",
+        "executed_at": "2026-07-23T17:50:00+03:00",
+        "language": "web",
+        "tables_used": [
+          "https://openrouter.ai/deepseek/deepseek-v4-flash/pricing",
+          "https://developers.sber.ru/docs/ru/salutespeech/tariffs/legal-tariffs",
+          "https://developers.sber.ru/docs/ru/gigachat/models/gigachat-3-ultra",
+          "docs/evidence/railway-staging-provider-config-2026-07-23.json"
         ]
       }
     },

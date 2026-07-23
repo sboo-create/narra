@@ -1,3 +1,5 @@
+import { voiceConfig } from './voices.mjs'
+
 const PURPOSES = new Set(['character_chat', 'structured_task', 'summary', 'scenario', 'memory'])
 const ROLES = new Set(['system', 'user', 'assistant'])
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -73,9 +75,11 @@ export function parseSynthesisBody(input) {
   if ((body.text === undefined) === (body.ssml === undefined)) fail('нужно ровно одно поле: text или ssml')
   const text = body.text === undefined ? undefined : string(body.text, 'text', { max: 12_000 })
   const ssml = body.ssml === undefined ? undefined : string(body.ssml, 'ssml', { max: 24_000 })
-  const voice = body.voice === undefined ? 'Nec' : string(body.voice, 'voice', { max: 24 })
+  const voice = body.voice === undefined ? 'Che' : string(body.voice, 'voice', { max: 24 })
   if (!/^[A-Za-z][A-Za-z0-9_-]{0,23}$/.test(voice)) fail('voice: недопустимое значение')
-  return { text, ssml, voice }
+  const config = voiceConfig(voice)
+  if (!config) fail('voice: голос не поддерживается')
+  return { text, ssml, voice, providerVoice: config.providerVoice }
 }
 
 export function parseAvatarBody(input) {
