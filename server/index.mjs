@@ -11,11 +11,30 @@ import {
   validationErrors
 } from './contracts.mjs'
 import { llmRouteReadiness, requestChat } from './providers.mjs'
+import {
+  settleProviderResponse,
+  validateChatCompletionPayload
+} from './provider-response.mjs'
 import { parseEventBatch } from './events.mjs'
 import { createEventStore } from './event-store.mjs'
 import { fetchWithRedirectPolicy, readBoundedBody } from './safe-fetch.mjs'
 import { createConcurrencyGate, requestAbortSignal, withTimeout } from './concurrency.mjs'
-import { analyticsRoute, completionProperties, providerAttemptProperties } from './analytics-properties.mjs'
+import {
+  analyticsRoute,
+  completionProperties,
+  createSseUsageCollector,
+  providerAttemptProperties
+} from './analytics-properties.mjs'
+import {
+  insecureVideoEnvironmentAllowed,
+  isSecureServiceUrl,
+  serviceUrl
+} from './service-url.mjs'
+import {
+  shouldRetryKandinsky,
+  videoRetryDelay
+} from './retry-policy.mjs'
+import { imageUpstreamError, shouldFallbackAfterImageError } from './image-policy.mjs'
 import {
   createFixedWindowLimiter,
   createFixedWindowByteBudget,
@@ -30,17 +49,22 @@ const PORT = process.env.PORT || 8787
 const INSECURE = process.env.ALLOW_INSECURE_TLS === 'true'
 const PRODUCTION = process.env.NODE_ENV === 'production'
 if (PRODUCTION && INSECURE) throw new Error('ALLOW_INSECURE_TLS is forbidden in production')
-
-function serviceUrl(name, raw, { allowPrivateHttp = false } = {}) {
-  const value = String(raw || '').trim().replace(/\/+$/, '')
-  if (!value) return ''
-  const url = new URL(value)
-  const privateHttp = allowPrivateHttp && url.protocol === 'http:' && url.hostname.endsWith('.railway.internal')
-  const localDev = !PRODUCTION && url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname)
-  if (url.protocol !== 'https:' && !privateHttp && !localDev) throw new Error(`${name} must use HTTPS`)
-  if (url.username || url.password || url.hash) throw new Error(`${name} contains forbidden URL components`)
-  return value
+const ANALYTICS_ENV = process.env.ANALYTICS_ENV || (PRODUCTION ? 'production' : 'development')
+if (!['production', 'staging', 'development', 'test'].includes(ANALYTICS_ENV)) {
+  throw new Error('ANALYTICS_ENV must be production, staging, development or test')
 }
+const ALLOW_INSECURE_VIDEO_HTTP = process.env.ALLOW_INSECURE_VIDEO_HTTP === 'true'
+const INSECURE_VIDEO_ENV_ALLOWED = insecureVideoEnvironmentAllowed({
+  production: PRODUCTION,
+  analyticsEnvironment: ANALYTICS_ENV
+})
+if (ALLOW_INSECURE_VIDEO_HTTP && !INSECURE_VIDEO_ENV_ALLOWED) {
+  throw new Error('ALLOW_INSECURE_VIDEO_HTTP is forbidden outside staging or local development/test')
+}
+const VIDEO_INSECURE_HTTP_HOSTS = String(process.env.VIDEO_INSECURE_HTTP_HOSTS || '')
+  .split(',')
+  .map((value) => value.trim())
+  .filter(Boolean)
 function envInt(name, fallback, max) {
   const value = Number(process.env[name] || fallback)
   if (!Number.isInteger(value) || value < 1 || value > max) {
@@ -112,14 +136,18 @@ const SALUTE_RECOGNIZE_URL = serviceUrl('SBER_SALUTE_RECOGNIZE_URL', process.env
 const SALUTE_RECOGNITION_MODEL = (process.env.SBER_SALUTE_RECOGNITION_MODEL || 'voice_messaging').trim()
 const KANDINSKY_HOST = 'https://studio.kandinskylab.ai/api'
 // Видео/аватар API (GigaAvatar: image + audio → говорящее видео)
-const VIDEO_BASE_URL = serviceUrl('VIDEO_BASE_URL', process.env.VIDEO_BASE_URL, { allowPrivateHttp: true })
+const VIDEO_BASE_URL = serviceUrl('VIDEO_BASE_URL', process.env.VIDEO_BASE_URL, {
+  allowPrivateHttp: true,
+  allowInsecureHttp: ALLOW_INSECURE_VIDEO_HTTP,
+  allowedInsecureHosts: VIDEO_INSECURE_HTTP_HOSTS
+})
+const VIDEO_TRANSPORT_SECURE = isSecureServiceUrl(VIDEO_BASE_URL)
+if (VIDEO_BASE_URL && !VIDEO_TRANSPORT_SECURE) {
+  console.warn('[security] VIDEO_BASE_URL uses explicitly allowed plaintext HTTP; media and bearer credentials are not encrypted in transit')
+}
 serviceUrl('OPENROUTER_BASE_URL', process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1')
 const TRACTION_INGEST_URL = serviceUrl('TRACTION_INGEST_URL', process.env.TRACTION_INGEST_URL)
 const TRACTION_INGEST_TOKEN = String(process.env.TRACTION_INGEST_TOKEN || '').trim()
-const ANALYTICS_ENV = process.env.ANALYTICS_ENV || (PRODUCTION ? 'production' : 'development')
-if (!['production', 'staging', 'development', 'test'].includes(ANALYTICS_ENV)) {
-  throw new Error('ANALYTICS_ENV must be production, staging, development or test')
-}
 if (Boolean(TRACTION_INGEST_URL) !== Boolean(TRACTION_INGEST_TOKEN)) {
   throw new Error('TRACTION_INGEST_URL and TRACTION_INGEST_TOKEN must be configured together')
 }
@@ -169,7 +197,7 @@ function httpErr(code, message) {
   return e
 }
 function statusFor(code) {
-  return { NO_KEY: 400, VALIDATION: 400, AUTH: 401, RATE: 429, TIMEOUT: 504, NETWORK: 502 }[code] || 500
+  return { NO_KEY: 400, VALIDATION: 400, AUTH: 401, CENSOR: 422, RATE: 429, TIMEOUT: 504, NETWORK: 502 }[code] || 500
 }
 
 // ================= Kandinsky 6.0 (kandinskylab) =================
@@ -207,14 +235,9 @@ async function kandinskyWithRetry(prompt, width, height, signal, attempts = 3) {
     try {
       return await kandinskyGenerate(prompt, width, height, signal)
     } catch (e) {
-      if (e.code === 'RATE' && i < attempts - 1) {
+      if (shouldRetryKandinsky(e) && i < attempts - 1) {
         console.error(`[kandinsky] лимит, жду 20с (попытка ${i + 2}/${attempts})`)
         await abortableDelay(20000, signal)
-        continue
-      }
-      if (e.code === 'CENSOR' && i < attempts - 1) {
-        // цензор смотрит на конкретный кадр — новая генерация обычно проходит
-        console.error(`[kandinsky] цензор отклонил кадр, пробую ещё (попытка ${i + 2}/${attempts})`)
         continue
       }
       throw e
@@ -233,14 +256,20 @@ async function kandinskyGenerate(prompt, width = 768, height = 1024, signal) {
     headers: kHeaders(),
     body: JSON.stringify({ params: { query: `${prompt}${STYLE_SUFFIX}`.slice(0, 950), resolution } })
   })
-  if (runRes.status === 401 || runRes.status === 403) throw httpErr('AUTH', 'Kandinsky: токен отклонён')
-  if (runRes.status === 429) throw httpErr('RATE', 'Kandinsky: лимит запросов')
-  if (runRes.status >= 400) throw httpErr('NETWORK', `Kandinsky create ${runRes.status}: ${String(runRes.body).slice(0, 160)}`)
+  if (runRes.status >= 400) {
+    throw imageUpstreamError({
+      provider: 'Kandinsky',
+      phase: 'create',
+      status: runRes.status,
+      detail: runRes.body
+    })
+  }
   const taskId = JSON.parse(runRes.body).task_id
   if (!taskId) throw httpErr('UNKNOWN', 'Kandinsky: нет task_id')
 
   // 2) поллинг статуса
   const deadline = Date.now() + 120_000
+  let done = false
   while (Date.now() < deadline) {
     await abortableDelay(4000, signal)
     const st = await httpsRequest(`${KANDINSKY_HOST}/tasks/${taskId}`, {
@@ -249,12 +278,31 @@ async function kandinskyGenerate(prompt, width = 768, height = 1024, signal) {
       signal,
       headers: kHeaders()
     })
-    if (st.status >= 400) continue
-    const status = String(JSON.parse(st.body).status || '').toLowerCase()
-    if (status === 'done') break
-    if (status === 'failed' || status === 'error') throw httpErr('UNKNOWN', 'Kandinsky: генерация не удалась')
-    if (Date.now() >= deadline) throw httpErr('TIMEOUT', 'Kandinsky: таймаут (120с)')
+    if (st.status >= 400) {
+      const upstreamError = imageUpstreamError({
+        provider: 'Kandinsky',
+        phase: 'status',
+        status: st.status,
+        detail: st.body
+      })
+      if (['NETWORK', 'RATE'].includes(upstreamError.code)) continue
+      throw upstreamError
+    }
+    const statusBody = JSON.parse(st.body)
+    const status = String(statusBody.status || '').toLowerCase()
+    if (status === 'done') {
+      done = true
+      break
+    }
+    if (status === 'failed' || status === 'error') {
+      throw imageUpstreamError({
+        provider: 'Kandinsky',
+        phase: 'status',
+        detail: statusBody.error || statusBody.detail || statusBody.message
+      })
+    }
   }
+  if (!done) throw httpErr('TIMEOUT', 'Kandinsky: таймаут (120с)')
 
   // 3) забрать результат (бинарный PNG)
   const resImg = await httpsRequest(`${KANDINSKY_HOST}/tasks/${taskId}/result`, {
@@ -264,11 +312,15 @@ async function kandinskyGenerate(prompt, width = 768, height = 1024, signal) {
     binary: true,
     headers: { Authorization: `Bearer ${KANDINSKY_TOKEN}` }
   })
-  if (resImg.status === 422) {
-    // выходной цензор: картинка нарисована, но заблокирована — ретрай даст новый кадр
-    throw httpErr('CENSOR', 'Кандинский-цензор отклонил кадр')
+  if (resImg.status >= 400) {
+    throw imageUpstreamError({
+      provider: 'Kandinsky',
+      phase: 'result',
+      status: resImg.status,
+      detail: resImg.body
+    })
   }
-  if (resImg.status >= 400 || !resImg.body?.length) throw httpErr('UNKNOWN', 'Kandinsky: пустой результат')
+  if (!resImg.body?.length) throw httpErr('UNKNOWN', 'Kandinsky: пустой результат')
   return resImg.body.toString('base64')
 }
 
@@ -302,12 +354,10 @@ async function videoTaskRetry(taskType, params, signal, attempts = 3) {
     try {
       return await videoTaskRaw(taskType, params, signal)
     } catch (e) {
-      const msg = e.message || ''
-      const isRate = e.code === 'RATE' || /LIMIT_EXHAUSTED|429/.test(msg)
-      if (isRate && i < attempts - 1) {
+      const wait = videoRetryDelay(e)
+      if (wait && i < attempts - 1) {
         // 'concurrent' — заняты все GPU-слоты, освободятся через минуты; 'rate' — секунды
-        const wait = /concurrent/.test(msg) ? 45000 : 10000
-        console.error(`[video] лимит (${/concurrent/.test(msg) ? 'слоты заняты' : 'частота'}), жду ${wait / 1000}с (${i + 2}/${attempts})`)
+        console.error(`[video] лимит (${wait === 45_000 ? 'слоты заняты' : 'частота'}), жду ${wait / 1000}с (${i + 2}/${attempts})`)
         await abortableDelay(wait, signal)
         continue
       }
@@ -321,17 +371,17 @@ async function videoTaskRaw(taskType, params, signal) {
   const create = await fetch(`${VIDEO_BASE_URL}/tasks/${taskType}`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${KANDINSKY_TOKEN}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ censor: false, params }),
+    body: JSON.stringify({ censor: true, params }),
     signal: withTimeout(signal, 30_000)
   })
-  if (create.status === 401 || create.status === 403) throw httpErr('AUTH', 'Видео: токен отклонён')
-  if (create.status === 429) {
-    const t = await create.text().catch(() => '')
-    throw httpErr('RATE', `video create 429: ${t.slice(0, 120)}`)
-  }
   if (!create.ok) {
     const t = await create.text().catch(() => '')
-    throw httpErr('NETWORK', `video create ${create.status}: ${t.slice(0, 140)}`)
+    throw imageUpstreamError({
+      provider: 'Kandinsky video',
+      phase: 'create',
+      status: create.status,
+      detail: t
+    })
   }
   const { task_id } = await create.json()
   if (!task_id) throw httpErr('UNKNOWN', 'Видео: сервер не вернул task_id')
@@ -351,15 +401,26 @@ async function videoTaskRaw(taskType, params, signal) {
         headers: { Authorization: `Bearer ${KANDINSKY_TOKEN}` },
         signal: withTimeout(signal, 60_000)
       })
-      if (!r.ok) throw httpErr('UNKNOWN', 'Видео: результат недоступен')
+      if (!r.ok) {
+        const detail = await r.text().catch(() => '')
+        throw imageUpstreamError({
+          provider: 'Kandinsky video',
+          phase: 'result',
+          status: r.status,
+          detail
+        })
+      }
       return Buffer.from(await r.arrayBuffer()).toString('base64')
     }
     if (status === 'failed' || status === 'error') {
-      console.error(`[video] ${taskType} задача провалилась:`, j.error || '(без деталей)')
-      throw httpErr('UNKNOWN', j.error || 'Видео: генерация не удалась')
+      throw imageUpstreamError({
+        provider: 'Kandinsky video',
+        phase: 'status',
+        detail: j.error || j.detail || j.message
+      })
     }
   }
-  console.error(`[video] ${taskType} таймаут 300с`)
+  console.error(`[video] ${taskType} таймаут 480с`)
   throw httpErr('TIMEOUT', 'Видео: таймаут (8 мин)')
 }
 
@@ -518,6 +579,10 @@ app.get('/health', (_req, res) => {
       kandinsky: !!KANDINSKY_TOKEN,
       video: !!KANDINSKY_TOKEN && !!VIDEO_BASE_URL
     },
+    media_transport: {
+      video_https: VIDEO_TRANSPORT_SECURE,
+      video_insecure_http_allowed: Boolean(VIDEO_BASE_URL && !VIDEO_TRANSPORT_SECURE && ALLOW_INSECURE_VIDEO_HTTP)
+    },
     llm_routes: llm.purposes,
     analytics_delivery: eventStore.status(),
     concurrency: { llm: llmGate.status(), speech: speechGate.status(), image: imageGate.status(), import: importGate.status() }
@@ -526,8 +591,30 @@ app.get('/health', (_req, res) => {
 
 app.get('/ready', (_req, res) => {
   const llm = llmRouteReadiness()
-  const ready = llm.ready && !!SALUTE_KEY && !!KANDINSKY_TOKEN && !!VIDEO_BASE_URL
-  res.status(ready ? 200 : 503).json({ ok: ready, llm_routes: llm.purposes })
+  const videoConfigured = !!KANDINSKY_TOKEN && !!VIDEO_BASE_URL
+  const videoTransportAccepted =
+    VIDEO_TRANSPORT_SECURE ||
+    Boolean(ALLOW_INSECURE_VIDEO_HTTP && INSECURE_VIDEO_ENV_ALLOWED)
+  const degraded = videoConfigured && !VIDEO_TRANSPORT_SECURE
+    ? [{ code: 'VIDEO_PLAINTEXT_HTTP', environment: ANALYTICS_ENV }]
+    : []
+  const ready =
+    llm.ready &&
+    !!SALUTE_KEY &&
+    !!KANDINSKY_TOKEN &&
+    videoConfigured &&
+    videoTransportAccepted
+  res.status(ready ? 200 : 503).json({
+    ok: ready,
+    degraded,
+    media_transport: {
+      video_https: VIDEO_TRANSPORT_SECURE,
+      video_insecure_http_allowed: Boolean(
+        videoConfigured && !VIDEO_TRANSPORT_SECURE && ALLOW_INSECURE_VIDEO_HTTP
+      )
+    },
+    llm_routes: llm.purposes
+  })
 })
 
 app.post('/v2/installations/register', registrationLimit, express.json({ limit: '16kb' }), (req, res) => {
@@ -620,7 +707,7 @@ app.post('/v2/ai/chat/stream', aiLimit, aiDailyLimit, express.json({ limit: '1mb
     const input = parseChatBody(req.body, { stream: true })
     requestId = input.requestId || randomUUID()
     await appendInternalEvent(req, 'ai_request_started', { request_id: requestId, purpose: input.purpose })
-    const { response: upstream, provider, model } = await requestChat({
+    const { response: upstream, provider, model, responseCost, finalizeAttempt } = await requestChat({
       ...input,
       requestId,
       stream: true,
@@ -628,7 +715,7 @@ app.post('/v2/ai/chat/stream', aiLimit, aiDailyLimit, express.json({ limit: '1mb
         req,
         `provider_attempt_${attempt.status}`,
         providerAttemptProperties(requestId, input.purpose, attempt),
-        attempt.attempt_id
+        attempt.event_id
       ),
       signal: clientSignal
     })
@@ -637,23 +724,33 @@ app.post('/v2/ai/chat/stream', aiLimit, aiDailyLimit, express.json({ limit: '1mb
     res.setHeader('Connection', 'keep-alive')
     res.setHeader('X-Request-Id', requestId)
     res.setHeader('X-Narra-Route', analyticsRoute(provider, model))
-    let streamedBytes = 0
-    for await (const chunk of upstream.body) {
-      streamedBytes += Buffer.byteLength(chunk)
-      if (streamedBytes > LLM_RESPONSE_MAX_BYTES) {
-        await upstream.body.cancel().catch(() => {})
-        throw Object.assign(new Error('LLM response exceeded the gateway limit'), { code: 'NETWORK', status: 502 })
+    const usage = await settleProviderResponse({
+      finalizeAttempt,
+      consume: async () => {
+        let streamedBytes = 0
+        const usageCollector = createSseUsageCollector()
+        for await (const chunk of upstream.body) {
+          streamedBytes += Buffer.byteLength(chunk)
+          if (streamedBytes > LLM_RESPONSE_MAX_BYTES) {
+            await upstream.body.cancel().catch(() => {})
+            throw Object.assign(new Error('LLM response exceeded the gateway limit'), { code: 'NETWORK', status: 502 })
+          }
+          usageCollector.push(chunk)
+          res.write(chunk)
+        }
+        return usageCollector.value()
       }
-      res.write(chunk)
-    }
-    res.end()
-    await appendInternalEvent(req, 'ai_request_completed', {
-      request_id: requestId,
-      purpose: input.purpose,
-      route: analyticsRoute(provider, model),
-      latency_ms: Date.now() - startedAt,
-      success: true
     })
+    res.end()
+    await appendInternalEvent(req, 'ai_request_completed', completionProperties({
+      requestId,
+      purpose: input.purpose,
+      provider,
+      model,
+      latencyMs: Date.now() - startedAt,
+      usage,
+      responseCost
+    }))
   } catch (e) {
     if (requestId) await appendInternalEvent(req, 'ai_request_failed', {
       request_id: requestId,
@@ -661,8 +758,23 @@ app.post('/v2/ai/chat/stream', aiLimit, aiDailyLimit, express.json({ limit: '1mb
       error_code: e.code || 'NETWORK',
       success: false
     }).catch(() => {})
-    if (!res.headersSent) res.status(e.status || 502).json({ error: String(e.message), code: e.code || 'NETWORK', request_id: e.requestId })
-    else res.end()
+    if (!res.headersSent) {
+      res.status(e.status || 502).json({
+        error: String(e.message),
+        code: e.code || 'NETWORK',
+        request_id: e.requestId
+      })
+    } else {
+      const code = [
+        'PARSE', 'CENSOR', 'CANCELLED', 'TIMEOUT', 'NETWORK'
+      ].includes(e.code) ? e.code : 'NETWORK'
+      try {
+        res.write(`event: error\ndata: ${JSON.stringify({ error: { code } })}\n\n`)
+      } catch {
+        // The client may already have disconnected; analytics is still failed.
+      }
+      res.end()
+    }
   } finally {
     release?.()
   }
@@ -679,7 +791,7 @@ app.post('/v2/ai/chat/complete', aiLimit, aiDailyLimit, express.json({ limit: '1
     const input = parseChatBody(req.body)
     requestId = input.requestId || randomUUID()
     await appendInternalEvent(req, 'ai_request_started', { request_id: requestId, purpose: input.purpose })
-    const { response: r, provider, model, attempts } = await requestChat({
+    const { response: r, provider, model, attempts, responseCost, finalizeAttempt } = await requestChat({
       ...input,
       requestId,
       stream: false,
@@ -687,19 +799,31 @@ app.post('/v2/ai/chat/complete', aiLimit, aiDailyLimit, express.json({ limit: '1
         req,
         `provider_attempt_${attempt.status}`,
         providerAttemptProperties(requestId, input.purpose, attempt),
-        attempt.attempt_id
+        attempt.event_id
       ),
       signal: clientSignal
     })
-    const responseBytes = await readBoundedBody(r, LLM_RESPONSE_MAX_BYTES, clientSignal)
-    const j = JSON.parse(responseBytes.toString('utf8'))
+    const j = await settleProviderResponse({
+      finalizeAttempt,
+      consume: async () => {
+        const responseBytes = await readBoundedBody(r, LLM_RESPONSE_MAX_BYTES, clientSignal)
+        let payload
+        try {
+          payload = JSON.parse(responseBytes.toString('utf8'))
+        } catch (error) {
+          throw Object.assign(error, { code: 'PARSE', status: 502 })
+        }
+        return validateChatCompletionPayload(payload)
+      }
+    })
     await appendInternalEvent(req, 'ai_request_completed', completionProperties({
       requestId,
       purpose: input.purpose,
       provider,
       model,
       latencyMs: Date.now() - startedAt,
-      usage: j?.usage
+      usage: j?.usage,
+      responseCost
     }))
     res.json({
       text: j?.choices?.[0]?.message?.content ?? '',
@@ -771,7 +895,12 @@ async function gigachatImage(prompt, signal) {
   })
   if (!r.ok) {
     const t = await r.text().catch(() => '')
-    throw httpErr(r.status === 401 ? 'AUTH' : r.status === 429 ? 'RATE' : 'NETWORK', `gigachat-image ${r.status}: ${t.slice(0, 140)}`)
+    throw imageUpstreamError({
+      provider: 'GigaChat Image',
+      phase: 'create',
+      status: r.status,
+      detail: t
+    })
   }
   const j = await r.json()
   const b64 = j?.data?.[0]?.b64_json
@@ -884,6 +1013,7 @@ app.post('/v2/media/images', imageLimit, imageDailyLimit, express.json({ limit: 
       try {
         return res.json({ image: await kandinskyQueued(prompt, width, height, signal) })
       } catch (e) {
+        if (!shouldFallbackAfterImageError(e)) throw e
         // сцены (engine=kandinsky) на gigachat-image не фолбэчим: он игнорирует
         // стиль и выдаёт фотореалистичные кинокадры — лучше честная ошибка и повтор
         if (engine === 'kandinsky') throw e
@@ -895,6 +1025,7 @@ app.post('/v2/media/images', imageLimit, imageDailyLimit, express.json({ limit: 
       try {
         return res.json({ image: await gigachatImage(prompt, signal) })
       } catch (e) {
+        if (!shouldFallbackAfterImageError(e)) throw e
         console.error('[image] gigachat-image не удалось, фолбэк на Kandinsky:', e.message)
         if (!KANDINSKY_TOKEN) throw e
       }

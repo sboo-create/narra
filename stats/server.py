@@ -35,6 +35,9 @@ ALLOW_OPEN = os.environ.get("STATS_ALLOW_UNAUTHENTICATED_INGEST", "0") == "1"
 CONTRACT_TEST_MODE = os.environ.get("STATS_CONTRACT_TEST_MODE", "0") == "1"
 ENVIRONMENT = os.environ.get("STATS_ENVIRONMENT", "production").strip()
 COST_CURRENCY = os.environ.get("STATS_COST_CURRENCY", "USD").strip().upper()
+AI_OUTCOME_GRACE_SECONDS = max(
+    60, min(int(os.environ.get("STATS_AI_OUTCOME_GRACE_SECONDS", "420")), 3600)
+)
 VERSION_FILE = HERE / "VERSION"
 VERSION = VERSION_FILE.read_text().strip() if VERSION_FILE.exists() else "dev"
 MAX_BODY = 512 * 1024
@@ -70,6 +73,7 @@ SAFE_PROPERTIES = {
     "navigation_type", "feature", "success", "request_id", "purpose", "route",
     "latency_ms", "rating", "version", "provider", "model", "http_status",
     "input_tokens", "output_tokens", "total_tokens", "exact_cost", "retry_index",
+    "cost_currency", "cost_source",
 }
 EVENT_PROPERTIES = {
     "app_opened": {"app_version", "os_major", "arch", "channel"},
@@ -86,7 +90,11 @@ EVENT_PROPERTIES = {
     "bookmark_added": {"feature"}, "note_added": {"feature"},
     "character_opened": {"feature"}, "chat_opened": {"feature"},
     "ai_request_started": {"request_id", "purpose"},
-    "ai_request_completed": {"request_id", "purpose", "route", "latency_ms", "success", "input_tokens", "output_tokens", "total_tokens", "exact_cost"},
+    "ai_request_completed": {
+        "request_id", "purpose", "route", "latency_ms", "success",
+        "input_tokens", "output_tokens", "total_tokens", "exact_cost",
+        "cost_currency", "cost_source",
+    },
     "ai_request_failed": {"request_id", "purpose", "route", "latency_ms", "success", "error_code"},
     "answer_feedback_submitted": {"rating"},
     "update_offered": {"version"}, "update_downloaded": {"version"},
@@ -116,6 +124,8 @@ PROPERTY_ENUMS = {
     "chapter_position_bucket": {"1-3", "4-10", "11-25", "26+"},
     "arch": {"arm64", "x64"},
     "error_code": {"UNKNOWN", "VALIDATION", "NETWORK", "AUTH", "TIMEOUT", "RATE", "NO_KEY", "NO_PROXY", "PARSE", "CENSOR", "CANCELLED"},
+    "cost_currency": {"USD"},
+    "cost_source": {"openrouter_usage", "litellm_usage", "litellm_response_header"},
 }
 ACTIVE_EVENTS = {
     "book_import_started", "book_import_completed", "book_opened",
@@ -133,6 +143,17 @@ FEATURE_BY_EVENT = {
     "bookmark_added": "Bookmarks", "note_added": "Notes",
     "character_opened": "Characters", "chat_opened": "Character chat",
     "book_import_started": "Book import", "book_import_completed": "Book import",
+    "ai_request_started": "AI tools",
+    "answer_feedback_submitted": "Answer feedback",
+}
+PRODUCT_ACTION_EVENTS = {
+    "book_import_completed", "book_opened", "reading_session_qualified",
+    "chapter_changed", "chapter_completed", "bookmark_added", "note_added",
+    "character_opened", "chat_opened", "answer_feedback_submitted",
+}
+VALUE_ACTION_EVENTS = {
+    "book_import_completed", "reading_session_qualified", "chapter_completed",
+    "bookmark_added", "note_added", "ai_request_completed",
 }
 UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", re.I)
 ACTOR_RE = re.compile(r"^[0-9a-f]{64}$", re.I)
@@ -323,30 +344,116 @@ def compute_dashboard(days: float = 1.0) -> dict[str, Any]:
     active_user_days = _active_user_days(selected)
     sessions = _sessions(selected)
     request_rows = [row for row in selected if row["name"] == "ai_request_started"]
-    request_ids = {
+    request_started_at: dict[tuple[str, str], float] = {}
+    for row in request_rows:
+        request_id = row["properties"].get("request_id")
+        if not request_id:
+            continue
+        key = (row["device_id"], str(request_id))
+        request_started_at[key] = min(request_started_at.get(key, row["ts"]), row["ts"])
+    request_ids = set(request_started_at)
+    all_started_ids = {
         (row["device_id"], str(row["properties"].get("request_id")))
-        for row in request_rows if row["properties"].get("request_id")
+        for row in rows
+        if row["name"] == "ai_request_started"
+        and row["properties"].get("request_id")
     }
-    completed_ids = {
+    raw_completed_ids = {
         (row["device_id"], str(row["properties"].get("request_id")))
         for row in selected if row["name"] == "ai_request_completed" and row["properties"].get("request_id")
     }
-    failed_ids = {
+    raw_failed_ids = {
         (row["device_id"], str(row["properties"].get("request_id")))
         for row in selected if row["name"] == "ai_request_failed" and row["properties"].get("request_id")
     }
-    attempts = [row for row in selected if row["name"].startswith("provider_attempt_")]
-    completed_requests = [row for row in selected if row["name"] == "ai_request_completed"]
+    completed_ids = raw_completed_ids & request_ids
+    failed_ids = raw_failed_ids & request_ids
+    failed_only_ids = failed_ids - completed_ids
+    resolved_ids = completed_ids | failed_ids
+    aged_request_ids = {
+        key for key, started_at in request_started_at.items()
+        if started_at <= now - AI_OUTCOME_GRACE_SECONDS
+    }
+    outcome_eligible_ids = resolved_ids | aged_request_ids
+    pending_ids = request_ids - resolved_ids
+    pending_overdue_ids = pending_ids & aged_request_ids
+    orphan_terminal_ids = (raw_completed_ids | raw_failed_ids) - all_started_ids
+    attempts = [
+        row for row in selected
+        if row["name"] in {
+            "provider_attempt_completed",
+            "provider_attempt_failed",
+            "provider_attempt_not_configured",
+        }
+    ]
+    matched_attempts = [
+        row for row in attempts
+        if (
+            row["device_id"],
+            str(row["properties"].get("request_id")),
+        ) in request_ids
+    ]
+    completed_requests = [
+        row for row in selected
+        if row["name"] == "ai_request_completed"
+        and (
+            row["device_id"],
+            str(row["properties"].get("request_id")),
+        ) in completed_ids
+    ]
     request_latencies = [
         float(row["properties"]["latency_ms"])
         for row in completed_requests
         if isinstance(row["properties"].get("latency_ms"), (int, float))
     ]
-    exact_costs = [
-        float(row["properties"]["exact_cost"])
-        for row in completed_requests
+    exact_cost_rows = [
+        row for row in completed_requests
         if isinstance(row["properties"].get("exact_cost"), (int, float))
+        and row["properties"].get("cost_currency") == COST_CURRENCY
+        and row["properties"].get("cost_source") in PROPERTY_ENUMS["cost_source"]
     ]
+    invalid_cost_rows = [
+        row for row in completed_requests
+        if isinstance(row["properties"].get("exact_cost"), (int, float))
+        and row not in exact_cost_rows
+    ]
+    exact_costs = [
+        float(row["properties"]["exact_cost"]) for row in exact_cost_rows
+    ]
+    cost_sources = Counter(
+        str(row["properties"]["cost_source"]) for row in exact_cost_rows
+    )
+    token_rows = [
+        row for row in completed_requests
+        if isinstance(row["properties"].get("input_tokens"), (int, float))
+        and isinstance(row["properties"].get("output_tokens"), (int, float))
+    ]
+    input_tokens = sum(float(row["properties"]["input_tokens"]) for row in token_rows)
+    output_tokens = sum(float(row["properties"]["output_tokens"]) for row in token_rows)
+    # Input + output is comparable across providers. A conflicting upstream
+    # total must not make the aggregate internally inconsistent.
+    total_tokens = input_tokens + output_tokens
+    terminal_attempt_errors = sum(
+        row["name"] in {"provider_attempt_failed", "provider_attempt_not_configured"}
+        for row in attempts
+    )
+    fallback_request_ids = {
+        (row["device_id"], str(row["properties"].get("request_id")))
+        for row in attempts
+        if row["properties"].get("request_id")
+        and isinstance(row["properties"].get("retry_index"), (int, float))
+        and row["properties"]["retry_index"] > 0
+    } & request_ids
+    provider_totals: dict[str, Counter] = defaultdict(Counter)
+    model_totals: dict[tuple[str, str], Counter] = defaultdict(Counter)
+    for row in attempts:
+        provider = str(row["properties"].get("provider") or "unreported")
+        model = str(row["properties"].get("model") or "unreported")
+        provider_totals[provider]["attempts"] += 1
+        model_totals[(provider, model)]["attempts"] += 1
+        if row["name"] == "provider_attempt_completed":
+            provider_totals[provider]["completed"] += 1
+            model_totals[(provider, model)]["completed"] += 1
     feedback = [row["properties"].get("rating") for row in selected if row["name"] == "answer_feedback_submitted"]
     helpful = sum(value == "helpful" for value in feedback)
     reading_seconds = sum(
@@ -383,6 +490,19 @@ def compute_dashboard(days: float = 1.0) -> dict[str, Any]:
         warnings.append("Session ID coverage is below 95%; Sessions / DAU includes 30-minute fallback inference.")
     if request_eligible and request_coverage < 95:
         warnings.append("Request ID coverage is below 95%; request-level AI reliability is provisional.")
+    outcome_coverage = (
+        _percent(len(resolved_ids & outcome_eligible_ids), len(outcome_eligible_ids))
+        if outcome_eligible_ids else None
+    )
+    if outcome_eligible_ids and outcome_coverage < 95:
+        warnings.append(
+            f"AI outcome coverage is {outcome_coverage}% after the "
+            f"{AI_OUTCOME_GRACE_SECONDS}-second grace window; overdue pending requests count as unsuccessful."
+        )
+    if orphan_terminal_ids:
+        warnings.append(
+            f"{len(orphan_terminal_ids)} terminal AI request IDs have no matching start and are excluded."
+        )
     if data_start is None:
         warnings.append("No production events have been collected yet; every metric is unavailable.")
     elif now - max(row["ingested_at"] for row in rows) > 3600:
@@ -390,6 +510,13 @@ def compute_dashboard(days: float = 1.0) -> dict[str, Any]:
     cost_coverage = _percent(len(exact_costs), len(completed_requests)) if completed_requests else None
     if completed_requests and cost_coverage < 100:
         warnings.append(f"Provider cost is known for {cost_coverage}% of completed requests; cost is not a total.")
+    if invalid_cost_rows:
+        warnings.append(
+            f"{len(invalid_cost_rows)} completed requests reported cost without an accepted source/currency and are excluded."
+        )
+    token_coverage = _percent(len(token_rows), len(completed_requests)) if completed_requests else None
+    if completed_requests and token_coverage < 100:
+        warnings.append(f"Input/output tokens are available for {token_coverage}% of completed requests.")
 
     ever_ids = {row["device_id"] for row in rows if row["name"] in EVER_USED_EVENTS}
     last_24h = [row for row in rows if row["ts"] >= now - 86400]
@@ -409,7 +536,109 @@ def compute_dashboard(days: float = 1.0) -> dict[str, Any]:
         overview["sessions_per_dau"] = round(_sessions(last_24h) / len(dau_ids), 2)
         overview["tools_per_dau"] = round(len(canonical_requests) / len(dau_ids), 2)
 
+    product_actions = sum(row["name"] in PRODUCT_ACTION_EVENTS for row in selected)
+    value_actions = sum(row["name"] in VALUE_ACTION_EVENTS for row in selected)
+    feature_breadth = len({
+        (
+            row["device_id"],
+            datetime.fromtimestamp(row["ts"], timezone.utc).date(),
+            FEATURE_BY_EVENT.get(row["name"]) or row["properties"].get("feature"),
+        )
+        for row in active
+        if FEATURE_BY_EVENT.get(row["name"]) or row["properties"].get("feature")
+    })
+
+    def per_user_day(value: int) -> float | None:
+        return round(value / active_user_days, 2) if active_user_days else None
+
+    def tool_definition(
+        identifier: str,
+        label: str,
+        numerator: int,
+        numerator_label: str,
+        help_text: str,
+        *,
+        selected_for_overview: bool = False,
+        denominator: int | None = None,
+        denominator_label: str = "active user-days",
+        status: str | None = None,
+    ) -> dict[str, Any]:
+        actual_denominator = active_user_days if denominator is None else denominator
+        actual_status = status or ("no_active_users" if actual_denominator == 0 else "ok")
+        return {
+            "id": identifier,
+            "label": label,
+            "value": round(numerator / actual_denominator, 2) if actual_denominator else None,
+            "numerator": numerator,
+            "numerator_label": numerator_label,
+            "denominator": actual_denominator,
+            "denominator_label": denominator_label,
+            "status": actual_status,
+            "selected_for_overview": selected_for_overview,
+            "help": help_text,
+        }
+
+    trailing_attempts = [
+        row for row in rows
+        if row["ts"] >= now - 86400
+        and row["name"] in {
+            "provider_attempt_completed",
+            "provider_attempt_failed",
+            "provider_attempt_not_configured",
+        }
+    ]
+    tool_definitions = [
+        tool_definition(
+            "logical_ai_requests_24h_dau",
+            "Logical AI requests / DAU",
+            len(canonical_requests),
+            "logical requests in trailing 24h",
+            "The canonical Overview formula. Retry and provider fallback share one request_id and count once.",
+            selected_for_overview=True,
+            denominator=len(dau_ids),
+            denominator_label="rolling 24h DAU",
+        ),
+        tool_definition(
+            "provider_attempts_24h_dau",
+            "Provider attempts / DAU",
+            len(trailing_attempts),
+            "provider attempts in trailing 24h",
+            "Technical load, including retry and fallback. Useful for reliability and cost, not as the product KPI.",
+            denominator=len(dau_ids),
+            denominator_label="rolling 24h DAU",
+        ),
+        tool_definition(
+            "logical_ai_requests_user_day",
+            "Logical AI requests / user-day",
+            len(request_ids),
+            "logical AI requests",
+            "Selected-window AI usage normalized by active user-days, so repeated active days remain visible.",
+        ),
+        tool_definition(
+            "product_actions_user_day",
+            "Product actions / user-day",
+            product_actions,
+            "explicit product actions",
+            "Reading, importing, navigation, notes, bookmarks, character/chat and feedback actions; technical provider attempts are excluded.",
+        ),
+        tool_definition(
+            "feature_breadth_user_day",
+            "Distinct features / user-day",
+            feature_breadth,
+            "distinct actor-day-feature uses",
+            "Breadth of use: repeating the same feature on the same active day does not increase the numerator.",
+        ),
+        tool_definition(
+            "value_actions_user_day",
+            "Completed value proxies / user-day",
+            value_actions,
+            "completed value proxies",
+            "Completed import, qualified reading, chapter completion, saved note/bookmark or delivered AI answer. This is a proxy, not direct user-rated value.",
+        ),
+    ]
+
     series = []
+    daily_active_counts: list[int] = []
     if available_start is not None:
         day = datetime.fromtimestamp(available_start, timezone.utc).date()
         last = datetime.fromtimestamp(now, timezone.utc).date()
@@ -417,9 +646,11 @@ def compute_dashboard(days: float = 1.0) -> dict[str, Any]:
             lo = datetime.combine(day, datetime.min.time(), timezone.utc).timestamp()
             hi = lo + 86400
             chunk = [row for row in rows if lo <= row["ts"] < hi]
+            daily_active = len({row["device_id"] for row in chunk if row["name"] in ACTIVE_EVENTS})
+            daily_active_counts.append(daily_active)
             series.append({
                 "label": day.strftime("%d.%m"),
-                "active": len({row["device_id"] for row in chunk if row["name"] in ACTIVE_EVENTS}),
+                "active": daily_active,
                 "sessions": _sessions(chunk),
                 "tools": len({
                     (row["device_id"], row["properties"].get("request_id"))
@@ -427,6 +658,72 @@ def compute_dashboard(days: float = 1.0) -> dict[str, Any]:
                 }),
             })
             day += timedelta(days=1)
+
+    classified_active = sum(
+        bool(FEATURE_BY_EVENT.get(row["name"]) or row["properties"].get("feature"))
+        for row in active
+    )
+    ingest_lags = [max(0.0, row["ingested_at"] - row["ts"]) for row in selected]
+    latest_event_ts = max((row["ts"] for row in rows), default=None)
+    explicit_errors = len(failed_only_ids) + sum(row["name"] == "book_import_failed" for row in selected)
+    diagnostics = [
+        {
+            "label": "Average DAU",
+            "value": round(sum(daily_active_counts) / len(daily_active_counts), 2)
+            if daily_active_counts else None,
+            "unit": "actors",
+            "note": f"{len(daily_active_counts)} available calendar days",
+            "help": "Average daily active actors only across days after collection started; pre-collection days are never inserted as zeros.",
+        },
+        {
+            "label": "Sessions / user-day", "value": per_user_day(sessions), "unit": "ratio",
+            "note": f"{sessions} sessions / {active_user_days} active user-days",
+            "help": "Selected-window usage depth. Unlike Overview, the denominator keeps each actor's separate active days.",
+        },
+        {
+            "label": "Events / user-day", "value": per_user_day(len(active)), "unit": "ratio",
+            "note": f"{len(active)} active events",
+            "help": "All product-active events per active user-day. A jump can mean engagement or duplicate instrumentation.",
+        },
+        {
+            "label": "AI requests / user-day", "value": per_user_day(len(request_ids)), "unit": "ratio",
+            "note": f"{len(request_ids)} logical requests",
+            "help": "Logical requests after retry and fallback are deduplicated by request_id.",
+        },
+        {
+            "label": "Value proxies / user-day", "value": per_user_day(value_actions), "unit": "ratio",
+            "note": f"{value_actions} completed outcomes",
+            "help": "Completed reading, creation or AI outcomes. It is intentionally separate from raw clicks and technical calls.",
+        },
+        {
+            "label": "Feature classification", "value": _percent(classified_active, len(active)) if active else None,
+            "unit": "%", "note": f"{classified_active} of {len(active)} active events",
+            "help": "Share of active events assigned to a product area. Low coverage reveals missing or ambiguous instrumentation.",
+        },
+        {
+            "label": "Event freshness", "value": max(0.0, now - latest_event_ts) if latest_event_ts else None,
+            "unit": "seconds", "note": "time since the newest event",
+            "help": "Large values while the product is in use indicate a delivery or gateway queue problem.",
+        },
+        {
+            "label": "Ingest lag p50 / p95",
+            "value": _percentile(ingest_lags, 0.50),
+            "secondary": _percentile(ingest_lags, 0.95),
+            "unit": "seconds_pair", "note": f"{len(ingest_lags)} ingested events",
+            "help": "Time between occurrence and Traction ingestion. p95 surfaces queueing and retry delays.",
+        },
+        {
+            "label": "Errors / 100 user-days",
+            "value": round(explicit_errors * 100 / active_user_days, 2) if active_user_days else None,
+            "unit": "ratio", "note": f"{explicit_errors} explicit request/import errors",
+            "help": "Final user-visible AI/import failures. Individual provider-attempt failures remain in the AI block.",
+        },
+        {
+            "label": "Request ID coverage", "value": request_coverage, "unit": "%",
+            "note": f"{sum(bool(row['properties'].get('request_id')) for row in request_eligible)} of {len(request_eligible)} AI request events",
+            "help": "Below 95%, request reliability and retry/fallback deduplication should be treated as provisional.",
+        },
+    ]
 
     import_started = {row["device_id"] for row in selected if row["name"] == "book_import_started"}
     import_completed = {row["device_id"] for row in selected if row["name"] == "book_import_completed"}
@@ -449,7 +746,7 @@ def compute_dashboard(days: float = 1.0) -> dict[str, Any]:
         "installs": len({row["device_id"] for row in rows}),
         "dau": len(actors),
         "events": len(selected),
-        "errors": len(failed_ids) + sum(row["name"] == "book_import_failed" for row in selected),
+        "errors": len(failed_only_ids) + sum(row["name"] == "book_import_failed" for row in selected),
         "overview": overview,
         "metrics": [
             {"label": label, "value": str(overview[key])}
@@ -469,6 +766,8 @@ def compute_dashboard(days: float = 1.0) -> dict[str, Any]:
                 ("Tools / DAU", "tools_per_dau", "AI requests in trailing 24h, retries excluded"),
             ) if key in overview
         ],
+        "tool_definitions": tool_definitions,
+        "diagnostics": diagnostics,
         "funnels": [
             {"label": "Import completed", "unit": "actors", "started": len(import_started), "completed": len(import_completed & import_started), "rate": _percent(len(import_completed & import_started), len(import_started)) if import_started else None},
             {"label": "Qualified reading", "unit": "actors", "started": len(opened), "completed": len(qualified & opened), "rate": _percent(len(qualified & opened), len(opened)) if opened else None},
@@ -481,19 +780,65 @@ def compute_dashboard(days: float = 1.0) -> dict[str, Any]:
             for name, users in sorted(feature_users.items(), key=lambda item: (-len(item[1]), item[0]))
         ],
         "ai": {
-            "requests": len(request_ids), "completed": len(completed_ids), "failed": len(failed_ids),
-            "success_rate": _percent(len(completed_ids), len(completed_ids | failed_ids)) if completed_ids or failed_ids else None,
+            "requests": len(request_ids),
+            "completed": len(completed_ids),
+            "failed": len(failed_only_ids),
+            "pending": len(pending_ids),
+            "pending_overdue": len(pending_overdue_ids),
+            "outcome_eligible": len(outcome_eligible_ids),
+            "outcome_coverage": outcome_coverage,
+            "outcome_grace_seconds": AI_OUTCOME_GRACE_SECONDS,
+            "orphan_terminal_ids": len(orphan_terminal_ids),
+            "success_rate": (
+                _percent(len(completed_ids & outcome_eligible_ids), len(outcome_eligible_ids))
+                if outcome_eligible_ids else None
+            ),
             "attempts": len(attempts),
-            "attempts_per_request": round(len(attempts) / len(request_ids), 2) if request_ids else None,
+            "matched_attempts": len(matched_attempts),
+            "unmatched_attempts": len(attempts) - len(matched_attempts),
+            "attempt_errors": terminal_attempt_errors,
+            "attempt_error_rate": _percent(terminal_attempt_errors, len(attempts)) if attempts else None,
+            "attempts_per_request": (
+                round(len(matched_attempts) / len(request_ids), 2)
+                if request_ids else None
+            ),
+            "fallback_requests": len(fallback_request_ids),
+            "fallback_rate": _percent(len(fallback_request_ids), len(request_ids)) if request_ids else None,
             "latency_p50_ms": _percentile(request_latencies, 0.50),
             "latency_p95_ms": _percentile(request_latencies, 0.95),
+            "input_tokens": int(input_tokens),
+            "output_tokens": int(output_tokens),
+            "total_tokens": int(total_tokens),
+            "token_coverage": token_coverage,
             "known_cost": round(sum(exact_costs), 6) if exact_costs else None,
             "cost_currency": COST_CURRENCY,
             "cost_known_requests": len(exact_costs),
             "cost_eligible_requests": len(completed_requests),
             "cost_coverage": _percent(len(exact_costs), len(completed_requests)) if completed_requests else None,
+            "cost_sources": dict(sorted(cost_sources.items())),
             "helpful_rate": _percent(helpful, len(feedback)) if feedback else None,
             "feedback_count": len(feedback),
+            "providers": [
+                {
+                    "name": name,
+                    "attempts": counts["attempts"],
+                    "completed": counts["completed"],
+                    "success_rate": _percent(counts["completed"], counts["attempts"]),
+                }
+                for name, counts in sorted(provider_totals.items(), key=lambda item: (-item[1]["attempts"], item[0]))
+            ],
+            "models": [
+                {
+                    "name": f"{provider}:{model}",
+                    "attempts": counts["attempts"],
+                    "completed": counts["completed"],
+                    "success_rate": _percent(counts["completed"], counts["attempts"]),
+                }
+                for (provider, model), counts in sorted(
+                    model_totals.items(),
+                    key=lambda item: (-item[1]["attempts"], item[0]),
+                )
+            ],
         },
         "engagement": {"reading_minutes": round(reading_seconds / 60, 1), "sessions": sessions},
         "retention": _retention(rows, now),
@@ -502,6 +847,8 @@ def compute_dashboard(days: float = 1.0) -> dict[str, Any]:
             "data_start": datetime.fromtimestamp(data_start, timezone.utc).isoformat(timespec="seconds") if data_start else None,
             "requested_days": requested_days, "available_days": available_days,
             "session_id_coverage": session_coverage, "request_id_coverage": request_coverage,
+            "outcome_coverage": outcome_coverage,
+            "token_coverage": token_coverage, "cost_coverage": cost_coverage,
             "warnings": warnings,
         },
     }

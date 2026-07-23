@@ -6,6 +6,7 @@ import { clearGatewayToken, getGatewayIdentity, getSettings, setGatewayToken } f
 import type { ApiResult, LlmMessage, LlmPurpose, ProxyHealth } from '../../shared/types'
 import type { AnalyticsEvent } from '../../shared/analytics'
 import { runLocalDataWrite } from '../local-data-barrier'
+import { consumeOpenAiSse } from './sse-protocol'
 
 function base(): string {
   return getSettings().proxyUrl.replace(/\/+$/, '')
@@ -124,6 +125,10 @@ async function parseErr(res: Response): Promise<ApiResult<never>> {
 function netErr(e: unknown): ApiResult<never> {
   const msg = (e as Error)?.message || 'Сетевая ошибка'
   if (/abort/i.test(msg)) return { ok: false, error: 'Запрос отменён', code: 'UNKNOWN' }
+  const code = (e as { code?: ApiResult<never>['code'] })?.code
+  if (code && ['PARSE', 'CENSOR', 'VALIDATION', 'NETWORK'].includes(code)) {
+    return { ok: false, error: msg, code }
+  }
   return { ok: false, error: `Нет связи с прокси: ${msg}`, code: 'NETWORK' }
 }
 
@@ -174,30 +179,10 @@ export async function chatStream(
       clearInterval(iv)
       return res.ok ? { ok: false, error: 'Пустой поток', code: 'NETWORK' } : await parseErr(res)
     }
-    const decoder = new TextDecoder()
-    let buffer = ''
-    let full = ''
-    for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
-      buffer += decoder.decode(chunk, { stream: true })
-      const lines = buffer.split('\n')
-      buffer = lines.pop() || ''
-      for (const line of lines) {
-        const t = line.trim()
-        if (!t.startsWith('data:')) continue
-        const payload = t.slice(5).trim()
-        if (payload === '[DONE]') continue
-        try {
-          const obj = JSON.parse(payload)
-          const delta: string = obj?.choices?.[0]?.delta?.content ?? ''
-          if (delta) {
-            full += delta
-            onChunk(delta)
-          }
-        } catch {
-          /* partial */
-        }
-      }
-    }
+    const full = await consumeOpenAiSse(
+      res.body as unknown as AsyncIterable<Uint8Array>,
+      onChunk
+    )
     clearInterval(iv)
     return { ok: true, data: { text: full } }
   } catch (e) {

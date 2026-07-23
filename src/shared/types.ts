@@ -122,7 +122,7 @@ export interface ApiResult<T> {
   ok: boolean
   data?: T
   error?: string
-  code?: 'NO_PROXY' | 'NO_KEY' | 'AUTH' | 'TIMEOUT' | 'RATE' | 'PARSE' | 'VALIDATION' | 'NETWORK' | 'UNKNOWN'
+  code?: 'NO_PROXY' | 'NO_KEY' | 'AUTH' | 'TIMEOUT' | 'RATE' | 'PARSE' | 'CENSOR' | 'VALIDATION' | 'NETWORK' | 'UNKNOWN'
 }
 
 // ===== Сообщения для LLM =====

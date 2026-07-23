@@ -100,6 +100,17 @@ class NarraStatsTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             server._safe_properties("book_opened", {"book_kind": "my-private-title"})
         self.assertEqual(server._safe_properties("book_opened", {"book_kind": "builtin"}), {"book_kind": "builtin"})
+        self.assertEqual(server._safe_properties("ai_request_completed", {
+            "request_id": str(uuid.uuid4()),
+            "purpose": "summary",
+            "exact_cost": 0.01,
+            "cost_currency": "USD",
+            "cost_source": "openrouter_usage",
+        })["cost_source"], "openrouter_usage")
+        with self.assertRaises(ValueError):
+            server._safe_properties("ai_request_completed", {
+                "cost_currency": "RUB", "cost_source": "estimated",
+            })
 
     def test_event_id_is_idempotent(self):
         event_id = str(uuid.uuid4())
@@ -116,11 +127,30 @@ class NarraStatsTest(unittest.TestCase):
         add("ai_request_completed", properties={
             "request_id": first, "purpose": "summary", "route": "giga:model",
             "latency_ms": 100, "success": True, "exact_cost": 0.2,
+            "cost_currency": "USD", "cost_source": "litellm_response_header",
+            "input_tokens": 100, "output_tokens": 20, "total_tokens": 120,
+        })
+        add("provider_attempt_failed", properties={
+            "request_id": first, "purpose": "summary", "provider": "openrouter",
+            "model": "vendor/model", "latency_ms": 50, "http_status": 429,
+            "error_code": "RATE", "retry_index": 0,
+        })
+        add("provider_attempt_completed", properties={
+            "request_id": first, "purpose": "summary", "provider": "giga",
+            "model": "giga-model", "latency_ms": 50, "http_status": 200,
+            "retry_index": 1,
         })
         add("ai_request_started", properties={"request_id": second, "purpose": "summary"})
         add("ai_request_completed", properties={
             "request_id": second, "purpose": "summary", "route": "openrouter:model",
             "latency_ms": 900, "success": True, "exact_cost": 0.3,
+            "cost_currency": "USD", "cost_source": "openrouter_usage",
+            "input_tokens": 200, "output_tokens": 40, "total_tokens": 240,
+        })
+        add("provider_attempt_completed", properties={
+            "request_id": second, "purpose": "summary", "provider": "openrouter",
+            "model": "vendor/model", "latency_ms": 900, "http_status": 200,
+            "retry_index": 0,
         })
         add("answer_feedback_submitted", properties={"rating": "helpful"})
         add("answer_feedback_submitted", properties={"rating": "unhelpful"})
@@ -135,12 +165,182 @@ class NarraStatsTest(unittest.TestCase):
         self.assertEqual(data["ai"]["known_cost"], 0.5)
         self.assertEqual(data["ai"]["cost_currency"], "USD")
         self.assertEqual(data["ai"]["cost_coverage"], 100.0)
+        self.assertEqual(data["ai"]["cost_sources"], {
+            "litellm_response_header": 1, "openrouter_usage": 1,
+        })
+        self.assertEqual(data["ai"]["token_coverage"], 100.0)
+        self.assertEqual(data["ai"]["input_tokens"], 300)
+        self.assertEqual(data["ai"]["output_tokens"], 60)
+        self.assertEqual(data["ai"]["attempt_error_rate"], 33.3)
+        self.assertEqual(data["ai"]["fallback_rate"], 50.0)
+        self.assertEqual(data["ai"]["providers"][0]["name"], "openrouter")
+        self.assertEqual(
+            {row["name"] for row in data["ai"]["models"]},
+            {"giga:giga-model", "openrouter:vendor/model"},
+        )
         self.assertEqual(data["ai"]["helpful_rate"], 50.0)
         self.assertEqual(data["engagement"]["reading_minutes"], 2.0)
         update_steps = {row["label"]: row["rate"] for row in data["funnels"] if row["label"].startswith("Update")}
         self.assertEqual(update_steps, {
             "Update downloaded": 100.0, "Update verified": 100.0, "Update installed": 100.0,
         })
+
+    def test_tool_candidates_and_diagnostics_make_overview_choice_explicit(self):
+        session_id = str(uuid.uuid4())
+        request_id = str(uuid.uuid4())
+        add("book_opened", session=session_id, properties={"book_kind": "builtin"})
+        add("reading_session_qualified", session=session_id, properties={
+            "book_kind": "builtin", "duration_seconds": 90, "duration_bucket": "1-4m",
+        })
+        add("chapter_completed", session=session_id, properties={"chapter_position_bucket": "1-3"})
+        add("bookmark_added", session=session_id, properties={"feature": "bookmark"})
+        add("ai_request_started", properties={"request_id": request_id, "purpose": "summary"})
+        add("provider_attempt_failed", properties={
+            "request_id": request_id, "purpose": "summary", "provider": "openrouter",
+            "model": "vendor/model", "error_code": "RATE", "retry_index": 0,
+        })
+        add("provider_attempt_completed", properties={
+            "request_id": request_id, "purpose": "summary", "provider": "giga",
+            "model": "giga-model", "http_status": 200, "retry_index": 1,
+        })
+        add("ai_request_completed", properties={
+            "request_id": request_id, "purpose": "summary", "route": "giga:giga-model",
+            "latency_ms": 200, "success": True, "input_tokens": 10,
+            "output_tokens": 4, "total_tokens": 14,
+        })
+        data = server.compute_dashboard(1)
+        tools = {row["id"]: row for row in data["tool_definitions"]}
+        selected = [row for row in data["tool_definitions"] if row["selected_for_overview"]]
+        self.assertEqual(len(data["tool_definitions"]), 6)
+        self.assertEqual(len(selected), 1)
+        self.assertEqual(selected[0]["id"], "logical_ai_requests_24h_dau")
+        self.assertEqual(selected[0]["value"], data["overview"]["tools_per_dau"])
+        self.assertEqual(tools["provider_attempts_24h_dau"]["value"], 2.0)
+        self.assertEqual(tools["logical_ai_requests_24h_dau"]["value"], 1.0)
+        self.assertEqual(len(data["diagnostics"]), 10)
+        self.assertEqual(data["quality"]["token_coverage"], 100.0)
+        feature_names = {row["name"] for row in data["features"]}
+        self.assertIn("AI tools", feature_names)
+        classification = next(
+            row for row in data["diagnostics"] if row["label"] == "Feature classification"
+        )
+        self.assertEqual(classification["value"], 100.0)
+
+    def test_fallback_rate_excludes_orphan_attempts_and_tokens_are_consistent(self):
+        request_id = str(uuid.uuid4())
+        orphan_id = str(uuid.uuid4())
+        add("ai_request_started", properties={"request_id": request_id, "purpose": "summary"})
+        add("provider_attempt_completed", properties={
+            "request_id": request_id, "purpose": "summary", "provider": "giga",
+            "model": "same-model", "http_status": 200, "retry_index": 0,
+        })
+        add("provider_attempt_completed", properties={
+            "request_id": orphan_id, "purpose": "summary", "provider": "openrouter",
+            "model": "same-model", "http_status": 200, "retry_index": 1,
+        })
+        add("ai_request_completed", properties={
+            "request_id": request_id, "purpose": "summary", "route": "giga:same-model",
+            "latency_ms": 10, "success": True, "input_tokens": 7,
+            "output_tokens": 3, "total_tokens": 999,
+        })
+        data = server.compute_dashboard(1)
+        self.assertEqual(data["ai"]["fallback_rate"], 0.0)
+        self.assertEqual(data["ai"]["total_tokens"], 10)
+        self.assertEqual(
+            {row["name"] for row in data["ai"]["models"]},
+            {"giga:same-model", "openrouter:same-model"},
+        )
+
+    def test_dashboard_copy_explains_tools_and_observed_only_quality(self):
+        html = (server.HERE / "index.html").read_text()
+        self.assertIn("What should count as “Tools”?", html)
+        self.assertIn("Overview KPI", html)
+        self.assertIn("Product and data diagnostics", html)
+        self.assertIn("Only directly observed events", html)
+        self.assertIn("Total tokens", html)
+        self.assertIn("diagnosticValue", html)
+        self.assertIn("outcome coverage", html)
+
+    def test_request_success_counts_overdue_pending_and_excludes_orphans(self):
+        old = time.time() - server.AI_OUTCOME_GRACE_SECONDS - 10
+        request_ids = [str(uuid.uuid4()) for _ in range(10)]
+        for request_id in request_ids:
+            add("ai_request_started", properties={
+                "request_id": request_id, "purpose": "summary",
+            }, ts=old)
+        add("ai_request_completed", properties={
+            "request_id": request_ids[0], "purpose": "summary",
+            "route": "giga:model", "latency_ms": 100, "success": True,
+        })
+        orphan_id = str(uuid.uuid4())
+        add("ai_request_completed", properties={
+            "request_id": orphan_id, "purpose": "summary",
+            "route": "giga:model", "latency_ms": 100, "success": True,
+        })
+        data = server.compute_dashboard(1)
+        self.assertEqual(data["ai"]["requests"], 10)
+        self.assertEqual(data["ai"]["success_rate"], 10.0)
+        self.assertEqual(data["ai"]["pending"], 9)
+        self.assertEqual(data["ai"]["pending_overdue"], 9)
+        self.assertEqual(data["ai"]["outcome_coverage"], 10.0)
+        self.assertEqual(data["ai"]["orphan_terminal_ids"], 1)
+        self.assertTrue(any("no matching start" in warning for warning in data["quality"]["warnings"]))
+
+    def test_fresh_pending_request_waits_for_outcome_grace_window(self):
+        pending = str(uuid.uuid4())
+        completed = str(uuid.uuid4())
+        add("ai_request_started", properties={"request_id": pending, "purpose": "summary"})
+        add("ai_request_started", properties={"request_id": completed, "purpose": "summary"})
+        add("ai_request_completed", properties={
+            "request_id": completed, "purpose": "summary", "route": "giga:model",
+            "latency_ms": 10, "success": True,
+        })
+        data = server.compute_dashboard(1)
+        self.assertEqual(data["ai"]["success_rate"], 100.0)
+        self.assertEqual(data["ai"]["outcome_eligible"], 1)
+        self.assertEqual(data["ai"]["pending"], 1)
+        self.assertEqual(data["ai"]["pending_overdue"], 0)
+
+    def test_terminal_for_request_started_before_window_is_not_an_orphan(self):
+        request_id = str(uuid.uuid4())
+        current_request_id = str(uuid.uuid4())
+        add("ai_request_started", properties={
+            "request_id": request_id, "purpose": "summary",
+        }, ts=time.time() - 2 * 86400)
+        add("provider_attempt_completed", properties={
+            "request_id": request_id, "purpose": "summary", "provider": "giga",
+            "model": "giga-model", "http_status": 200, "retry_index": 0,
+        })
+        add("ai_request_completed", properties={
+            "request_id": request_id, "purpose": "summary", "route": "giga:model",
+            "latency_ms": 10, "success": True,
+        })
+        add("ai_request_started", properties={
+            "request_id": current_request_id, "purpose": "summary",
+        })
+        add("provider_attempt_completed", properties={
+            "request_id": current_request_id, "purpose": "summary", "provider": "giga",
+            "model": "giga-model", "http_status": 200, "retry_index": 0,
+        })
+        data = server.compute_dashboard(1)
+        self.assertEqual(data["ai"]["requests"], 1)
+        self.assertEqual(data["ai"]["orphan_terminal_ids"], 0)
+        self.assertEqual(data["ai"]["attempts"], 2)
+        self.assertEqual(data["ai"]["matched_attempts"], 1)
+        self.assertEqual(data["ai"]["unmatched_attempts"], 1)
+        self.assertEqual(data["ai"]["attempts_per_request"], 1.0)
+
+    def test_cost_without_accepted_source_and_currency_is_missing(self):
+        request_id = str(uuid.uuid4())
+        add("ai_request_started", properties={"request_id": request_id, "purpose": "summary"})
+        add("ai_request_completed", properties={
+            "request_id": request_id, "purpose": "summary", "route": "giga:model",
+            "latency_ms": 10, "success": True, "exact_cost": 0.25,
+        })
+        data = server.compute_dashboard(1)
+        self.assertIsNone(data["ai"]["known_cost"])
+        self.assertEqual(data["ai"]["cost_coverage"], 0.0)
+        self.assertTrue(any("accepted source/currency" in warning for warning in data["quality"]["warnings"]))
 
     def test_retention_is_rolling_after_first_qualified_reading(self):
         now = time.time()

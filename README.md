@@ -12,7 +12,7 @@ Electron (main / preload / renderer React+Vite+TS)
         ├─ GigaChat-3-Ultra  — чаты, разметка, саммари (LiteLLM-шлюз, SSE-стриминг)
         ├─ OpenRouter        — server-side маршрут/fallback по назначению запроса
         ├─ gigachat-image    — портреты героев
-        ├─ Kandinsky 6.0     — обложки и сцены (очередь + ретраи + обход цензора)
+        ├─ Kandinsky 6.0     — обложки и сцены (очередь + retry только при rate limit)
         ├─ k5-i2v-lite/hd    — оживление портретов (image-to-video)
         └─ SaluteSpeech      — TTS (6 голосов, SSML-эмоции) и ASR
                           │
@@ -65,8 +65,9 @@ bash scripts/notarize-dmg.sh
 npm run release:verify
 ```
 
-Canonical release запускается workflow `Signed macOS release`: tag обязан совпадать с
-`package.json`, GitHub Environment `narra-production` должен иметь required reviewers,
+Canonical release запускается workflow `Signed macOS release`: immutable tag обязан
+совпадать с `package.json` и указывать ровно на собираемый `HEAD`, GitHub Environment
+`narra-production` должен иметь required reviewers,
 а App Store Connect `.p8` материализуется как временный файл. Артефакты update-feed
 публикуются только после подписи, notarization, stapling, smoke и checksum/SBOM checks.
 
@@ -74,8 +75,11 @@ Canonical release запускается workflow `Signed macOS release`: tag о
 
 - Кандинский обрезает промпт на **950 символах** — стиль всегда в начале промпта
 - У Кандинского два цензора: входной (`bad_*_lemmas`) и выходной (смотрит на готовый кадр);
-  выходной лечится ретраем — сервер делает это сам
-- GigaChat отказывается от «чувствительных» тем (даже Чехова) — нужен фолбэк
+  оба отказа terminal: сервер не ретраит и не меняет провайдера
+- GigaChat может отклонять «чувствительные» темы; moderation/shared-request 4xx
+  terminal, fallback разрешён только для технических provider-local сбоев
 - `/gigachat/complete` — `max_tokens: 6000`: разметка озвучки дублирует текст главы в JSON
 - Видео-API: максимум 3 задачи на токен, 5 сек между запросами — на сервере очередь
+- Временный HTTP video upstream разрешается только в staging, только для точного
+  allowlisted host и всегда отмечает `/ready` как degraded; production это отклоняет
 - macOS: без Developer ID, notarization и HTTPS update-feed production-релиз намеренно не собирается

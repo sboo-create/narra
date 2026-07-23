@@ -5,6 +5,9 @@ import net from 'node:net'
 import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
+import { fileURLToPath } from 'node:url'
+
+const REPO_ROOT = fileURLToPath(new URL('../..', import.meta.url))
 
 async function freePort() {
   return new Promise((resolve, reject) => {
@@ -21,7 +24,7 @@ test('generic update feed is public while other v2 routes require bearer auth', 
   const port = await freePort()
   const dataDir = await mkdtemp(path.join(os.tmpdir(), 'narra-server-update-'))
   const child = spawn(process.execPath, ['server/index.mjs'], {
-    cwd: path.resolve('.'),
+    cwd: REPO_ROOT,
     env: {
       ...process.env,
       PORT: String(port),
@@ -32,9 +35,9 @@ test('generic update feed is public while other v2 routes require bearer auth', 
       REGISTRATION_ACTIVATION_SECRET: 'r'.repeat(32),
       LLM_BASE_URL: 'https://llm.example',
       LLM_API_KEY: 'test',
-      VIDEO_BASE_URL: 'https://video.example',
+      VIDEO_BASE_URL: 'https://127.0.0.1:1',
       SALUTESPEECH_AUTH_KEY: 'test',
-      KANDINSKY_TOKEN: 'test',
+      KANDINSKY_TOKEN: '',
       VIDEO_LIMIT_PER_HOUR: '1'
     },
     stdio: ['ignore', 'pipe', 'pipe']
@@ -74,8 +77,11 @@ test('generic update feed is public while other v2 routes require bearer auth', 
     assert.notEqual((await fetch(variant, init)).status, 429)
     assert.equal((await fetch(variant, init)).status, 429, 'case/trailing-slash route must not bypass video quota')
   } finally {
+    const exited = child.exitCode === null
+      ? new Promise((resolve) => child.once('exit', resolve))
+      : Promise.resolve()
     child.kill('SIGTERM')
-    await new Promise((resolve) => child.once('exit', resolve))
+    await exited
     await rm(dataDir, { recursive: true, force: true })
   }
 })

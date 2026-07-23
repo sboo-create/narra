@@ -40,7 +40,7 @@ export function providerAttemptProperties(requestId, purpose, attempt) {
   return Object.fromEntries(Object.entries(properties).filter(([, value]) => value !== undefined))
 }
 
-export function completionProperties({ requestId, purpose, provider, model, latencyMs, usage }) {
+export function completionProperties({ requestId, purpose, provider, model, latencyMs, usage, responseCost }) {
   const properties = {
     request_id: requestId,
     purpose,
@@ -48,11 +48,100 @@ export function completionProperties({ requestId, purpose, provider, model, late
     latency_ms: boundedNumber(latencyMs, { integer: true }),
     success: true
   }
+  const usageCost = boundedNumber(usage?.cost)
+  const headerCost = boundedNumber(responseCost)
+  const exactCost = usageCost ?? headerCost
   const numeric = {
     input_tokens: boundedNumber(usage?.prompt_tokens, { integer: true }),
     output_tokens: boundedNumber(usage?.completion_tokens, { integer: true }),
     total_tokens: boundedNumber(usage?.total_tokens, { integer: true }),
-    exact_cost: boundedNumber(usage?.cost)
+    exact_cost: exactCost
   }
-  return Object.fromEntries(Object.entries({ ...properties, ...numeric }).filter(([, value]) => value !== undefined))
+  const costMetadata = exactCost === undefined
+    ? {}
+    : {
+        cost_currency: 'USD',
+        cost_source: usageCost !== undefined
+          ? (provider === 'openrouter' ? 'openrouter_usage' : 'litellm_usage')
+          : 'litellm_response_header'
+      }
+  return Object.fromEntries(
+    Object.entries({ ...properties, ...numeric, ...costMetadata })
+      .filter(([, value]) => value !== undefined)
+  )
+}
+
+/**
+ * Collects only the final usage object from an OpenAI-compatible SSE stream.
+ * Content deltas are never retained after their line has been inspected.
+ */
+export function createSseUsageCollector({ maxBufferedBytes = 512 * 1024 } = {}) {
+  const decoder = new TextDecoder()
+  let buffered = ''
+  let usage
+  let sawJsonEvent = false
+  let done = false
+
+  const protocolError = (code, message, status = 502) => Object.assign(
+    new Error(message),
+    { code, status }
+  )
+
+  const consume = (flush = false) => {
+    const lines = buffered.split(/\r?\n/)
+    buffered = flush ? '' : lines.pop() || ''
+    for (const line of lines) {
+      const normalized = line.trimStart()
+      if (!normalized.startsWith('data:')) continue
+      const payload = normalized.slice(5).trim()
+      if (done) throw protocolError('PARSE', 'LLM stream contained data after [DONE]')
+      if (payload === '[DONE]') {
+        done = true
+        continue
+      }
+      if (!payload) throw protocolError('PARSE', 'LLM stream contained an empty data event')
+      let parsed
+      try {
+        parsed = JSON.parse(payload)
+      } catch {
+        throw protocolError('PARSE', 'LLM stream contained malformed JSON')
+      }
+      sawJsonEvent = true
+      if (parsed?.error) {
+        const fingerprint = `${parsed.error?.code || ''} ${parsed.error?.type || ''}`.toLowerCase()
+        const moderation = /content.?filter|moderation|safety|unsafe|censor|blocked/.test(fingerprint)
+        throw protocolError(
+          moderation ? 'CENSOR' : 'NETWORK',
+          moderation ? 'LLM stream was blocked by content safety' : 'LLM stream returned an upstream error',
+          moderation ? 422 : 502
+        )
+      }
+      if (
+        Array.isArray(parsed?.choices) &&
+        parsed.choices.some((choice) => choice?.finish_reason === 'content_filter')
+      ) {
+        throw protocolError('CENSOR', 'LLM stream was blocked by content safety', 422)
+      }
+      if (parsed && typeof parsed.usage === 'object' && !Array.isArray(parsed.usage)) {
+        usage = parsed.usage
+      }
+    }
+  }
+
+  return {
+    push(chunk) {
+      buffered += decoder.decode(chunk, { stream: true })
+      if (Buffer.byteLength(buffered) > maxBufferedBytes) {
+        throw protocolError('PARSE', 'LLM stream event exceeded the parser limit')
+      }
+      consume()
+    },
+    value() {
+      buffered += decoder.decode()
+      consume(true)
+      if (!sawJsonEvent) throw protocolError('PARSE', 'LLM stream did not contain a JSON event')
+      if (!done) throw protocolError('PARSE', 'LLM stream ended before [DONE]')
+      return usage
+    }
+  }
 }

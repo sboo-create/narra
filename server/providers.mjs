@@ -3,6 +3,16 @@ import { withTimeout } from './concurrency.mjs'
 
 const RETRYABLE = new Set([408, 409, 429, 500, 502, 503, 504])
 const PURPOSES = ['character_chat', 'structured_task', 'summary', 'scenario', 'memory']
+const MODERATION_RESPONSE = /content.?filter|moderation|safety|unsafe|censor|blocked|bad_[a-z_]*lemmas|запрещ|цензур|безопасност/i
+
+function httpErrorCode(status, detail) {
+  if (MODERATION_RESPONSE.test(String(detail || ''))) return 'CENSOR'
+  if (status === 401 || status === 403) return 'AUTH'
+  if (status === 408) return 'TIMEOUT'
+  if (status === 429) return 'RATE'
+  if (status >= 400 && status < 500 && ![404, 409].includes(status)) return 'VALIDATION'
+  return 'NETWORK'
+}
 
 function providerConfig(name, purpose, env) {
   if (name === 'openrouter') {
@@ -82,10 +92,26 @@ export async function requestChat({
     const started = Date.now()
     if (!config.apiKey || !config.baseUrl || !config.model) {
       last = { status: 503, error: `${providerName}: provider is not configured`, code: 'NO_KEY' }
-      attempts.push({ attempt_id: attemptId, provider: providerName, model: config.model, status: 'not_configured', retry_index: retryIndex })
+      attempts.push({
+        attempt_id: attemptId,
+        event_id: randomUUID(),
+        provider: providerName,
+        model: config.model,
+        status: 'not_configured',
+        retry_index: retryIndex
+      })
       await onAttempt(attempts.at(-1))
       continue
     }
+    const startedAttempt = {
+      attempt_id: attemptId,
+      event_id: randomUUID(),
+      provider: providerName,
+      model: config.model,
+      status: 'started',
+      retry_index: retryIndex
+    }
+    await onAttempt(startedAttempt)
     try {
       const response = await fetchImpl(`${config.baseUrl}/chat/completions`, {
         method: 'POST',
@@ -99,28 +125,74 @@ export async function requestChat({
           messages,
           temperature,
           max_tokens: stream ? 1024 : 6000,
-          stream
+          stream,
+          ...(stream && providerName === 'giga'
+            ? { stream_options: { include_usage: true } }
+            : {}),
+          ...(providerName === 'openrouter'
+            ? { provider: { zdr: true, data_collection: 'deny' } }
+            : {})
         }),
         signal: withTimeout(signal, stream ? 180_000 : 120_000)
       })
-      const attempt = {
+      const terminalAttempt = {
         attempt_id: attemptId,
         provider: providerName,
         model: config.model,
-        status: response.ok ? 'completed' : 'failed',
+        status: 'failed',
         http_status: response.status,
-        latency_ms: Date.now() - started
-        ,retry_index: retryIndex
+        latency_ms: Date.now() - started,
+        retry_index: retryIndex
       }
-      attempts.push(attempt)
-      console.info(JSON.stringify({ type: 'provider_attempt', request_id: id, purpose, ...attempt }))
-      await onAttempt(attempt)
-      if (response.ok && response.body) return { response, requestId: id, attempts, provider: providerName, model: config.model }
+      if (response.ok && response.body) {
+        let finalized = false
+        const finalizeAttempt = async ({ status = 'completed', error_code: errorCode } = {}) => {
+          if (finalized) return
+          finalized = true
+          const attempt = {
+            ...terminalAttempt,
+            event_id: randomUUID(),
+            status,
+            ...(status === 'failed'
+              ? { error_code: errorCode || 'NETWORK' }
+              : { error_code: undefined }),
+            latency_ms: Date.now() - started
+          }
+          attempts.push(attempt)
+          console.info(JSON.stringify({ type: 'provider_attempt', request_id: id, purpose, ...attempt }))
+          await onAttempt(attempt)
+        }
+        const responseCost = (() => {
+          if (providerName !== 'giga') return undefined
+          const value = Number(response.headers.get('x-litellm-response-cost'))
+          return Number.isFinite(value) && value >= 0 && value <= 1_000_000 ? value : undefined
+        })()
+        return {
+          response,
+          requestId: id,
+          attempts,
+          provider: providerName,
+          model: config.model,
+          responseCost,
+          finalizeAttempt
+        }
+      }
       const detail = (await response.text().catch(() => '')).slice(0, 180)
+      const errorCode = httpErrorCode(response.status, detail)
+      const failedAttempt = {
+        ...terminalAttempt,
+        event_id: randomUUID(),
+        error_code: errorCode
+      }
+      attempts.push(failedAttempt)
+      console.info(JSON.stringify({ type: 'provider_attempt', request_id: id, purpose, ...failedAttempt }))
+      await onAttempt(failedAttempt)
       last = {
         status: response.status === 401 || response.status === 403 ? 502 : response.status,
-        error: `${providerName} ${response.status}: ${detail}`,
-        code: response.status === 429 ? 'RATE' : response.status === 401 || response.status === 403 ? 'AUTH' : 'NETWORK'
+        error: errorCode === 'CENSOR'
+          ? `${providerName}: response blocked by content safety`
+          : `${providerName} ${response.status}: ${detail}`,
+        code: errorCode
       }
       // Authentication and model availability failures belong to this provider;
       // a configured fallback may still be healthy. Other non-retryable 4xx
@@ -129,12 +201,13 @@ export async function requestChat({
     } catch (error) {
       const attempt = {
         attempt_id: attemptId,
+        event_id: randomUUID(),
         provider: providerName,
         model: config.model,
         status: 'failed',
         error_code: error?.name === 'TimeoutError' ? 'TIMEOUT' : 'NETWORK',
-        latency_ms: Date.now() - started
-        ,retry_index: retryIndex
+        latency_ms: Date.now() - started,
+        retry_index: retryIndex
       }
       attempts.push(attempt)
       console.info(JSON.stringify({ type: 'provider_attempt', request_id: id, purpose, ...attempt }))

@@ -16,15 +16,6 @@ jobs:
     # Configure required reviewers and branch/tag protection for this GitHub Environment.
     environment: narra-production
     env:
-      NODE_ENV: production
-      NARRA_PROXY_URL: ${{ secrets.NARRA_PROXY_URL }}
-      NARRA_ACTIVATION_TOKEN: ${{ secrets.NARRA_ACTIVATION_TOKEN }}
-      NARRA_UPDATE_BASE_URL: ${{ secrets.NARRA_UPDATE_BASE_URL }}
-      CSC_LINK: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
-      CSC_KEY_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
-      APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       RELEASE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.release_version || github.ref_name }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -38,23 +29,46 @@ jobs:
           cache: npm
       - name: Verify release tag matches package version
         run: node scripts/verify-release-tag.mjs "$RELEASE_VERSION"
+      - run: npm ci
+      - run: npm ci --prefix server
+      - run: npm audit --audit-level=moderate
+      - run: npm audit --prefix server --audit-level=moderate
+      - run: python -m venv stats/.venv && stats/.venv/bin/pip install -r stats/requirements.txt
+      - run: npm run typecheck && npm run test:gateway && npm run test:release && npm run test:stats
       - name: Materialize App Store Connect key
         env:
           APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
         run: |
           umask 077
           key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
           test -n "$APPLE_API_KEY_P8"
           printf '%s' "$APPLE_API_KEY_P8" > "$key_path"
           echo "APPLE_API_KEY=$key_path" >> "$GITHUB_ENV"
-      - run: npm ci
-      - run: npm ci --prefix server
-      - run: npm audit --audit-level=moderate
-      - run: npm audit --prefix server --audit-level=moderate
-      - run: python -m venv stats/.venv && stats/.venv/bin/pip install -r stats/requirements.txt
-      - run: npm run typecheck && npm run test:gateway && npm run test:stats
-      - run: npm run dist
-      - run: bash scripts/notarize-dmg.sh
+      - name: Build signed universal app
+        env:
+          NODE_ENV: production
+          NARRA_PROXY_URL: ${{ secrets.NARRA_PROXY_URL }}
+          NARRA_ACTIVATION_TOKEN: ${{ secrets.NARRA_ACTIVATION_TOKEN }}
+          NARRA_UPDATE_BASE_URL: ${{ secrets.NARRA_UPDATE_BASE_URL }}
+          CSC_LINK: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+          CSC_KEY_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: npm run dist
+      - name: Notarize and staple DMG
+        env:
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: bash scripts/notarize-dmg.sh
+      - name: Remove temporary notarization key
+        if: always()
+        run: |
+          case "${APPLE_API_KEY:-}" in
+            "$RUNNER_TEMP"/AuthKey_*.p8) [ ! -f "$APPLE_API_KEY" ] || rm -f -- "$APPLE_API_KEY" ;;
+          esac
       - run: npm run smoke:pdf-worker
       - run: npm run release:verify
       - run: npm sbom --sbom-format cyclonedx > "release/Narra-${RELEASE_VERSION}.cdx.json"
@@ -70,9 +84,11 @@ jobs:
             release/Narra-*-universal.zip.sha256
             release/*.cdx.json
           if-no-files-found: error
-      - name: Remove temporary notarization key
+      - name: Confirm temporary notarization key is absent
         if: always()
         run: |
           case "${APPLE_API_KEY:-}" in
-            "$RUNNER_TEMP"/AuthKey_*.p8) [ ! -f "$APPLE_API_KEY" ] || rm -f -- "$APPLE_API_KEY" ;;
+            "$RUNNER_TEMP"/AuthKey_*.p8) test ! -e "$APPLE_API_KEY" ;;
+            "") ;;
+            *) exit 1 ;;
           esac

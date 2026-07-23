@@ -14,6 +14,7 @@
     "release:verify": "bash scripts/verify-macos-release.sh",
     "release:verify:unsigned": "bash scripts/verify-unsigned-macos.sh",
     "test:gateway": "node --test server/test/*.test.mjs",
+    "test:release": "node --test scripts/*.test.mjs",
     "test:stats": "cd stats && .venv/bin/python -m unittest -v test_server.py",
     "security:audit": "npm audit --audit-level=moderate",
     "smoke:pdf-worker": "electron scripts/smoke-pdf-worker.cjs",
