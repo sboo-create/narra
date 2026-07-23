@@ -85,16 +85,63 @@ Production Narra пока не получала пользовательских
        ├─ aliases / mentions / direct speech / POV
        ├─ character profiles без спойлеров
        ├─ versioned voice plan
+       ├─ первая глава: TTS-разметка в фоне
        ├─ cover
-       └─ portrait главного героя
+       └─ portraits главного героя и 2–3 основных персонажей
 
 По требованию пользователя:
-  ├─ остальные portraits
+  ├─ portraits второстепенных персонажей
   ├─ progressive multi-voice TTS
   └─ video job с position / ETA / cancel
 ```
 
-Не генерируем при импорте всю аудиокнигу и видео всех героев. Это забивает upstream, расходует квоты и превращает импорт в многочасовую операцию.
+При импорте создаётся только сценарная разметка первой главы, но не аудио.
+Озвучка всегда запускается по запросу пользователя. Не генерируем при импорте
+всю аудиокнигу, портреты эпизодников или видео всех героев: это забивает
+upstream, расходует квоты и превращает импорт в многочасовую операцию.
+
+## Как ускоряем разметку главы для озвучки
+
+### Почему сейчас медленно
+
+Текущая реализация режет главу примерно по 1 500 символов, отправляет каждый
+кусок в LLM строго последовательно и возвращает сценарий только после последнего
+куска. Например, глава на 30 000 символов создаёт около 20 последовательных
+LLM-запросов. TTS не может начать работу, пока не закончились все двадцать.
+
+### Целевой алгоритм
+
+1. После импорта и закрепления voice plan первая глава размечается в фоне.
+2. Чанки делаются адаптивными, ориентир — 3–5 тысяч символов с разбиением по
+   абзацам и границам прямой речи.
+3. До трёх чанков размечаются параллельно; результаты собираются в исходном
+   порядке. Лимит остаётся server-side и не может занять все LLM slots.
+4. Модель возвращает компактные метки по paragraph/sentence IDs:
+   `narration|speech`, character ID и emotion — без повторной отправки полного
+   текста главы в JSON-ответе.
+5. Первый готовый непрерывный блок сразу передаётся в progressive TTS.
+   Пользователь слышит начало, пока остальная глава продолжает размечаться.
+6. При 70–80% чтения или прослушивания текущей главы в фоне размечается следующая.
+7. Одновременные запросы одной и той же главы coalesce в одну job; результат
+   кэшируется по hash текста, markup version, model и voice-plan version.
+
+Фоновая разметка помечается `origin=background` и не считается пользовательским
+tool action: она не создаёт active day, reading session или Tools / DAU.
+Actor-linked диагностика фоновых jobs относится к Extended и исчезает при
+opt-out; всегда включёнными остаются только безакторные operational aggregates
+gateway — количество, длительность, ошибки и расход без installation ID.
+
+Для условной главы на 30 000 символов это уменьшает количество волн с примерно
+20 последовательных до 2–4 параллельных волн. Теоретически ожидание полной
+разметки может сократиться в несколько раз, но честный ориентир — **2–4× до
+benchmark**, потому что более крупные prompts, rate limits и повторная валидация
+не дают линейного ускорения. Время до первого звука сокращается сильнее:
+TTS ждёт первый готовый блок, а не всю главу.
+
+Дополнительная оптимизация после baseline: локально выделять прямую речь
+регулярными правилами, а LLM отправлять только определение говорящего и эмоции
+для неоднозначных реплик. Это может убрать значительную часть LLM-вызовов, но
+требует отдельного quality benchmark на разных стилях книг.
 
 ---
 
@@ -176,6 +223,13 @@ throughput ≈ 60 минут / средняя длительность job
 
 Для public release простой `Railway → http://87.242.117.37:5051` неприемлем: по незашифрованному каналу проходят bearer credential, изображение и иногда аудио.
 
+Railway может выдать новому proxy-service бесплатный HTTPS-домен
+`*.up.railway.app`. Это защищает только участок `клиент/gateway → Railway`.
+Если proxy затем обращается к `http://87.242.117.37:5051`, второй участок всё
+равно идёт открытым по интернету. Такой relay полезен для единой авторизации,
+лимитов и скрытия upstream URL, но **не закрывает transport risk** и годится
+только как временный staging workaround.
+
 Workaround без VPN/tunnel — **HTTPS edge relay на самом video host**:
 
 ```text
@@ -201,6 +255,61 @@ Railway Gateway
 
 Тот же edge relay можно поставить перед LiteLLM, если он находится на контролируемом сервере.
 
+Если своего поддомена пока нет:
+
+- для обычного Narra Gateway достаточно Railway-generated HTTPS domain;
+- для video staging можно временно оставить текущий exact-host HTTP с degraded
+  gate — пользовательские production-данные туда не направляются;
+- если можно установить `cloudflared` на video host, Quick Tunnel даст временный
+  случайный HTTPS URL без собственного домена, но он меняется при перезапуске и
+  подходит только для тестов;
+- для стабильного production hostname нужен named Cloudflare Tunnel с доменом
+  либо Caddy/Nginx и управляемый DNS.
+
+---
+
+## Какие ключи находятся в приложении
+
+Provider credentials в Electron не передаются и не хранятся:
+
+- OpenRouter/Giga/LiteLLM credentials — только Railway secrets;
+- SaluteSpeech credential — только Railway secret;
+- Kandinsky/video token — только Railway secret;
+- Traction ingest token — только gateway.
+
+В release-сборке находятся только публичные адреса:
+
+- `NARRA_PROXY_URL`;
+- `NARRA_UPDATE_BASE_URL`.
+
+Сейчас есть одно временное исключение: общий
+`NARRA_ACTIVATION_TOKEN` зашивается в beta-сборку и отправляется только на
+registration endpoint при регистрации или перерегистрации установки — например, после истечения bearer,
+смены gateway URL или ответа `401`. Он не отправляется в provider routes. Это не
+provider API key, но это всё равно извлекаемый общий секрет. После регистрации
+gateway выдаёт stateless installation bearer с текущим TTL по умолчанию 30 дней;
+на macOS он хранится через Keychain-backed `safeStorage`, а не открытым текстом.
+
+Перед публичным релизом общий activation token должен быть заменён на
+одноразовый invite/account entitlement. Provider keys в клиенте не появятся.
+
+### Как доступ устроен сейчас
+
+Отдельных приглашений и UI для invite code в Narra сейчас нет:
+
+- если на gateway задан `REGISTRATION_ACTIVATION_SECRET`, пользоваться может
+  любая копия приложения, собранная с совпадающим общим activation token;
+- фактически это означает «любой, у кого есть beta-сборка **или скопированный из
+  неё общий token и совместимый клиент**» — сама раздача официальной сборки не
+  является границей доступа;
+- индивидуально отозвать одну такую установку нельзя;
+- в production gateway отсутствие или длина activation secret меньше 32
+  символов блокирует запуск; открытая регистрация без него возможна только в
+  non-production режиме после осознанного изменения конфигурации.
+
+Invite-only — это предлагаемая следующая реализация, а не уже существующая
+функция.
+
 ---
 
 ## Что такое server-side entitlement и что требуется от владельца
@@ -222,7 +331,7 @@ token_version
 
 1. Пользователь вводит одноразовый invite code либо входит в аккаунт.
 2. Gateway проверяет разрешение.
-3. Gateway выдаёт короткоживущий install token.
+3. Gateway выдаёт stateless install token; сейчас TTL по умолчанию — 30 дней.
 4. Каждый дорогой запрос проверяет активность entitlement и quota.
 5. Конкретную установку можно отозвать без перевыпуска приложения.
 
@@ -302,16 +411,18 @@ Workflow уже поддерживает его через repository variable
 - draft GitHub Release/update-feed;
 - отсутствие legacy endpoint в новом клиенте.
 
-### Что найдено
+### Что найдено и принято
 
 - На текущем Mac есть валидная identity `Developer ID Application: Evgeny Tsapnikov (LTS79DWRGJ)`.
-- Она пригодна для локального signed QA только вместе с notarization credentials той же Apple Team.
-- Это не подтверждённые креды Миши и не основание подписывать Narra от его имени.
+- Принято продуктовое решение пока собирать Narra с Developer ID Жени.
+- Это решение само по себе не является разрешением владельца Apple Team на
+  подпись `com.narra.app`; подтверждение остаётся release gate.
+- Identity пригодна для локального signed QA, но notarization всё равно требует credentials той же Apple Team.
 - GigaType workflows ожидают Apple secrets, но через доступный GitHub API они отсутствуют в repo/environment secrets.
 - Значения GitHub Actions secrets принципиально нельзя прочитать или скопировать из одного репозитория в другой.
 - Локальных `.p8`/`.p12` файлов GigaType не найдено.
 
-### Что должен добавить Миша или владелец Apple Team
+### Что должен добавить Женя или владелец его Apple Team
 
 В GitHub Environment `narra-production` репозитория Narra:
 
@@ -319,7 +430,7 @@ Workflow уже поддерживает его через repository variable
 |---|---|
 | `MACOS_CERTIFICATE_P12_BASE64` | содержимое Developer ID Application `.p12` в base64 |
 | `MACOS_CERTIFICATE_PASSWORD` | пароль `.p12` |
-| `APPLE_API_KEY_P8` | содержимое App Store Connect `AuthKey_*.p8` |
+| `APPLE_API_KEY_P8` | App Store Connect **Team API key** `AuthKey_*.p8`, пригодный для `notarytool`; не individual API key |
 | `APPLE_API_KEY_ID` | Key ID |
 | `APPLE_API_ISSUER` | Issuer ID |
 | `APPLE_TEAM_ID` | Team ID сертификата |
@@ -328,7 +439,10 @@ Workflow уже поддерживает его через repository variable
 
 `NARRA_UPDATE_BASE_URL` теперь не secret: по умолчанию используется GitHub Releases. При переносе на object storage его можно задать repository variable.
 
-Перед использованием нужно подтвердить, что Apple Team разрешает подписывать bundle ID `com.narra.app`.
+Нужно получить matching App Store Connect Team API key `.p8`, Key ID, Issuer ID и Team ID,
+а также подтвердить, что команда Жени разрешает подписывать bundle ID
+`com.narra.app`. Для локальной подписи можно использовать уже установленную
+identity; без matching notarization credentials публичный DMG всё равно не готов.
 
 ---
 
@@ -447,6 +561,14 @@ joy → Erm_24000
 - voice plan закрепляется на всю книгу;
 - ручная смена инвалидирует только аудио этого героя.
 
+Старые автоматические пулы `Bys/Tur/Pon` и `Ost/May/Nec` удаляются при
+подключении нового registry. Для narrator/главного героя используются
+ассистентские голоса Афина, Сбер и Джой. Остальные герои получают по полу только
+фамилии, отмеченные Соней в библиотеке
+`webfront-dev.cloud.delta.sbrf.ru/tts`. Само выделение/скриншот в текущем
+сообщении не передалось, поэтому перед реализацией нужен точный список отмеченных
+фамилий или технических кодов.
+
 Нерешённое правило: `Sber narrator + male third-person protagonist`. Среди оставшихся assistant voices нет мужского. Рекомендация — дать protagonist первому мужскому library voice, а не нарушать пол и не дублировать narrator.
 
 Каждый приватный голос тестируется на реальном ключе:
@@ -472,6 +594,8 @@ joy → Erm_24000
 - [ ] Apple secrets в `narra-production`
 - [x] Все шесть Traction slots видны постоянно
 - [ ] Voice registry и исправленные cache keys
+- [ ] Background-разметка первой главы после импорта
+- [ ] Bounded parallel/streaming chapter markup
 - [ ] Progressive TTS first-audio
 - [ ] Durable media job API и queue UX
 - [ ] HTTPS edge relay для video либо явный closed-beta gate
@@ -502,9 +626,22 @@ joy → Erm_24000
 
 ## Что нужно решить владельцам
 
-1. Invite-only beta или open anonymous launch? Рекомендация: invite-only.
-2. Как назначать голос при `Sber narrator + male protagonist`? Рекомендация: первый мужской library voice.
-3. Safronova действительно подходит детям? До подтверждения не включать автоматически.
-4. Может ли владелец video host поставить Caddy/Nginx relay рядом с `:5051`?
-5. Может ли Миша добавить Apple credentials в `narra-production`?
-6. Под «APK» имеется в виду Android? Текущий Narra — Electron desktop; Android потребует отдельного клиентского проекта.
+1. Доступ к beta: оставить модель «все, у кого есть сборка или скопированный
+   общий token» или сделать одноразовые invites? Рекомендация: invite-only до
+   внешнего распространения.
+2. Пришли точный список фамилий/technical codes, которые Соня отметила для
+   автоматического назначения второстепенным героям.
+3. Как назначать голос при `Sber narrator + male protagonist`? Рекомендация:
+   первый мужской library voice.
+4. Sample rate: `24000` по умолчанию или обязательный `48000`? Рекомендация:
+   `24000` для первого быстрого воспроизведения, `48000` как high-quality option.
+5. Сколько портретов готовить автоматически? Рекомендация: главный герой плюс
+   2–3 основных; остальные — при открытии карточки.
+6. Может ли владелец video host установить Caddy/Nginx или `cloudflared` рядом
+   с `:5051`? Без этого Railway proxy не шифрует второй участок.
+7. Может ли Женя/владелец его Apple Team дать matching notarization `.p8`,
+   Key ID, Issuer ID, Team ID и подтвердить `com.narra.app`?
+8. Какой бюджет/лимит допустим для capacity benchmark `1 → 2 → 5 → 10`?
+9. Safronova действительно подходит детям? До подтверждения не включать автоматически.
+10. Под «APK» имеется в виду Android? Текущий Narra — Electron desktop;
+    Android потребует отдельного клиентского проекта.
