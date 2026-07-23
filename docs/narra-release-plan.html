@@ -34,12 +34,12 @@ html:not([data-portable-source-tooltips-ready]) .portable-chart-summary>.portabl
 </style>
 </head>
 <body>
-<main id="data-analytics-portable-fallback" class="portable-fallback" data-portable-fallback="true" data-portable-surface="report"><header class="portable-page-header"><div class="portable-page-heading"><p class="portable-surface-label">Data Analytics report</p><h1>Narra: план безопасного релиза и аналитики</h1><p class="portable-description">Фактический статус и технический план безопасного релиза Narra: gateway, OpenRouter + Giga, аналитика Traction и подписанные обновления.</p></div><div class="portable-page-meta"><time datetime="2026-07-23T13:25:00+03:00">Jul 23, 2026 at 10:25 AM UTC</time></div></header><div class="portable-block-stack"><div class="portable-block portable-layout-full" data-artifact-block-id="title" data-artifact-block-type="markdown" data-layout="full"><section class="portable-markdown"><p><strong>Обновлено:</strong> 23 июля 2026 · <strong>Статус:</strong> gateway и отдельный stats staging прошли E2E; Narra активна в production Traction; публичный клиентский релиз по-прежнему заблокирован до защищённых LiteLLM/video transport, entitlement и signed update-feed</p></section></div>
+<main id="data-analytics-portable-fallback" class="portable-fallback" data-portable-fallback="true" data-portable-surface="report"><header class="portable-page-header"><div class="portable-page-heading"><p class="portable-surface-label">Data Analytics report</p><h1>Narra: план безопасного релиза и аналитики</h1><p class="portable-description">Фактический статус и технический план безопасного релиза Narra: gateway, OpenRouter + Giga, аналитика Traction и подписанные обновления.</p></div><div class="portable-page-meta"><time datetime="2026-07-23T15:00:00+03:00">Jul 23, 2026 at 12:00 PM UTC</time></div></header><div class="portable-block-stack"><div class="portable-block portable-layout-full" data-artifact-block-id="title" data-artifact-block-type="markdown" data-layout="full"><section class="portable-markdown"><p><strong>Обновлено:</strong> 23 июля 2026 · <strong>Статус:</strong> gateway и отдельный stats staging прошли E2E; Narra активна в production Traction; update-feed workflow подготовлен; публичный клиентский релиз ждёт Apple credentials, защищённый video transport, entitlement и production cutover</p></section></div>
 <div class="portable-block portable-layout-full" data-artifact-block-id="technical_summary" data-artifact-block-type="markdown" data-layout="full"><section class="portable-markdown"><h2>Техническое резюме</h2>
-<ul><li><strong>Release foundation реализован и проверен.</strong> Gateway v2, server-side routing, квоты и bounded queues, SSRF/архив/IPC/Electron hardening, безопасный updater, priority telemetry queue и stats-narra покрыты тестами и повторными agent gates.</li><li><strong>Аналитика работает сквозным контуром.</strong> Отдельные Railway staging gateway/stats service, токены, database и Volumes изолированы; gateway outbox доставляет события по HTTPS, после restart сохраняет очередь, а stats сохраняет SQLite и дедупликацию.</li><li><strong>Traction уже не заглушка.</strong> Production-модуль слушает только <code>127.0.0.1:9905</code>, Caddy защищает dashboard общей Basic Auth, poller видит Narra как live; production база закономерно пуста, потому что продукт ещё не выпущен.</li><li><strong>Все шесть canonical-метрик проверены на изолированном staging синтетическим E2E.</strong> <code>Ever used</code>, <code>DAU</code>, <code>WAU</code>, <code>MAU</code>, <code>Sessions / DAU</code>, <code>Tools / DAU</code> появились в staging после тестовых событий; retries не раздувают Tools, content/PII не принимаются schema allowlist. Production-проверка подтверждает только живой модуль и здоровый poller, а не пользовательские значения метрик.</li><li><strong>Essential telemetry всегда включена; opt-out отключает только extended.</strong> Тексты книг, промпты, ответы, URL, имена файлов и media запрещены в обоих режимах; essential имеет приоритет в bounded queue.</li><li><strong>OpenRouter полностью серверный и live.</strong> Staging purpose-routes идут по HTTPS с ZDR/data-deny; strict body/SSE parse, usage, request/attempt, provider/model и observed-only cost готовы.</li><li><strong>Sber media-путь проверен.</strong> SaluteSpeech использует fingerprint-verified Sber-only CA bundle без глобального отключения TLS; Kandinsky image и video прошли синтетический E2E. Video остаётся staging-only degraded, потому что upstream доступен только по HTTP.</li><li><strong>Giga не отключён, а безопасно отложен.</strong> Адаптер и маршрутизация сохранены, но текущий public HTTP LiteLLM не получает пользовательский контент или ключи до HTTPS/private tunnel.</li><li><strong>Universal unsigned QA и Apple inputs готовы.</strong> Developer ID и notarization credentials найдены через MultiTool; подписанный RC ждёт HTTPS update-feed и закрытия публичных transport/entitlement gates.</li><li><strong>Исторического backfill нет.</strong> Narra ещё не релизнута: аналитика начинается с чистой даты cutover, без reconstructed-слоя и искусственных нулей до старта сбора.</li></ul></section></div>
+<ul><li><strong>Release foundation реализован и проверен.</strong> Gateway v2, server-side routing, квоты и bounded queues, SSRF/архив/IPC/Electron hardening, безопасный updater, priority telemetry queue и stats-narra покрыты тестами и повторными agent gates.</li><li><strong>Traction показывает все шесть canonical-слотов.</strong> <code>Ever used</code>, <code>DAU</code>, <code>WAU</code>, <code>MAU</code>, <code>Sessions / DAU</code>, <code>Tools / DAU</code> всегда видимы; при <code>DAU = 0</code> две доли показываются как <code>—</code>, а не исчезают и не превращаются в ложный ноль.</li><li><strong>Essential telemetry всегда включена; opt-out отключает только extended.</strong> Планируемые import, book-analysis, media, playback и voice events относятся к Extended. Gateway отдельно хранит безакторные operational counters; тексты, prompts, URL, имена файлов и media не попадают в аналитику.</li><li><strong>OpenRouter остаётся безопасным HTTPS-маршрутом до появления relay.</strong> Giga/LiteLLM и video не отключены, но public HTTP не используется для пользовательского контента в production.</li><li><strong>Текущая пропускная способность video очень низкая.</strong> Код принимает четыре задачи вместе с активной, обрабатывает одну за раз и отклоняет остальные <code>429</code>. При фактических 10–15 мин на job это лишь 4–6 jobs/hour; это расчёт по наблюдаемой длительности, а не benchmark.</li><li><strong>SaluteSpeech ограничен реальным scope.</strong> <code>SALUTE_SPEECH_PERS</code> допускает максимум пять upstream streams; gateway теперь отклоняет Railway override выше пяти.</li><li><strong>Universal release workflow подготовлен безопасно.</strong> Он собирает signed/notarized arm64+x64 RC, проверяет артефакты и складывает их в draft GitHub Release. Публикация draft вручную включает HTTPS update-feed.</li><li><strong>Apple credentials в Narra не найдены.</strong> В GigaType есть только имена ожидаемых secrets, но их значения нельзя прочитать или перенести через GitHub. Локальная identity Evgeny Tsapnikov не подтверждена как команда Миши и не заменяет matching notarization credentials.</li><li><strong>Исторического backfill нет.</strong> Narra ещё не релизнута: аналитика начинается с чистой даты cutover.</li></ul></section></div>
 <div class="portable-block portable-layout-full" data-artifact-block-id="decisions_heading" data-artifact-block-type="markdown" data-layout="full"><section class="portable-markdown"><h2>Базовые решения уже приняты</h2>
 <p>Ниже отделены решения, которые уже реализованы, от оставшихся production release gates. Railway и Traction доступ больше не являются блокерами.</p></section></div>
-<div class="portable-block portable-layout-full" data-artifact-block-id="decisions" data-artifact-block-type="table" data-layout="full"><section class="portable-content-card portable-table-card" data-artifact-id="decisions_table" data-artifact-kind="table" data-table-id="decisions_table" data-portable-visual-title="Зафиксированные решения и границы"><header class="portable-visual-header"><h2>Зафиксированные решения и границы</h2></header><div class="portable-inline-source portable-source-summary" data-source-id="source"><div class="portable-inline-source-content portable-source-summary-content"><span class="portable-source-tooltip-heading" aria-hidden="true">Source for Зафиксированные решения и границы</span><strong>Source: Зафиксированные решения текущего плана</strong><span class="portable-source-meta">Table: decisions</span><p class="portable-source-description-data">Читает reviewed decisions, зафиксированные из аудита и вводных владельца.</p><pre class="portable-source-query-data" aria-hidden="true"><code>SELECT area, decision, consequence FROM decisions ORDER BY order</code></pre></div></div><div class="portable-table-source-region"><div class="portable-table-scroll"><table><caption>Зафиксированные решения и границы</caption><thead><tr><th scope="col">Область</th><th scope="col">Решение</th><th scope="col">Следствие для плана</th></tr></thead><tbody><tr><td>API cutover</td><td>Legacy endpoint не поддерживается</td><td>Клиент и gateway переходят на v2 синхронно до первого внешнего релиза</td></tr><tr><td>Apple</td><td>Использовать Developer ID из MultiTool</td><td>Локальные identity/notarization inputs найдены; signed universal RC ждёт HTTPS update-feed, signed/notarized install и upgrade tests, а также закрытия transport/entitlement gates</td></tr><tr><td>LLM</td><td>Текущий LiteLLM — сервис команды, но доступен только по public HTTP</td><td>Адаптер сохраняем, но не передаём ключи/контент до HTTPS или private tunnel; staging явно all-OpenRouter</td></tr><tr><td>macOS</td><td>Universal build</td><td>Один подписанный/notarized релиз для arm64 и x64, проверяемый на обеих архитектурах</td></tr><tr><td>Railway</td><td>Gateway и stats staging изолированы; production gateway остаётся старым</td><td>Отдельные domains, secrets, databases и Volumes; analytics delivery/restart/dedupe проверены, production cutover остаётся отдельным gate</td></tr><tr><td>Staging credentials</td><td>Отдельных upstream staging keys не будет</td><td>Копируются только конкретные credentials без раскрытия; unsafe public HTTP URLs и Giga fallbacks не копируются; Narra/Traction secrets, environment и данные отдельные</td></tr><tr><td>Traction</td><td>Narra активна в production hub с найденным логотипом</td><td>Loopback stats service, Caddy Basic Auth, public health/tokened ingest и poller cache прошли live smoke</td></tr><tr><td>Аналитика</td><td>Минимальная всегда включена; расширенная default-on с opt-out</td><td>Выключение удаляет из очереди только расширенные события; canonical/service telemetry и строгий запрет контента сохраняются</td></tr><tr><td>Видео</td><td>Kandinsky video — проверенный сервис Сбера; текущий адрес только HTTP</td><td>Функцию сохраняем; staging требует явного risk flag, censor=true, auth/queue/timeout/telemetry; public release ждёт HTTPS/туннель</td></tr><tr><td>Маршрутизация</td><td>Полностью серверная</td><td>Клиент передаёт purpose, но не выбирает provider/model; переключение не требует пересборки</td></tr><tr><td>Провайдеры</td><td>OpenRouter сейчас безопасный staging primary; Giga возвращается после защищённого транспорта</td><td>Provider abstraction и server-side routing сохраняются без скрытого TLS downgrade</td></tr><tr><td>Статус продукта</td><td>Проект ещё не релизнут</td><td>Нет backfill, reconstructed-слоя и миграции старой продуктовой статистики</td></tr></tbody></table></div></div></section></div>
+<div class="portable-block portable-layout-full" data-artifact-block-id="decisions" data-artifact-block-type="table" data-layout="full"><section class="portable-content-card portable-table-card" data-artifact-id="decisions_table" data-artifact-kind="table" data-table-id="decisions_table" data-portable-visual-title="Зафиксированные решения и границы"><header class="portable-visual-header"><h2>Зафиксированные решения и границы</h2></header><div class="portable-inline-source portable-source-summary" data-source-id="source"><div class="portable-inline-source-content portable-source-summary-content"><span class="portable-source-tooltip-heading" aria-hidden="true">Source for Зафиксированные решения и границы</span><strong>Source: Зафиксированные решения текущего плана</strong><span class="portable-source-meta">Table: decisions</span><p class="portable-source-description-data">Читает reviewed decisions, зафиксированные из аудита и вводных владельца.</p><pre class="portable-source-query-data" aria-hidden="true"><code>SELECT area, decision, consequence FROM decisions ORDER BY order</code></pre></div></div><div class="portable-table-source-region"><div class="portable-table-scroll"><table><caption>Зафиксированные решения и границы</caption><thead><tr><th scope="col">Область</th><th scope="col">Решение</th><th scope="col">Следствие для плана</th></tr></thead><tbody><tr><td>API cutover</td><td>Legacy endpoint не поддерживается</td><td>Клиент и gateway переходят на v2 синхронно до первого внешнего релиза</td></tr><tr><td>Apple</td><td>Использовать matching Developer ID и notarization credentials Apple Team</td><td>В GigaType найдены только имена secrets; владелец Team должен добавить значения в Narra и подтвердить bundle ID com.narra.app</td></tr><tr><td>LLM</td><td>Текущий LiteLLM — сервис команды, но доступен только по public HTTP</td><td>Адаптер сохраняем, но не передаём ключи/контент до HTTPS или private tunnel; staging явно all-OpenRouter</td></tr><tr><td>macOS</td><td>Universal build</td><td>Один подписанный/notarized релиз для arm64 и x64, проверяемый на обеих архитектурах</td></tr><tr><td>Railway</td><td>Gateway и stats staging изолированы; production gateway остаётся старым</td><td>Отдельные domains, secrets, databases и Volumes; analytics delivery/restart/dedupe проверены, production cutover остаётся отдельным gate</td></tr><tr><td>Staging credentials</td><td>Отдельных upstream staging keys не будет</td><td>Копируются только конкретные credentials без раскрытия; unsafe public HTTP URLs и Giga fallbacks не копируются; Narra/Traction secrets, environment и данные отдельные</td></tr><tr><td>Traction</td><td>Narra активна в production hub с найденным логотипом</td><td>Loopback stats service, Caddy Basic Auth, public health/tokened ingest и poller cache прошли live smoke</td></tr><tr><td>Аналитика</td><td>Минимальная всегда включена; расширенная default-on с opt-out</td><td>Выключение удаляет из очереди только расширенные события; canonical/service telemetry и строгий запрет контента сохраняются</td></tr><tr><td>Видео</td><td>Kandinsky video — проверенный сервис Сбера; текущий адрес только HTTP</td><td>Функцию сохраняем; staging требует явного risk flag, censor=true, auth/queue/timeout/telemetry; public release ждёт HTTPS/туннель</td></tr><tr><td>Маршрутизация</td><td>Полностью серверная</td><td>Клиент передаёт purpose, но не выбирает provider/model; переключение не требует пересборки</td></tr><tr><td>Провайдеры</td><td>OpenRouter сейчас безопасный staging primary; Giga возвращается после защищённого транспорта</td><td>Provider abstraction и server-side routing сохраняются без скрытого TLS downgrade</td></tr><tr><td>Статус продукта</td><td>Проект ещё не релизнут</td><td>Нет backfill, reconstructed-слоя и миграции старой продуктовой статистики</td></tr></tbody></table></div></div></section></div>
 <div class="portable-block portable-layout-full" data-artifact-block-id="brand" data-artifact-block-type="markdown" data-layout="full"><section class="portable-markdown"><h2>Логотип уже вынесен в оба репозитория</h2>
 <p>Готовый знак <strong>«ночное чтение»</strong> сохранён как <code>assets/narra.svg</code> в Narra и <code>hub/logos/narra.svg</code> в Traction. Он уже используется активной production-карточкой Narra; перерисовка и новый бренд-ассет не нужны.</p></section></div>
 <div class="portable-block portable-layout-full" data-artifact-block-id="architecture_heading" data-artifact-block-type="markdown" data-layout="full"><section class="portable-markdown"><h2>Целевая архитектура: один защищённый вход, раздельные контуры</h2>
@@ -70,13 +70,36 @@ html:not([data-portable-source-tooltips-ready]) .portable-chart-summary>.portabl
 <div class="portable-block portable-layout-full" data-artifact-block-id="narra_dashboard" data-artifact-block-type="table" data-layout="full"><section class="portable-content-card portable-table-card" data-artifact-id="narra_dashboard_table" data-artifact-kind="table" data-table-id="narra_dashboard_table" data-portable-visual-title="Содержимое вкладки Narra в Traction"><header class="portable-visual-header"><h2>Содержимое вкладки Narra в Traction</h2></header><div class="portable-inline-source portable-source-summary" data-source-id="source"><div class="portable-inline-source-content portable-source-summary-content"><span class="portable-source-tooltip-heading" aria-hidden="true">Source for Содержимое вкладки Narra в Traction</span><strong>Source: Проект KPI-системы Narra</strong><span class="portable-source-meta">Table: narra_dashboard</span><p class="portable-source-description-data">Читает proposed Narra dashboard sections из reviewed plan snapshot.</p><pre class="portable-source-query-data" aria-hidden="true"><code>SELECT section, metrics, decision FROM narra_dashboard ORDER BY order</code></pre></div></div><div class="portable-table-source-region"><div class="portable-table-scroll"><table><caption>Содержимое вкладки Narra в Traction</caption><thead><tr><th scope="col">Раздел</th><th scope="col">Метрики</th><th scope="col">Какое решение поддерживает</th></tr></thead><tbody><tr><td>Activation</td><td>App → book available → book opened → 5 min reading → first immersive action</td><td>Где пользователь не доходит до первой ценности</td></tr><tr><td>AI &amp; reliability</td><td>Logical request success с grace/pending/outcome coverage, matched attempts/request, event-window provider attempts после strict body/SSE consume, boundary count, errors/fallback, p50/p95, input/output/total tokens, exact USD cost + source/coverage, provider/model tables</td><td>Где деградируют качество, скорость и unit economics</td></tr><tr><td>Answer quality · planned</td><td>Helpful/unhelpful producer и response rate ещё нужно добавить в UI; схема без текста уже закрыта</td><td>Подтверждает ли пользователь ценность, а не только proxy</td></tr><tr><td>Audience</td><td>Ever used, DAU/WAU/MAU, new installations, active versions</td><td>Есть ли реальное использование и принят ли новый релиз</td></tr><tr><td>Data quality</td><td>10 diagnostics: avg DAU, sessions/events/AI/value per user-day, classification, human-readable freshness, ingest p50/p95, errors/100 user-days, request-ID coverage; outcome/token/cost coverage в AI/quality</td><td>Каким цифрам уже можно доверять</td></tr><tr><td>Feature adoption</td><td>Bookmarks, notes, character cards, chat, TTS, ASR, images, video — users и share of active</td><td>Какие immersive-функции дают глубину</td></tr><tr><td>Imports</td><td>Started/succeeded/failed уже инструментированы; exact format, latency и safe size buckets нужно добавить до public release</td><td>Какие форматы и источники мешают активации</td></tr><tr><td>Reading health</td><td>Qualified sessions, minutes, chapters progressed/completed, active reading days</td><td>Narra — читаемый продукт или только AI-демо</td></tr><tr><td>Retention</td><td>D1/D7/D30 rolling retention только зрелых когорт</td><td>Возвращаются ли после первой читающей сессии</td></tr><tr><td>Tools definitions</td><td>Overview-selected logical AI requests/24h DAU + 5 alternatives: attempts/DAU, AI/actions/breadth/value per user-day</td><td>Не подменяем продуктовый KPI техническими вызовами</td></tr><tr><td>Update funnel</td><td>Offered → downloaded → verified → installed → next launch confirmed</td><td>Можно ли безопасно закрывать legacy client/API</td></tr></tbody></table></div></div></section></div>
 <div class="portable-block portable-layout-full" data-artifact-block-id="events_heading" data-artifact-block-type="markdown" data-layout="full"><section class="portable-markdown"><h2>События проектируются от решений, а не от каждого клика</h2>
 <p>В gateway уходит только allowlist. Любое новое поле считается запрещённым, пока явно не добавлено в схему и тест приватности. Тексты книг и общения нужны провайдерам для выполнения конкретной функции, но никогда не становятся аналитическими properties.</p></section></div>
-<div class="portable-block portable-layout-full" data-artifact-block-id="events" data-artifact-block-type="table" data-layout="full"><section class="portable-content-card portable-table-card" data-artifact-id="events_table" data-artifact-kind="table" data-table-id="events_table" data-portable-visual-title="Событийный контракт первой версии"><header class="portable-visual-header"><h2>Событийный контракт первой версии</h2></header><div class="portable-inline-source portable-source-summary" data-source-id="source"><div class="portable-inline-source-content portable-source-summary-content"><span class="portable-source-tooltip-heading" aria-hidden="true">Source for Событийный контракт первой версии</span><strong>Source: Проект privacy-safe event contract Narra</strong><span class="portable-source-meta">Table: events</span><p class="portable-source-description-data">Читает proposed event allowlist и запреты из reviewed plan snapshot.</p><pre class="portable-source-query-data" aria-hidden="true"><code>SELECT `group`, events, safe_properties, exclude FROM events ORDER BY order</code></pre></div></div><div class="portable-table-source-region"><div class="portable-table-scroll"><table><caption>Событийный контракт первой версии</caption><thead><tr><th scope="col">Группа</th><th scope="col">События</th><th scope="col">Разрешённые свойства</th><th scope="col">Никогда не отправлять</th></tr></thead><tbody><tr><td>AI request</td><td>ai_request_started/completed/failed; answer_feedback_submitted schema ready, UI producer planned</td><td>request_id, purpose, route, status, latency, safe error_code, rating</td><td>Prompt, response, messages, memory, book excerpt</td></tr><tr><td>Immersive features</td><td>bookmark_added, note_added, character_opened, chat_opened</td><td>feature, builtin/imported, success</td><td>Заметка, цитата, имя персонажа, контекст сцены</td></tr><tr><td>Library/import</td><td>book_import_started/completed/failed, book_opened</td><td>builtin/imported, format, source_class, size bucket, chapter count bucket, error_code</td><td>Название, автор, URL, имя файла, содержимое</td></tr><tr><td>Lifecycle</td><td>app_opened, app_closed, update_offered/downloaded/verified/installed, app_version_seen</td><td>app_version, OS major, arch, channel, status, duration bucket</td><td>Имя пользователя, пути к файлам, device fingerprint</td></tr><tr><td>Media · до public release</td><td>Пока не инструментированы: tts/asr/image/video completed/failed нужно добавить до публичного релиза</td><td>Только purpose, provider/model, coarse chars/seconds/bytes buckets, queue wait, generation latency</td><td>Audio, image, video, transcript, generation prompt</td></tr><tr><td>Provider attempt</td><td>provider_attempt_completed/failed/not_configured</td><td>attempt event_id, request_id, provider, model, retry_index, latency, status, safe error_code</td><td>Credentials, headers, provider response body</td></tr><tr><td>Reading</td><td>reading_session_started/qualified/ended, chapter_changed/completed</td><td>session_id, elapsed seconds, chapter position bucket, navigation type</td><td>Текст страницы, цитаты, заголовки глав</td></tr></tbody></table></div></div></section></div>
+<div class="portable-block portable-layout-full" data-artifact-block-id="events" data-artifact-block-type="table" data-layout="full"><section class="portable-content-card portable-table-card" data-artifact-id="events_table" data-artifact-kind="table" data-table-id="events_table" data-portable-visual-title="Событийный контракт первой версии"><header class="portable-visual-header"><h2>Событийный контракт первой версии</h2></header><div class="portable-inline-source portable-source-summary" data-source-id="source"><div class="portable-inline-source-content portable-source-summary-content"><span class="portable-source-tooltip-heading" aria-hidden="true">Source for Событийный контракт первой версии</span><strong>Source: Проект privacy-safe event contract Narra</strong><span class="portable-source-meta">Table: events</span><p class="portable-source-description-data">Читает proposed event allowlist и запреты из reviewed plan snapshot.</p><pre class="portable-source-query-data" aria-hidden="true"><code>SELECT `group`, events, safe_properties, exclude FROM events ORDER BY order</code></pre></div></div><div class="portable-table-source-region"><div class="portable-table-scroll"><table><caption>Событийный контракт первой версии</caption><thead><tr><th scope="col">Группа</th><th scope="col">События</th><th scope="col">Разрешённые свойства</th><th scope="col">Никогда не отправлять</th></tr></thead><tbody><tr><td>AI request</td><td>ai_request_started/completed/failed; answer_feedback_submitted schema ready, UI producer planned</td><td>request_id, purpose, route, status, latency, safe error_code, rating</td><td>Prompt, response, messages, memory, book excerpt</td></tr><tr><td>Immersive features</td><td>bookmark_added, note_added, character_opened, chat_opened</td><td>feature, builtin/imported, success</td><td>Заметка, цитата, имя персонажа, контекст сцены</td></tr><tr><td>Library/import · Extended</td><td>book_import_started/completed/failed, book_analysis_started/completed/failed</td><td>format, source_class, size/chapter/duration/character-count buckets, stage, safe error_code</td><td>Название, автор, URL, имя файла, текст, prompt/response</td></tr><tr><td>Lifecycle</td><td>app_opened, app_closed, update_offered/downloaded/verified/installed, app_version_seen</td><td>app_version, OS major, arch, channel, status, duration bucket</td><td>Имя пользователя, пути к файлам, device fingerprint</td></tr><tr><td>Media/playback · Extended</td><td>media_job enqueued/started/completed/failed/cancelled; tts_first_audio_ready; playback started/abandoned</td><td>Closed enums и coarse buckets: job type, provider/model, quality, cache hit, queue wait, latency, retries, size</td><td>Audio, image, video, transcript, generation prompt, book/character names</td></tr><tr><td>Provider attempt</td><td>provider_attempt_completed/failed/not_configured</td><td>attempt event_id, request_id, provider, model, retry_index, latency, status, safe error_code</td><td>Credentials, headers, provider response body</td></tr><tr><td>Reading</td><td>reading_session_started/qualified/ended, chapter_changed/completed</td><td>session_id, elapsed seconds, chapter position bucket, navigation type</td><td>Текст страницы, цитаты, заголовки глав</td></tr></tbody></table></div></div></section></div>
+<div class="portable-block portable-layout-full" data-artifact-block-id="instrumentation" data-artifact-block-type="markdown" data-layout="full"><section class="portable-markdown"><h2>Что значит «инструментировать оставшиеся import/media события»</h2>
+<p>Это значит добавить безопасные события, по которым видно, где пользователь ждёт или получает ошибку: <code>book_import_started/completed/failed</code>, <code>book_analysis_started/completed/failed</code>, <code>media_job_enqueued/started/completed/failed/cancelled</code>, <code>tts_first_audio_ready</code>, <code>tts_playback_started/abandoned</code>. <strong>Все эти события относятся к Extended</strong> и перестают отправляться после opt-out. Их свойства — только закрытые enum и coarse buckets: тип job, стадия, безопасный error code, cache hit, диапазон размера/времени/очереди. Названия книг и героев, URL, имена файлов, текст, prompt/response, transcript и media запрещены.</p>
+<p>Gateway независимо хранит always-on агрегаты без installation actor: queue depth, active jobs, latency histogram, saturation и provider error code. Это эксплуатационные счётчики, а не пользовательские Traction events.</p></section></div>
+<div class="portable-block portable-layout-full" data-artifact-block-id="capacity" data-artifact-block-type="markdown" data-layout="full"><section class="portable-markdown"><h2>Оценка пропускной способности — расчёт, а не обещание</h2>
+<p><strong>Факты из кода:</strong> video выполняется одним глобальным последовательным worker; одновременно admitted максимум четыре задачи вместе с активной, поэтому при десяти запросах четыре принимаются, шесть сразу получают <code>429</code>. Одна server-side video попытка может длиться до <strong>480 секунд</strong>, возможно до трёх попыток плюс retry delays; клиент ждёт весь запрос не более <strong>540 секунд</strong> и может уйти раньше завершения server chain. Kandinsky image тоже сериализован. SaluteSpeech для <code>SALUTE_SPEECH_PERS</code> жёстко ограничен пятью streams.</p>
+<p><strong>Расчёт:</strong> при одном video-слоте throughput приблизительно равен <code>60 минут / средняя длительность job</code>. Предыдущие 7–20 jobs/hour предполагали 3–8 минут и были оптимистичны. При описанных Соней 10–15 мин реальный ориентир — 4–6 jobs/hour; десятый пользователь в идеальной durable queue ждёт примерно 100–150 минут.</p>
+<p><strong>Как заменить оценку данными:</strong> benchmark <code>1 → 2 → 5 → 10</code> измеряет queue wait, provider service time, end-to-end p50/p95, <code>429</code>, timeout/cancel, cache hit, jobs/hour, restart recovery и fairness. Durable queue делает ожидание управляемым, но не увеличивает GPU throughput.</p></section></div>
+<div class="portable-block portable-layout-full" data-artifact-block-id="transport_workaround" data-artifact-block-type="markdown" data-layout="full"><section class="portable-markdown"><h2>Workaround без HTTPS-туннеля</h2>
+<h3>LiteLLM</h3>
+<p>До защищённого транспорта все LLM purposes идут через OpenRouter по HTTPS. Giga adapter остаётся в gateway и возвращается в server-side routes без пересборки клиента, когда появится защищённый endpoint.</p>
+<h3>Video</h3>
+<p>Безопасный workaround — маленький <strong>HTTPS edge relay</strong> на самом video host или в той же приватной сети: <code>Railway → HTTPS + service token → Caddy/Nginx → http://127.0.0.1:5051</code>. Нужны домен/сертификат, доступ установить relay, отдельный service token, body/time/concurrency limits и логи без media bodies. Если доступа к host нет, безопасного public workaround нет: HTTP остаётся только closed-staging degraded mode.</p></section></div>
+<div class="portable-block portable-layout-full" data-artifact-block-id="release_preparation" data-artifact-block-type="markdown" data-layout="full"><section class="portable-markdown"><h2>Entitlement, update-feed и Apple: что именно требуется</h2>
+<h3>Server-side entitlement</h3>
+<p>Общий activation secret внутри Electron можно извлечь и раздать. Entitlement — серверная запись <code>installation_id/status/quota/token_version</code>, позволяющая отозвать одну установку. Для beta достаточно SQLite на Railway Volume и одноразовых invite codes. <strong>От владельца не нужен новый сервис или ключ</strong> — нужно только выбрать invite-only beta или открытый anonymous launch; рекомендация — invite-only.</p>
+<h3>HTTPS update-feed</h3>
+<p>Это публичный HTTPS-каталог <code>latest-mac.yml</code>, universal ZIP и blockmap. Workflow использует <code>https://github.com/sboo-create/narra/releases/latest/download/</code>, создаёт draft GitHub Release и загружает DMG/ZIP/metadata/checksums/SBOM. <strong>Draft не доступен как публичный feed</strong>, поэтому настоящий auto-update до публикации через него проверить нельзя.</p>
+<p>Для первого релиза официальной предыдущей версии нет: проверяем clean install и сохранение данных поверх внутренней lower-version RC, закрываем все gates, публикуем release без внешней раздачи, немедленно проверяем public feed и updater canary. При ошибке снимаем release; при успехе начинаем распространение. Начиная со второго публичного обновления нужен отдельный HTTPS RC-feed. Workflow уже поддерживает его через repository variable <code>NARRA_UPDATE_BASE_URL</code>, но staging origin ещё нужно выбрать.</p>
+<h3>Apple credentials</h3>
+<p>Для GitHub Environment <code>narra-production</code> нужны <code>MACOS_CERTIFICATE_P12_BASE64</code>, <code>MACOS_CERTIFICATE_PASSWORD</code>, <code>APPLE_API_KEY_P8</code>, <code>APPLE_API_KEY_ID</code>, <code>APPLE_API_ISSUER</code>, <code>APPLE_TEAM_ID</code>, плюс reviewed <code>NARRA_PROXY_URL</code> и временный <code>NARRA_ACTIVATION_TOKEN</code>. GigaType содержит только ссылки на похожие secret names; значения GitHub secrets прочитать нельзя. Локально найдена identity <code>Developer ID Application: Evgeny Tsapnikov (LTS79DWRGJ)</code>, но это не подтверждённые credentials Миши. Владелец Apple Team должен добавить matching <code>.p12</code> и App Store Connect <code>.p8</code> в Narra и подтвердить bundle ID <code>com.narra.app</code>.</p></section></div>
+<div class="portable-block portable-layout-full" data-artifact-block-id="production_cutover" data-artifact-block-type="markdown" data-layout="full"><section class="portable-markdown"><h2>Что такое отдельно проверяемое переключение production gateway</h2>
+<p>Narra ещё не релизнута, поэтому это не миграция legacy-пользователей. Cutover — один контролируемый выпуск нового production service из reviewed commit: отдельные Volume/secrets, чистая analytics DB, production Traction token, <code>/health</code>/<code>/ready</code>/auth/quota/provider smoke, один synthetic installation, signed клиент с production HTTPS URL и сохранённый previous deployment для rollback. Только после этого публикуется GitHub Release.</p>
+<p>Отдельный gate нужен, чтобы не раздать клиент со staging URL, тестовыми токенами, plaintext-video флагом и смешанной тестовой аналитикой. Production gateway этой работой пока не переключается.</p></section></div>
 <div class="portable-block portable-layout-full" data-artifact-block-id="security_heading" data-artifact-block-type="markdown" data-layout="full"><section class="portable-markdown"><h2>Безопасность закрывается до release candidate</h2>
 <p>Доверенный upstream решает вопрос владельца сервиса, но не защищает незашифрованный канал, публичный endpoint или украденный клиентский токен. Поэтому функциональность сохраняется, а транспорт, доступ и лимиты исправляются вокруг неё.</p></section></div>
 <div class="portable-block portable-layout-full" data-artifact-block-id="security_work" data-artifact-block-type="table" data-layout="full"><section class="portable-content-card portable-table-card" data-artifact-id="security_work_table" data-artifact-kind="table" data-table-id="security_work_table" data-portable-visual-title="Пакет исправлений до релиза"><header class="portable-visual-header"><h2>Пакет исправлений до релиза</h2></header><div class="portable-inline-source portable-source-summary" data-source-id="narra_code"><div class="portable-inline-source-content portable-source-summary-content"><span class="portable-source-tooltip-heading" aria-hidden="true">Source for Пакет исправлений до релиза</span><strong>Source: Narra — baseline, с которого начат аудит</strong><span class="portable-source-meta">Tables: src/main/api/proxy.ts, src/main/store.ts, src/main/importer.ts, src/renderer/components/Logo.tsx, server/index.mjs, package.json</span><p class="portable-source-description-data">Immutable baseline до текущего release-foundation diff; не выдаётся за состояние рабочей feat-ветки.</p><pre class="portable-source-query-data" aria-hidden="true"><code>SELECT priority, area, work, acceptance FROM security_work ORDER BY order</code></pre></div></div><div class="portable-table-source-region"><div class="portable-table-scroll"><table><caption>Пакет исправлений до релиза</caption><thead><tr><th scope="col">Приоритет</th><th scope="col">Область</th><th scope="col">Что исправить</th><th scope="col">Критерий готовности</th></tr></thead><tbody><tr><td>P0</td><td>Gateway auth</td><td>Закрытый staging: signed per-install token с TTL, registration/IP limits и per-install quotas. Public: отдельный entitlement + revocation</td><td>Дорогой endpoint без token получает 401; общий секрет сборки не используется как публичная лицензия</td></tr><tr><td>P0</td><td>Rate/queue limits</td><td>Ограничить RPM, concurrency, body sizes, retries и очередь отдельно для LLM/image/video/speech</td><td>Один клиент не может занять все GPU/LLM slots или вызвать неограниченный расход</td></tr><tr><td>P0</td><td>Transport</td><td>HTTPS к LiteLLM; video HTTP разрешается только явным staging flag и виден в readiness; до public — HTTPS/защищённый туннель</td><td>Публичный релиз не передаёт ключи и пользовательский контент через plaintext HTTP</td></tr><tr><td>P0</td><td>Updater</td><td>HTTPS latest-mac.yml с SHA-512, Developer-ID-signed app, notarized/stapled DMG, tag/version gate и rollback; renderer не задаёт URL</td><td>Подменённый ZIP/app отвергается updater/code signature; clean install проходит Gatekeeper</td></tr><tr><td>P1</td><td>Import/SSRF</td><td>Повторная проверка каждого redirect, DNS/IP policy, timeout, streaming byte cap, safe content types</td><td>Open redirect не достигает private/metadata addresses; oversized response не буферизуется</td></tr><tr><td>P1</td><td>EPUB/ZIP</td><td>Path containment, realpath/symlink checks, entry/count/ratio limits, temp cleanup</td><td>Traversal, symlink escape и zip bomb fixtures безопасно отклоняются</td></tr><tr><td>P1</td><td>Electron</td><td>sandbox, strict CSP, validated IPC schemas, external protocol allowlist, current supported Electron, fuses</td><td>Renderer compromise не даёт произвольного filesystem/shell доступа</td></tr><tr><td>P1</td><td>Local privacy</td><td>Полное удаление книги и связанных чатов/memory/stats/cache, delete-all, понятная telemetry setting</td><td>Regression test подтверждает отсутствие orphaned sensitive records</td></tr><tr><td>P1</td><td>Content exposure</td><td>Закрыть team content авторизацией или убрать из публичного gateway</td><td>Неавторизованный запрос к закрытому контенту не возвращает файл</td></tr><tr><td>P2</td><td>Supply chain/CI</td><td>Pinned dependencies, typecheck/tests, OSV/npm audit, secret scan, SBOM/checksum release artifacts</td><td>Чистый reproducible build и зелёный security pipeline</td></tr></tbody></table></div></div></section></div>
 <div class="portable-block portable-layout-full" data-artifact-block-id="roadmap_heading" data-artifact-block-type="markdown" data-layout="full"><section class="portable-markdown"><h2>Реализация идёт вертикальными проверяемыми срезами</h2>
 <p>Каждый этап заканчивается работающим артефактом и тестами. Railway staging уже создан отдельно от production по модели AIWA; старый production gateway не используется как dev-среда и не изменялся. На графике видна относительная трудоёмкость: больше всего времени требуют клиентский security foundation, gateway и безопасная цепочка подписания/обновления; это ориентир планирования, а не обещание календарной даты.</p></section></div>
-<div class="portable-block portable-layout-full" data-artifact-block-id="effort" data-artifact-block-type="chart" data-layout="full"><figure class="portable-content-card portable-chart-summary" data-artifact-id="effort_chart" data-artifact-kind="chart" data-chart-id="effort_chart" data-portable-visual-title="Оценочная трудоёмкость этапов" data-portable-source-host="true" tabindex="0" aria-label="Оценочная трудоёмкость этапов" aria-describedby="portable-source-tooltip-1"><figcaption class="portable-visual-header"><strong>Оценочная трудоёмкость этапов</strong></figcaption><div class="portable-inline-source" data-source-id="engineering_estimate"><div class="portable-inline-source-content portable-source-tooltip-content" id="portable-source-tooltip-1" role="tooltip"><span class="portable-source-tooltip-heading" aria-hidden="true">Source for Оценочная трудоёмкость этапов</span><strong>Source: Инженерная оценка плана Narra от 23 июля 2026</strong><p class="portable-source-description-data">Диапазоны трудоёмкости по этапам, сформированные из объёма известных изменений и обязательных проверок; midpoint используется только для сравнительного графика.</p><pre class="portable-source-query-data" aria-hidden="true"><code>SELECT * FROM (VALUES (&#39;0 · Contract freeze&#39;, 0.75, &#39;0.5–1 день&#39;, &#39;Нет&#39;), (&#39;1 · Security foundation&#39;, 3.0, &#39;2–4 дня&#39;, &#39;Нет&#39;), (&#39;2 · Gateway v2&#39;, 2.5, &#39;2–3 дня&#39;, &#39;Нет&#39;), (&#39;3 · OpenRouter + Giga&#39;, 1.5, &#39;1–2 дня&#39;, &#39;OpenRouter live; Giga ждёт secure transport&#39;), (&#39;4 · Analytics/outbox&#39;, 2.0, &#39;1.5–2.5 дня&#39;, &#39;Завершено: отдельный stats endpoint/Volume/token&#39;), (&#39;5 · stats-narra&#39;, 2.0, &#39;1.5–2.5 дня&#39;, &#39;Завершено: production Traction live&#39;), (&#39;6 · Updater/signing&#39;, 2.5, &#39;2–3 дня&#39;, &#39;HTTPS update URL; Apple credentials найдены&#39;), (&#39;7 · Railway staging&#39;, 1.5, &#39;1–2 дня&#39;, &#39;Завершено; public transport gates отдельно&#39;), (&#39;8 · Release&#39;, 1.5, &#39;1–2 дня + наблюдение&#39;, &#39;Все release gates&#39;)) AS effort(phase, effort_mid, estimate, dependency)</code></pre></div></div><div class="portable-static-chart" data-static-chart-id="effort_chart" data-static-chart-block-id="effort" role="img" aria-label="Оценочная трудоёмкость этапов chart" style="max-width:768px"><div class="portable-static-chart-variant portable-static-chart-light" aria-hidden="true"><svg width="768" height="320" viewBox="0 0 768 320" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" class="portable-static-chart-svg" focusable="false" preserveAspectRatio="xMidYMid meet">
+<div class="portable-block portable-layout-full" data-artifact-block-id="effort" data-artifact-block-type="chart" data-layout="full"><figure class="portable-content-card portable-chart-summary" data-artifact-id="effort_chart" data-artifact-kind="chart" data-chart-id="effort_chart" data-portable-visual-title="Оценочная трудоёмкость этапов" data-portable-source-host="true" tabindex="0" aria-label="Оценочная трудоёмкость этапов" aria-describedby="portable-source-tooltip-1"><figcaption class="portable-visual-header"><strong>Оценочная трудоёмкость этапов</strong></figcaption><div class="portable-inline-source" data-source-id="engineering_estimate"><div class="portable-inline-source-content portable-source-tooltip-content" id="portable-source-tooltip-1" role="tooltip"><span class="portable-source-tooltip-heading" aria-hidden="true">Source for Оценочная трудоёмкость этапов</span><strong>Source: Инженерная оценка плана Narra от 23 июля 2026</strong><p class="portable-source-description-data">Диапазоны трудоёмкости по этапам, сформированные из объёма известных изменений и обязательных проверок; midpoint используется только для сравнительного графика.</p><pre class="portable-source-query-data" aria-hidden="true"><code>SELECT * FROM (VALUES (&#39;0 · Contract freeze&#39;, 0.75, &#39;0.5–1 день&#39;, &#39;Нет&#39;), (&#39;1 · Security foundation&#39;, 3.0, &#39;2–4 дня&#39;, &#39;Нет&#39;), (&#39;2 · Gateway v2&#39;, 2.5, &#39;2–3 дня&#39;, &#39;Нет&#39;), (&#39;3 · OpenRouter + Giga&#39;, 1.5, &#39;1–2 дня&#39;, &#39;OpenRouter live; Giga ждёт secure transport&#39;), (&#39;4 · Analytics/outbox&#39;, 2.0, &#39;1.5–2.5 дня&#39;, &#39;Завершено: отдельный stats endpoint/Volume/token&#39;), (&#39;5 · stats-narra&#39;, 2.0, &#39;1.5–2.5 дня&#39;, &#39;Завершено: production Traction live&#39;), (&#39;6 · Updater/signing&#39;, 2.5, &#39;2–3 дня&#39;, &#39;Workflow готов; ждём Apple Team secrets&#39;), (&#39;7 · Railway staging&#39;, 1.5, &#39;1–2 дня&#39;, &#39;Завершено; public transport gates отдельно&#39;), (&#39;8 · Release&#39;, 1.5, &#39;1–2 дня + наблюдение&#39;, &#39;Все release gates&#39;)) AS effort(phase, effort_mid, estimate, dependency)</code></pre></div></div><div class="portable-static-chart" data-static-chart-id="effort_chart" data-static-chart-block-id="effort" role="img" aria-label="Оценочная трудоёмкость этапов chart" style="max-width:768px"><div class="portable-static-chart-variant portable-static-chart-light" aria-hidden="true"><svg width="768" height="320" viewBox="0 0 768 320" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" class="portable-static-chart-svg" focusable="false" preserveAspectRatio="xMidYMid meet">
 <g opacity="1">
 <g opacity="1">
 <g opacity="1">
@@ -542,22 +565,22 @@ html:not([data-portable-source-tooltips-ready]) .portable-chart-summary>.portabl
 <tspan x="4" dy="0.355em" clip-path="none" clip-rule="nonzero" fill="rgb(255, 255, 255)" fill-opacity="1" fill-rule="nonzero" opacity="1" paint-order="normal" shape-rendering="auto" stroke="none" stroke-dasharray="none" stroke-dashoffset="0px" stroke-linecap="butt" stroke-linejoin="miter" stroke-miterlimit="4" stroke-opacity="1" stroke-width="1px" vector-effect="none" alignment-baseline="auto" baseline-shift="0px" dominant-baseline="auto" font-family="-apple-system, &quot;system-ui&quot;, &quot;Segoe UI&quot;, sans-serif" font-size="12px" font-style="normal" font-variant="normal" font-variant-numeric="normal" font-weight="500" letter-spacing="normal" text-anchor="middle" word-spacing="0px">Рабочие дни</tspan>
 </text>
 </g>
-</svg></div></div><div class="portable-chart-data portable-chart-data-has-vector"><div class="portable-table-scroll"><table><caption>Оценочная трудоёмкость этапов data</caption><thead><tr><th scope="col">Этап</th><th scope="col" class="portable-table-number">Рабочие дни</th><th scope="col">Диапазон</th><th scope="col">Зависимость</th></tr></thead><tbody><tr><td>0 · Contract freeze</td><td class="portable-table-number">0.75</td><td>0.5–1 день</td><td>Нет</td></tr><tr><td>1 · Security foundation</td><td class="portable-table-number">3</td><td>2–4 дня</td><td>Нет</td></tr><tr><td>2 · Gateway v2</td><td class="portable-table-number">2.5</td><td>2–3 дня</td><td>Нет</td></tr><tr><td>3 · OpenRouter + Giga</td><td class="portable-table-number">1.5</td><td>1–2 дня</td><td>OpenRouter live; Giga ждёт secure transport</td></tr><tr><td>4 · Analytics/outbox</td><td class="portable-table-number">2</td><td>1.5–2.5 дня</td><td>Завершено: отдельный stats endpoint/Volume/token</td></tr><tr><td>5 · stats-narra</td><td class="portable-table-number">2</td><td>1.5–2.5 дня</td><td>Завершено: production Traction live</td></tr><tr><td>6 · Updater/signing</td><td class="portable-table-number">2.5</td><td>2–3 дня</td><td>Staging/update URL; Apple credentials найдены</td></tr><tr><td>7 · Railway staging</td><td class="portable-table-number">1.5</td><td>1–2 дня</td><td>Завершено; public transport gates отдельно</td></tr><tr><td>8 · Release</td><td class="portable-table-number">1.5</td><td>1–2 дня + наблюдение</td><td>Все release gates</td></tr></tbody></table></div></div></figure></div>
-<div class="portable-block portable-layout-full" data-artifact-block-id="roadmap" data-artifact-block-type="table" data-layout="full"><section class="portable-content-card portable-table-card" data-artifact-id="roadmap_table" data-artifact-kind="table" data-table-id="roadmap_table" data-portable-visual-title="Пошаговый план реализации"><header class="portable-visual-header"><h2>Пошаговый план реализации</h2></header><div class="portable-inline-source portable-source-summary" data-source-id="source"><div class="portable-inline-source-content portable-source-summary-content"><span class="portable-source-tooltip-heading" aria-hidden="true">Source for Пошаговый план реализации</span><strong>Source: Инженерный roadmap Narra</strong><span class="portable-source-meta">Table: roadmap</span><p class="portable-source-description-data">Читает этапы, диапазоны и зависимости из reviewed plan snapshot.</p><pre class="portable-source-query-data" aria-hidden="true"><code>SELECT phase, scope, result, estimate, dependency FROM roadmap ORDER BY order</code></pre></div></div><div class="portable-table-source-region"><div class="portable-table-scroll"><table><caption>Пошаговый план реализации</caption><thead><tr><th scope="col">Этап</th><th scope="col">Работы</th><th scope="col">Проверяемый результат</th><th scope="col">Оценка</th><th scope="col">Зависимость</th></tr></thead><tbody><tr><td>0 · Contract freeze</td><td>ADR архитектуры, event schemas, privacy allowlist, provider contract, metric dictionary, threat model</td><td>Согласованные JSON schemas и acceptance tests до сетевого кода</td><td>0.5–1 день</td><td>Нет</td></tr><tr><td>1 · Local security foundation</td><td>Обновление зависимостей, Electron hardening, IPC validation, import/EPUB fixes, data deletion tests</td><td>Локальная сборка и security fixtures зелёные</td><td>2–4 дня</td><td>Нет</td></tr><tr><td>2 · Gateway v2</td><td>Registration/auth, quotas, bounded queues, provider adapters, request/attempt logging, readiness, structured logs</td><td>Локальный gateway выдерживает abuse/failure tests</td><td>2–3 дня</td><td>Нет</td></tr><tr><td>3 · OpenRouter + Giga routing</td><td>Purpose routes, ZDR/data-deny, input/output tokens, exact cost + coverage, retry/fallback policy, staging evaluation set</td><td>OpenRouter E2E зелёный; Giga adapter готов, но fail-closed ждёт HTTPS/private tunnel LiteLLM</td><td>1–2 дня</td><td>Копировать credentials точечно; public HTTP LLM URL и Giga fallbacks исключить</td></tr><tr><td>4 · Analytics client/outbox</td><td>Installation ID, priority local queue, essential/extended event tiers, rotated JSONL audit, segmented Traction outbox, extended opt-out</td><td>Offline/restart не теряют и не дублируют essential события; poison events изолируются; opt-out не отключает canonical минимум</td><td>1.5–2.5 дня</td><td>Volume нужен только для staging проверки</td></tr><tr><td>5 · stats-narra + Traction</td><td>Шесть canonical KPI, 6 Tools definitions, 10 diagnostics, provider/model/token/cost quality, contract tests, logo</td><td>Production hub показывает Narra live; staging/production databases раздельны, Overview и detailed dashboard честно считаются</td><td>1.5–2.5 дня</td><td>Завершено; AIWA late tuning и live cutover учтены</td></tr><tr><td>6 · Safe updater and signing</td><td>Universal arm64+x64 build, hardened runtime, найденный MultiTool Developer ID, SHA-512 metadata, app+DMG notarization/stapling, rollback</td><td>Clean install проходит Gatekeeper на Apple Silicon и Intel; данные сохраняются</td><td>2–3 дня</td><td>Staging gateway + HTTPS update URL; Apple credentials найдены</td></tr><tr><td>7 · Railway staging</td><td>Read-only prod audit, staging + /data, selected safe provider credentials, separate app/analytics secrets, HTTP-video risk flag, smoke/load/failure tests</td><td>Gateway/stats infrastructure, auth, OpenRouter, Sber media, Kandinsky/video и analytics persistence E2E зелёные; старый production gateway не изменён</td><td>1–2 дня</td><td>Завершено; public release ждёт secure LiteLLM/video transports</td></tr><tr><td>8 · Release and observation</td><td>RC, update внутренних установок, version adoption, provider/cost reconciliation, rollback rehearsal</td><td>Подписанный релиз, наблюдаемый gateway и проверенный rollback</td><td>1–2 дня + наблюдение</td><td>Все release gates</td></tr></tbody></table></div></div></section></div>
+</svg></div></div><div class="portable-chart-data portable-chart-data-has-vector"><div class="portable-table-scroll"><table><caption>Оценочная трудоёмкость этапов data</caption><thead><tr><th scope="col">Этап</th><th scope="col" class="portable-table-number">Рабочие дни</th><th scope="col">Диапазон</th><th scope="col">Зависимость</th></tr></thead><tbody><tr><td>0 · Contract freeze</td><td class="portable-table-number">0.75</td><td>0.5–1 день</td><td>Нет</td></tr><tr><td>1 · Security foundation</td><td class="portable-table-number">3</td><td>2–4 дня</td><td>Нет</td></tr><tr><td>2 · Gateway v2</td><td class="portable-table-number">2.5</td><td>2–3 дня</td><td>Нет</td></tr><tr><td>3 · OpenRouter + Giga</td><td class="portable-table-number">1.5</td><td>1–2 дня</td><td>OpenRouter live; Giga ждёт secure transport</td></tr><tr><td>4 · Analytics/outbox</td><td class="portable-table-number">2</td><td>1.5–2.5 дня</td><td>Завершено: отдельный stats endpoint/Volume/token</td></tr><tr><td>5 · stats-narra</td><td class="portable-table-number">2</td><td>1.5–2.5 дня</td><td>Завершено: production Traction live</td></tr><tr><td>6 · Updater/signing</td><td class="portable-table-number">2.5</td><td>2–3 дня</td><td>Workflow готов; ждём Apple Team secrets</td></tr><tr><td>7 · Railway staging</td><td class="portable-table-number">1.5</td><td>1–2 дня</td><td>Завершено; public transport gates отдельно</td></tr><tr><td>8 · Release</td><td class="portable-table-number">1.5</td><td>1–2 дня + наблюдение</td><td>Все release gates</td></tr></tbody></table></div></div></figure></div>
+<div class="portable-block portable-layout-full" data-artifact-block-id="roadmap" data-artifact-block-type="table" data-layout="full"><section class="portable-content-card portable-table-card" data-artifact-id="roadmap_table" data-artifact-kind="table" data-table-id="roadmap_table" data-portable-visual-title="Пошаговый план реализации"><header class="portable-visual-header"><h2>Пошаговый план реализации</h2></header><div class="portable-inline-source portable-source-summary" data-source-id="source"><div class="portable-inline-source-content portable-source-summary-content"><span class="portable-source-tooltip-heading" aria-hidden="true">Source for Пошаговый план реализации</span><strong>Source: Инженерный roadmap Narra</strong><span class="portable-source-meta">Table: roadmap</span><p class="portable-source-description-data">Читает этапы, диапазоны и зависимости из reviewed plan snapshot.</p><pre class="portable-source-query-data" aria-hidden="true"><code>SELECT phase, scope, result, estimate, dependency FROM roadmap ORDER BY order</code></pre></div></div><div class="portable-table-source-region"><div class="portable-table-scroll"><table><caption>Пошаговый план реализации</caption><thead><tr><th scope="col">Этап</th><th scope="col">Работы</th><th scope="col">Проверяемый результат</th><th scope="col">Оценка</th><th scope="col">Зависимость</th></tr></thead><tbody><tr><td>0 · Contract freeze</td><td>ADR архитектуры, event schemas, privacy allowlist, provider contract, metric dictionary, threat model</td><td>Согласованные JSON schemas и acceptance tests до сетевого кода</td><td>0.5–1 день</td><td>Нет</td></tr><tr><td>1 · Local security foundation</td><td>Обновление зависимостей, Electron hardening, IPC validation, import/EPUB fixes, data deletion tests</td><td>Локальная сборка и security fixtures зелёные</td><td>2–4 дня</td><td>Нет</td></tr><tr><td>2 · Gateway v2</td><td>Registration/auth, quotas, bounded queues, provider adapters, request/attempt logging, readiness, structured logs</td><td>Локальный gateway выдерживает abuse/failure tests</td><td>2–3 дня</td><td>Нет</td></tr><tr><td>3 · OpenRouter + Giga routing</td><td>Purpose routes, ZDR/data-deny, input/output tokens, exact cost + coverage, retry/fallback policy, staging evaluation set</td><td>OpenRouter E2E зелёный; Giga adapter готов, но fail-closed ждёт HTTPS/private tunnel LiteLLM</td><td>1–2 дня</td><td>Копировать credentials точечно; public HTTP LLM URL и Giga fallbacks исключить</td></tr><tr><td>4 · Analytics client/outbox</td><td>Installation ID, priority local queue, essential/extended event tiers, rotated JSONL audit, segmented Traction outbox, extended opt-out</td><td>Offline/restart не теряют и не дублируют essential события; poison events изолируются; opt-out не отключает canonical минимум</td><td>1.5–2.5 дня</td><td>Volume нужен только для staging проверки</td></tr><tr><td>5 · stats-narra + Traction</td><td>Шесть canonical KPI, 6 Tools definitions, 10 diagnostics, provider/model/token/cost quality, contract tests, logo</td><td>Production hub показывает Narra live; staging/production databases раздельны, Overview и detailed dashboard честно считаются</td><td>1.5–2.5 дня</td><td>Завершено; AIWA late tuning и live cutover учтены</td></tr><tr><td>6 · Safe updater and signing</td><td>Universal arm64+x64 build, hardened runtime, Developer ID signing, SHA-512 metadata, app+DMG notarization/stapling, draft GitHub Release</td><td>Clean install проходит Gatekeeper на Apple Silicon и Intel; данные сохраняются</td><td>2–3 дня</td><td>Владелец Apple Team добавляет matching certificate/API key secrets; update-feed workflow готов</td></tr><tr><td>7 · Railway staging</td><td>Read-only prod audit, staging + /data, selected safe provider credentials, separate app/analytics secrets, HTTP-video risk flag, smoke/load/failure tests</td><td>Gateway/stats infrastructure, auth, OpenRouter, Sber media, Kandinsky/video и analytics persistence E2E зелёные; старый production gateway не изменён</td><td>1–2 дня</td><td>Завершено; public release ждёт secure LiteLLM/video transports</td></tr><tr><td>8 · Release and observation</td><td>RC, update внутренних установок, version adoption, provider/cost reconciliation, rollback rehearsal</td><td>Подписанный релиз, наблюдаемый gateway и проверенный rollback</td><td>1–2 дня + наблюдение</td><td>Все release gates</td></tr></tbody></table></div></div></section></div>
 <div class="portable-block portable-layout-full" data-artifact-block-id="release_heading" data-artifact-block-type="markdown" data-layout="full"><section class="portable-markdown"><h2>Релиз не определяется фактом успешной сборки</h2>
 <p>Готовность означает доказанный upgrade path, сохранность локальных данных, управляемый rollback, наблюдаемую стоимость и отсутствие чувствительного контента в аналитике.</p></section></div>
 <div class="portable-block portable-layout-full" data-artifact-block-id="release_gates" data-artifact-block-type="table" data-layout="full"><section class="portable-content-card portable-table-card" data-artifact-id="release_gates_table" data-artifact-kind="table" data-table-id="release_gates_table" data-portable-visual-title="Release gates"><header class="portable-visual-header"><h2>Release gates</h2></header><div class="portable-inline-source portable-source-summary" data-source-id="source"><div class="portable-inline-source-content portable-source-summary-content"><span class="portable-source-tooltip-heading" aria-hidden="true">Source for Release gates</span><strong>Source: Release gate checklist Narra</strong><span class="portable-source-meta">Table: release_gates</span><p class="portable-source-description-data">Читает обязательные критерии выпуска из reviewed plan snapshot.</p><pre class="portable-source-query-data" aria-hidden="true"><code>SELECT gate, must_pass, evidence FROM release_gates ORDER BY order</code></pre></div></div><div class="portable-table-source-region"><div class="portable-table-scroll"><table><caption>Release gates</caption><thead><tr><th scope="col">Ворота</th><th scope="col">Что должно быть доказано</th><th scope="col">Артефакт проверки</th></tr></thead><tbody><tr><td>Analytics</td><td>Шесть canonical KPI, mature retention, no pre-cutover zeros, request/attempt separation, pending grace/outcome coverage/orphan exclusion</td><td>Traction contract tests + synthetic 10-start/1-complete and orphan assertions</td></tr><tr><td>Build</td><td>Чистая установка зависимостей, typecheck, unit/integration tests, reproducible package</td><td>CI run + artifact checksum/SBOM</td></tr><tr><td>macOS trust</td><td>Universal arm64+x64 artifact, Developer ID signature, hardened runtime, notarization и Gatekeeper clean install</td><td>codesign, lipo, spctl и notarytool receipts на обеих архитектурах</td></tr><tr><td>Operations</td><td>Health/readiness, logs, alerts, budget caps, backup/restore и rollback owner определены</td><td>Staging runbook и release checklist</td></tr><tr><td>Privacy</td><td>Analytics allowlist не содержит content/PII; essential/extended tiers и extended opt-out работают</td><td>Captured staging payloads + selective queue cleanup regression test</td></tr><tr><td>Provider</td><td>Giga/OpenRouter routes, fallback, strict SSE [DONE]/in-band-error/content-filter semantics, body-consume terminal attempts, exact cost source/USD и token split проверены</td><td>Broken/malformed/no-DONE/content-filter/oversized fixtures + staging usage/billing reconciliation</td></tr><tr><td>Reliability</td><td>Client/gateway offline, restart, queue overflow, provider timeout и Railway restart не теряют состояние</td><td>Failure-injection checklist</td></tr><tr><td>Security</td><td>Auth/rate/SSRF/ZIP/IPC/updater abuse cases и dependency/secret scans</td><td>Security test report без открытых P0/P1</td></tr><tr><td>Upgrade/cutover</td><td>Новый клиент работает только с v2; legacy API закрыт; данные сохраняются и подменённый пакет отвергается</td><td>Cutover matrix + rollback test</td></tr></tbody></table></div></div></section></div>
-<div class="portable-block portable-layout-full" data-artifact-block-id="responsibilities_heading" data-artifact-block-type="markdown" data-layout="full"><section class="portable-markdown"><h2>Доступ Сони закрыл инфраструктурную часть, но не публичные release gates</h2>
-<p>Railway staging, отдельный stats service и Traction production-модуль уже развёрнуты. Оставшаяся работа зависит не от доступа, а от защищённых upstream transport, публичного entitlement, HTTPS update-feed и проверки подписанного релиза.</p></section></div>
-<div class="portable-block portable-layout-full" data-artifact-block-id="responsibilities" data-artifact-block-type="table" data-layout="full"><section class="portable-content-card portable-table-card" data-artifact-id="responsibilities_table" data-artifact-kind="table" data-table-id="responsibilities_table" data-portable-visual-title="Что делаем сейчас и что ждёт внешнего доступа"><header class="portable-visual-header"><h2>Что делаем сейчас и что ждёт внешнего доступа</h2></header><div class="portable-inline-source portable-source-summary" data-source-id="source"><div class="portable-inline-source-content portable-source-summary-content"><span class="portable-source-tooltip-heading" aria-hidden="true">Source for Что делаем сейчас и что ждёт внешнего доступа</span><strong>Source: Матрица зависимостей и ответственности</strong><span class="portable-source-meta">Table: responsibilities</span><p class="portable-source-description-data">Читает work lanes и owners из reviewed plan snapshot.</p><pre class="portable-source-query-data" aria-hidden="true"><code>SELECT lane, now, later, owner FROM responsibilities ORDER BY order</code></pre></div></div><div class="portable-table-source-region"><div class="portable-table-scroll"><table><caption>Что делаем сейчас и что ждёт внешнего доступа</caption><thead><tr><th scope="col">Поток</th><th scope="col">Можно сделать сейчас</th><th scope="col">Что потребуется позже</th><th scope="col">Владелец решения</th></tr></thead><tbody><tr><td>Apple release</td><td>Developer ID identity и notarization inputs найдены в MultiTool; entitlements/fuses/updater готовы</td><td>Signed/notarized RC, HTTPS update feed и двухархитектурный upgrade test</td><td>Мы + владелец Intel-проверки</td></tr><tr><td>Gateway</td><td>Railway staging v2, /data, separate secrets, quotas, exact-host video HTTP policy, ZDR/data-deny, strict terminal attempts и Traction outbox live</td><td>Secure LiteLLM/video transport, entitlement и отдельный production gateway cutover</td><td>Мы + Railway access</td></tr><tr><td>OpenRouter/Giga</td><td>OpenRouter HTTPS purpose routes и E2E; Giga adapter/usage/cost harness готов, но current LiteLLM public HTTP исключён</td><td>HTTPS/private tunnel LiteLLM, затем Giga smoke и billing reconciliation</td><td>Мы + владелец LiteLLM transport</td></tr><tr><td>Railway</td><td>Production read-only audited; isolated gateway/stats staging domains, Volumes and secrets live; analytics/media E2E зелёные</td><td>Reviewed source/autodeploy policy и отдельный production cutover после release gates</td><td>Мы; production gateway mutation только по отдельному release gate</td></tr><tr><td>Telemetry policy</td><td>Всегда включённый essential tier + default-on extended tier с opt-out, allowlist и selective queue cleanup</td><td>Финальный privacy text перед релизом</td><td>Мы + утверждение текста от тебя/Сони</td></tr><tr><td>Traction</td><td>Production module active: loopback systemd service, separate token/database, logo, six canonical KPI, healthy poller and protected dashboard</td><td>Подключить production gateway token только во время reviewed v2 cutover</td><td>Мы + доступ к Traction ingest</td></tr><tr><td>Репозиторий Narra</td><td>Schemas, tests, hardening, import/EPUB, provider abstraction, analytics queue, logo asset</td><td>Merge/release после ревью</td><td>Мы</td></tr></tbody></table></div></div></section></div>
+<div class="portable-block portable-layout-full" data-artifact-block-id="responsibilities_heading" data-artifact-block-type="markdown" data-layout="full"><section class="portable-markdown"><h2>Доступ Сони закрыл Railway-часть, Apple и upstream transport ещё требуют владельцев</h2>
+<p>Railway staging, отдельный stats service и Traction production-модуль уже развёрнуты. GitHub update-feed workflow подготовлен. Для signed RC владелец Apple Team должен добавить matching Developer ID/App Store Connect credentials; для public video владелец host должен дать HTTPS relay.</p></section></div>
+<div class="portable-block portable-layout-full" data-artifact-block-id="responsibilities" data-artifact-block-type="table" data-layout="full"><section class="portable-content-card portable-table-card" data-artifact-id="responsibilities_table" data-artifact-kind="table" data-table-id="responsibilities_table" data-portable-visual-title="Что делаем сейчас и что ждёт внешнего доступа"><header class="portable-visual-header"><h2>Что делаем сейчас и что ждёт внешнего доступа</h2></header><div class="portable-inline-source portable-source-summary" data-source-id="source"><div class="portable-inline-source-content portable-source-summary-content"><span class="portable-source-tooltip-heading" aria-hidden="true">Source for Что делаем сейчас и что ждёт внешнего доступа</span><strong>Source: Матрица зависимостей и ответственности</strong><span class="portable-source-meta">Table: responsibilities</span><p class="portable-source-description-data">Читает work lanes и owners из reviewed plan snapshot.</p><pre class="portable-source-query-data" aria-hidden="true"><code>SELECT lane, now, later, owner FROM responsibilities ORDER BY order</code></pre></div></div><div class="portable-table-source-region"><div class="portable-table-scroll"><table><caption>Что делаем сейчас и что ждёт внешнего доступа</caption><thead><tr><th scope="col">Поток</th><th scope="col">Можно сделать сейчас</th><th scope="col">Что потребуется позже</th><th scope="col">Владелец решения</th></tr></thead><tbody><tr><td>Apple release</td><td>Universal packaging, entitlements/fuses и draft GitHub Release/update-feed workflow готовы</td><td>Владелец Team добавляет matching Apple secrets; затем signed/notarized RC и двухархитектурный upgrade test</td><td>Мы + владелец Apple Team + владелец Intel-проверки</td></tr><tr><td>Gateway</td><td>Railway staging v2, /data, separate secrets, quotas, exact-host video HTTP policy, ZDR/data-deny, strict terminal attempts и Traction outbox live</td><td>Secure LiteLLM/video transport, entitlement и отдельный production gateway cutover</td><td>Мы + Railway access</td></tr><tr><td>OpenRouter/Giga</td><td>OpenRouter HTTPS purpose routes и E2E; Giga adapter/usage/cost harness готов, но current LiteLLM public HTTP исключён</td><td>HTTPS/private tunnel LiteLLM, затем Giga smoke и billing reconciliation</td><td>Мы + владелец LiteLLM transport</td></tr><tr><td>Railway</td><td>Production read-only audited; isolated gateway/stats staging domains, Volumes and secrets live; analytics/media E2E зелёные</td><td>Reviewed source/autodeploy policy и отдельный production cutover после release gates</td><td>Мы; production gateway mutation только по отдельному release gate</td></tr><tr><td>Telemetry policy</td><td>Всегда включённый essential tier + default-on extended tier с opt-out, allowlist и selective queue cleanup</td><td>Финальный privacy text перед релизом</td><td>Мы + утверждение текста от тебя/Сони</td></tr><tr><td>Traction</td><td>Production module active: loopback systemd service, separate token/database, logo, six canonical KPI, healthy poller and protected dashboard</td><td>Подключить production gateway token только во время reviewed v2 cutover</td><td>Мы + доступ к Traction ingest</td></tr><tr><td>Репозиторий Narra</td><td>Schemas, tests, hardening, import/EPUB, provider abstraction, analytics queue, logo asset</td><td>Merge/release после ревью</td><td>Мы</td></tr></tbody></table></div></div></section></div>
 <div class="portable-block portable-layout-full" data-artifact-block-id="methodology" data-artifact-block-type="markdown" data-layout="full"><section class="portable-markdown"><h2>Как сформирован план</h2>
 <p>План основан на read-only аудите Narra, canonical-контракте Traction и фактическом тюнинге AIWA. Метрики отбирались по четырём критериям: они отражают ценность продукта, меняют решение команды, доступны на нужной частоте и трудно улучшаются обманным способом. Для каждого rate зафиксированы actor, окно и знаменатель; для новых данных запрещён исторический zero-fill.</p></section></div>
 <div class="portable-block portable-layout-full" data-artifact-block-id="limitations" data-artifact-block-type="markdown" data-layout="full"><section class="portable-markdown"><h2>Ограничения и неизвестные</h2>
-<ul><li>Старый Railway production gateway не изменялся; публичный cutover на v2 будет отдельной операцией после signed RC и entitlement gate.</li><li>Текущий LiteLLM доступен только по public HTTP. Staging поэтому честно all-OpenRouter; Giga возвращается только после HTTPS/private tunnel.</li><li>Video upstream <code>87.242.117.37:5051</code> также не поддерживает TLS. Exact-host HTTP разрешён только в staging и виден как degraded; production с таким transport fail-closed.</li><li>Production Traction live, но его база пуста до первого клиентского релиза. Staging events не переносились и не смешиваются с production.</li><li>Общий activation token подходит только закрытому staging. Для внешнего релиза нужен отзывной server-side entitlement.</li><li>Developer ID и notarization inputs найдены, но ещё нужны HTTPS update-feed, signed/notarized clean install и upgrade test на Apple Silicon и Intel.</li><li>Exact cost отражает только наблюдаемые provider usage/source; пропущенная стоимость остаётся missing и снижает coverage, а не превращается в ноль.</li><li>Формулировка «закрыть все уязвимости» недоказуема; release gate покрывает известные находки, audits, agent review и проверяемые abuse-сценарии.</li></ul></section></div>
+<ul><li>Старый Railway production gateway не изменялся; публичный cutover на v2 остаётся отдельной операцией.</li><li>Текущий LiteLLM и video upstream доступны только по public HTTP. OpenRouter HTTPS остаётся LLM workaround; video production fail-closed до edge relay.</li><li>Оценка video 4–6 jobs/hour следует из одного слота и 10–15 минут на job, но ещё не подтверждена benchmark.</li><li>Production Traction live, но база пуста до первого клиентского релиза. Staging events не переносятся.</li><li>Общий activation token подходит только закрытому staging. Для внешнего релиза нужен отзывной server-side entitlement.</li><li>GigaType secrets не читаются через GitHub; matching Apple credentials ещё должен добавить владелец Team.</li><li>Локальный unsigned universal preflight <code>arm64 + x64</code> пройден; signed/notarized проверка всё равно выполняется только с matching Apple Team secrets.</li><li>Exact cost отражает только наблюдаемые provider usage/source; missing не превращается в ноль.</li><li>Формулировка «закрыть все уязвимости» недоказуема; release gate покрывает известные находки, audits, agent review и проверяемые abuse-сценарии.</li></ul></section></div>
 <div class="portable-block portable-layout-full" data-artifact-block-id="next_steps" data-artifact-block-type="markdown" data-layout="full"><section class="portable-markdown"><h2>Следующие шаги после уже завершённого foundation</h2>
-<ol><li><strong>Готово:</strong> local security foundation, gateway v2, all-OpenRouter staging, fingerprint-verified SaluteSpeech, Kandinsky image/video E2E, essential/extended telemetry, durable outbox, отдельный stats staging и live production Traction.</li><li>Получить HTTPS/private tunnel для LiteLLM и video; вернуть Giga в server-side routes только после transport smoke без TLS downgrade.</li><li>Реализовать публичный отзывной entitlement вместо общего staging activation secret.</li><li>Поднять HTTPS update-feed и собрать universal signed/notarized RC через найденный MultiTool Developer ID.</li><li>Проверить codesign, notarization/stapling, Gatekeeper clean install и реальный upgrade с сохранением данных на Apple Silicon; Intel подтвердить на отдельном устройстве.</li><li>После этих gates отдельно переключить старый Railway production gateway на reviewed v2 и подключить production gateway к уже развёрнутому production Traction token.</li><li>Провести ограниченный внутренний rollout, сверить adoption/provider/error/token/cost coverage и отрепетировать rollback до внешнего релиза.</li></ol></section></div>
+<ol><li><strong>Готово:</strong> gateway v2, all-OpenRouter staging, fingerprint-verified SaluteSpeech, Kandinsky image/video E2E, essential/extended telemetry, durable outbox, stats staging, production Traction со всеми шестью canonical-слотами и draft GitHub Release workflow.</li><li>Добавить voice registry/cache-key и progressive TTS; затем durable media jobs и Extended import/media instrumentation.</li><li>Поставить HTTPS edge relay перед video; тем же способом можно вернуть Giga/LiteLLM.</li><li>Реализовать invite-only revocable entitlement.</li><li>Получить matching Apple secrets, собрать signed/notarized universal RC и проверить clean install/upgrade на Apple Silicon и Intel.</li><li>Провести capacity benchmark <code>1 → 2 → 5 → 10</code>.</li><li>Отдельно переключить production gateway и только после всех gates опубликовать draft GitHub Release.</li></ol></section></div>
 <div class="portable-block portable-layout-full" data-artifact-block-id="further_questions" data-artifact-block-type="markdown" data-layout="full"><section class="portable-markdown"><h2>Оставшиеся внешние входы</h2>
-<ul><li>HTTPS или private tunnel для командного LiteLLM; текущий <code>http://104.168.54.196:4000</code> намеренно не используется Narra staging.</li><li>HTTPS или приватный шифрованный туннель к video upstream до публичного релиза.</li><li>HTTPS update-feed для RC/production; Developer ID и notarization credentials уже найдены локально через MultiTool.</li><li>Выбор публичного entitlement: invite, license или account gate с revocation.</li><li>Intel Mac или владелец такой проверки; локальный Apple Silicon можно проверить здесь.</li></ul></section></div></div><section class="portable-sources" aria-labelledby="portable-sources-heading"><h2 id="portable-sources-heading">Sources</h2><ol><li><strong>Narra — baseline, с которого начат аудит</strong><span class="portable-source-meta">artifact-snapshot · 2026-07-23T12:00:00+03:00</span><p>Immutable baseline до текущего release-foundation diff; не выдаётся за состояние рабочей feat-ветки.</p><details class="portable-source-query" open><summary>SQL query</summary><pre><code>SELECT priority, area, work, acceptance FROM security_work ORDER BY order</code></pre></details></li><li><strong>Narra — текущий release-foundation candidate</strong><span class="portable-source-meta">git · 2026-07-23T13:20:00+03:00</span><p>Reviewed и pushed ветка feat/narra-release-foundation; stats production deploy использует commit 90dd05f.</p></li><li><strong>Traction — canonical Overview и контракт модуля</strong><span class="portable-source-meta">artifact-snapshot · 2026-07-23T13:20:00+03:00</span><p>Ревью SPEC, ONBOARDING, hub и контрактных тестов после унификации шести canonical-метрик.</p><details class="portable-source-query" open><summary>SQL query</summary><pre><code>SELECT metric, narra_definition, window, guardrail FROM canonical_metrics ORDER BY order</code></pre></details></li><li><strong>AIWA — analytics v2 и доработанный stats-модуль</strong><span class="portable-source-meta">2026-07-23T12:00:00+03:00</span><p>Ревью dual-write, request/attempt модели, data-quality coverage, product health, feedback, push funnels и UX дашборда.</p></li><li><strong>Продуктовые вводные владельца Narra, переданные 23 июля 2026</strong><span class="portable-source-meta">2026-07-23T12:00:00+03:00</span><p>Проект ещё не релизнут; историческую аналитику переносить не требуется; необходимо добавить OpenRouter и сохранить Giga; отдельные staging provider keys не выдаются; LLM и Kandinsky video являются доверенными сервисами команды.</p></li><li><strong>Инженерная оценка плана Narra от 23 июля 2026</strong><span class="portable-source-meta">duckdb · 2026-07-23T12:00:00+03:00</span><p>Диапазоны трудоёмкости по этапам, сформированные из объёма известных изменений и обязательных проверок; midpoint используется только для сравнительного графика.</p><details class="portable-source-query" open><summary>SQL query</summary><pre><code>SELECT * FROM (VALUES (&#39;0 · Contract freeze&#39;, 0.75, &#39;0.5–1 день&#39;, &#39;Нет&#39;), (&#39;1 · Security foundation&#39;, 3.0, &#39;2–4 дня&#39;, &#39;Нет&#39;), (&#39;2 · Gateway v2&#39;, 2.5, &#39;2–3 дня&#39;, &#39;Нет&#39;), (&#39;3 · OpenRouter + Giga&#39;, 1.5, &#39;1–2 дня&#39;, &#39;OpenRouter live; Giga ждёт secure transport&#39;), (&#39;4 · Analytics/outbox&#39;, 2.0, &#39;1.5–2.5 дня&#39;, &#39;Завершено: отдельный stats endpoint/Volume/token&#39;), (&#39;5 · stats-narra&#39;, 2.0, &#39;1.5–2.5 дня&#39;, &#39;Завершено: production Traction live&#39;), (&#39;6 · Updater/signing&#39;, 2.5, &#39;2–3 дня&#39;, &#39;HTTPS update URL; Apple credentials найдены&#39;), (&#39;7 · Railway staging&#39;, 1.5, &#39;1–2 дня&#39;, &#39;Завершено; public transport gates отдельно&#39;), (&#39;8 · Release&#39;, 1.5, &#39;1–2 дня + наблюдение&#39;, &#39;Все release gates&#39;)) AS effort(phase, effort_mid, estimate, dependency)</code></pre></details></li></ol></section></main>
+<ul><li>Может ли владелец video host поставить Caddy/Nginx relay рядом с <code>:5051</code>?</li><li>Может ли владелец LiteLLM host поставить такой же HTTPS relay?</li><li>Кто из владельцев Apple Team добавит <code>.p12</code>, пароль и App Store Connect <code>.p8</code> в <code>narra-production</code> и подтвердит <code>com.narra.app</code>?</li><li>Entitlement: invite-only beta или open anonymous? Рекомендация — invite-only.</li><li>Кто подтвердит Intel install/launch/upgrade?</li><li>Под «APK» действительно имеется в виду Android? Текущий Narra — Electron desktop; Android — отдельный клиентский проект.</li></ul></section></div></div><section class="portable-sources" aria-labelledby="portable-sources-heading"><h2 id="portable-sources-heading">Sources</h2><ol><li><strong>Narra — baseline, с которого начат аудит</strong><span class="portable-source-meta">artifact-snapshot · 2026-07-23T12:00:00+03:00</span><p>Immutable baseline до текущего release-foundation diff; не выдаётся за состояние рабочей feat-ветки.</p><details class="portable-source-query" open><summary>SQL query</summary><pre><code>SELECT priority, area, work, acceptance FROM security_work ORDER BY order</code></pre></details></li><li><strong>Narra — текущий release-foundation candidate</strong><span class="portable-source-meta">git · 2026-07-23T15:00:00+03:00</span><p>Текущий reviewed candidate ветки feat/narra-release-foundation; production gateway этой веткой ещё не переключался.</p></li><li><strong>Traction — canonical Overview и контракт модуля</strong><span class="portable-source-meta">artifact-snapshot · 2026-07-23T13:20:00+03:00</span><p>Ревью SPEC, ONBOARDING, hub и контрактных тестов после унификации шести canonical-метрик.</p><details class="portable-source-query" open><summary>SQL query</summary><pre><code>SELECT metric, narra_definition, window, guardrail FROM canonical_metrics ORDER BY order</code></pre></details></li><li><strong>AIWA — analytics v2 и доработанный stats-модуль</strong><span class="portable-source-meta">2026-07-23T12:00:00+03:00</span><p>Ревью dual-write, request/attempt модели, data-quality coverage, product health, feedback, push funnels и UX дашборда.</p></li><li><strong>Продуктовые вводные владельца Narra, переданные 23 июля 2026</strong><span class="portable-source-meta">2026-07-23T12:00:00+03:00</span><p>Проект ещё не релизнут; историческую аналитику переносить не требуется; необходимо добавить OpenRouter и сохранить Giga; отдельные staging provider keys не выдаются; LLM и Kandinsky video являются доверенными сервисами команды.</p></li><li><strong>Инженерная оценка плана Narra от 23 июля 2026</strong><span class="portable-source-meta">duckdb · 2026-07-23T12:00:00+03:00</span><p>Диапазоны трудоёмкости по этапам, сформированные из объёма известных изменений и обязательных проверок; midpoint используется только для сравнительного графика.</p><details class="portable-source-query" open><summary>SQL query</summary><pre><code>SELECT * FROM (VALUES (&#39;0 · Contract freeze&#39;, 0.75, &#39;0.5–1 день&#39;, &#39;Нет&#39;), (&#39;1 · Security foundation&#39;, 3.0, &#39;2–4 дня&#39;, &#39;Нет&#39;), (&#39;2 · Gateway v2&#39;, 2.5, &#39;2–3 дня&#39;, &#39;Нет&#39;), (&#39;3 · OpenRouter + Giga&#39;, 1.5, &#39;1–2 дня&#39;, &#39;OpenRouter live; Giga ждёт secure transport&#39;), (&#39;4 · Analytics/outbox&#39;, 2.0, &#39;1.5–2.5 дня&#39;, &#39;Завершено: отдельный stats endpoint/Volume/token&#39;), (&#39;5 · stats-narra&#39;, 2.0, &#39;1.5–2.5 дня&#39;, &#39;Завершено: production Traction live&#39;), (&#39;6 · Updater/signing&#39;, 2.5, &#39;2–3 дня&#39;, &#39;Workflow готов; ждём Apple Team secrets&#39;), (&#39;7 · Railway staging&#39;, 1.5, &#39;1–2 дня&#39;, &#39;Завершено; public transport gates отдельно&#39;), (&#39;8 · Release&#39;, 1.5, &#39;1–2 дня + наблюдение&#39;, &#39;Все release gates&#39;)) AS effort(phase, effort_mid, estimate, dependency)</code></pre></details></li></ol></section></main>
 <script data-data-analytics-portable-source-tooltips="true">(() => {
   const RUNTIME_FLAG = "__dataAnalyticsPortableSourceTooltipsInitialized";
   const READY_ATTRIBUTE = "data-portable-source-tooltips-ready";
@@ -898,347 +921,391 @@ html:not([data-portable-source-tooltips-ready]) .portable-chart-summary>.portabl
 })();</script>
 <div id="data-analytics-portable-reader" aria-hidden="true" inert></div>
 <template id="data-analytics-portable-artifact-payload-source" data-compression="gzip-base64">
-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
-YZxPNmPh/+/F/+u9+OX/BXTMUNgs/gAA
+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
+AQA=
 </template>
 <template id="data-analytics-portable-reader-runtime-source" data-compression="gzip-base64">
 H4sIAAAAAAACE+y9aXfbxrYm/P3+CirtV01eQQopyRNphNfWEDuxLcey4ziKWoRIUIJNATQASlYk

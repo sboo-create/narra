@@ -19,6 +19,7 @@ import { parseEventBatch } from './events.mjs'
 import { createEventStore } from './event-store.mjs'
 import { fetchWithRedirectPolicy, readBoundedBody } from './safe-fetch.mjs'
 import { createConcurrencyGate, requestAbortSignal, withTimeout } from './concurrency.mjs'
+import { parseEnvInt } from './env.mjs'
 import {
   analyticsRoute,
   completionProperties,
@@ -67,11 +68,7 @@ const VIDEO_INSECURE_HTTP_HOSTS = String(process.env.VIDEO_INSECURE_HTTP_HOSTS |
   .map((value) => value.trim())
   .filter(Boolean)
 function envInt(name, fallback, max) {
-  const value = Number(process.env[name] || fallback)
-  if (!Number.isInteger(value) || value < 1 || value > max) {
-    throw new Error(`${name} must be an integer between 1 and ${max}`)
-  }
-  return value
+  return parseEnvInt(process.env, name, fallback, max)
 }
 const REGISTRATION_LIMIT = envInt('REGISTRATION_LIMIT_PER_HOUR', 10, 1_000)
 const API_LIMIT = envInt('API_LIMIT_PER_MINUTE', 120, 10_000)
@@ -94,7 +91,9 @@ const KANDINSKY_QUEUE_LIMIT = envInt('KANDINSKY_QUEUE_LIMIT', 6, 100)
 const VIDEO_QUEUE_LIMIT = envInt('VIDEO_QUEUE_LIMIT', 4, 100)
 const LLM_CONCURRENCY = envInt('LLM_CONCURRENCY', 8, 100)
 const LLM_QUEUE_LIMIT = envInt('LLM_QUEUE_LIMIT', 16, 500)
-const SPEECH_CONCURRENCY = envInt('SPEECH_CONCURRENCY', 8, 100)
+// SALUTE_SPEECH_PERS is capped at five upstream streams. Reject a stale or
+// accidental Railway override above the verified upstream scope.
+const SPEECH_CONCURRENCY = envInt('SPEECH_CONCURRENCY', 5, 5)
 const SPEECH_QUEUE_LIMIT = envInt('SPEECH_QUEUE_LIMIT', 16, 500)
 const IMAGE_CONCURRENCY = envInt('IMAGE_CONCURRENCY', 4, 50)
 const IMAGE_QUEUE_LIMIT = envInt('IMAGE_QUEUE_LIMIT', 12, 200)
