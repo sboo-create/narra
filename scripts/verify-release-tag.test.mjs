@@ -14,17 +14,21 @@ function git(cwd, ...args) {
 
 test('release verification requires HEAD to resolve from the exact tag ref', () => {
   const repo = mkdtempSync(join(tmpdir(), 'narra-tag-test-'))
+  const remote = mkdtempSync(join(tmpdir(), 'narra-tag-remote-'))
   try {
+    git(remote, 'init', '--bare', '-q')
     git(repo, 'init', '-q')
     git(repo, 'config', 'user.name', 'Narra Test')
     git(repo, 'config', 'user.email', 'narra-test@example.invalid')
+    git(repo, 'remote', 'add', 'origin', remote)
     writeFileSync(join(repo, 'fixture.txt'), 'release\n')
     git(repo, 'add', 'fixture.txt')
     git(repo, 'commit', '-qm', 'fixture')
     git(repo, 'tag', 'v0.7.7')
+    git(repo, 'push', '-q', 'origin', 'HEAD:refs/heads/main', 'refs/tags/v0.7.7')
     assert.match(execFileSync(node, [script, 'v0.7.7'], {
       cwd: repo, encoding: 'utf8'
-    }), /Release tag verified/)
+    }), /Release local and origin tags verified/)
 
     writeFileSync(join(repo, 'fixture.txt'), 'post-tag change\n')
     git(repo, 'add', 'fixture.txt')
@@ -35,7 +39,13 @@ test('release verification requires HEAD to resolve from the exact tag ref', () 
       }),
       /Command failed/
     )
-    git(repo, 'checkout', '-q', 'v0.7.7')
+    git(repo, 'tag', '-f', 'v0.7.7')
+    assert.throws(
+      () => execFileSync(node, [script, 'v0.7.7'], {
+        cwd: repo, encoding: 'utf8', stdio: 'pipe'
+      }),
+      /Command failed/
+    )
     git(repo, 'tag', '-d', 'v0.7.7')
     git(repo, 'branch', 'v0.7.7')
     assert.throws(
@@ -46,5 +56,6 @@ test('release verification requires HEAD to resolve from the exact tag ref', () 
     )
   } finally {
     rmSync(repo, { recursive: true, force: true })
+    rmSync(remote, { recursive: true, force: true })
   }
 })

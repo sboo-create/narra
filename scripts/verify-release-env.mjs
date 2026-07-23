@@ -1,11 +1,27 @@
+import { execFileSync } from 'node:child_process'
 import { accessSync, constants, statSync } from 'node:fs'
 
-const required = ['NARRA_PROXY_URL', 'NARRA_ACTIVATION_TOKEN', 'NARRA_UPDATE_BASE_URL', 'CSC_LINK', 'CSC_KEY_PASSWORD']
+const required = ['NARRA_PROXY_URL', 'NARRA_ACTIVATION_TOKEN', 'NARRA_UPDATE_BASE_URL']
+const localKeychainSigning = process.env.NARRA_LOCAL_RELEASE === '1'
 const missing = required.filter((name) => !String(process.env[name] || '').trim())
+if (localKeychainSigning) {
+  if (!String(process.env.CSC_NAME || '').trim()) missing.push('CSC_NAME')
+} else {
+  for (const name of ['CSC_LINK', 'CSC_KEY_PASSWORD']) {
+    if (!String(process.env[name] || '').trim()) missing.push(name)
+  }
+}
 const appleApi = ['APPLE_API_KEY', 'APPLE_API_KEY_ID', 'APPLE_API_ISSUER'].every((name) => process.env[name])
 const appleId = ['APPLE_ID', 'APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_TEAM_ID'].every((name) => process.env[name])
-if (!appleApi && !appleId) missing.push('Apple notarization credentials')
+const appleKeychainProfile = String(process.env.APPLE_KEYCHAIN_PROFILE || '').trim()
+if (!appleApi && !appleId && !appleKeychainProfile) missing.push('Apple notarization credentials')
 if (missing.length) throw new Error(`Release is fail-closed; missing: ${missing.join(', ')}`)
+if (localKeychainSigning) {
+  const identities = execFileSync('security', ['find-identity', '-v', '-p', 'codesigning'], { encoding: 'utf8' })
+  if (!identities.includes(process.env.CSC_NAME)) {
+    throw new Error(`CSC_NAME is not a valid local codesigning identity: ${process.env.CSC_NAME}`)
+  }
+}
 if (appleApi) {
   let keyFile
   try { keyFile = statSync(process.env.APPLE_API_KEY) } catch { /* handled below */ }

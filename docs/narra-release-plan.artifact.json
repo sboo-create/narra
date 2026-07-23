@@ -5,7 +5,7 @@
     "surface": "report",
     "title": "Narra: план безопасного релиза и аналитики",
     "description": "Фактический статус и технический план безопасного релиза Narra: gateway, OpenRouter + Giga, аналитика Traction и подписанные обновления.",
-    "generatedAt": "2026-07-23T15:00:00+03:00",
+    "generatedAt": "2026-07-23T20:30:00+03:00",
     "sources": [
       {
         "id": "narra_code",
@@ -34,13 +34,16 @@
         "query": {
           "engine": "git",
           "description": "Текущий reviewed candidate ветки feat/narra-release-foundation; production gateway этой веткой ещё не переключался.",
-          "executed_at": "2026-07-23T15:00:00+03:00",
+          "executed_at": "2026-07-23T20:30:00+03:00",
           "language": "TypeScript/JavaScript/Python/HTML",
           "tables_used": [
             "server/index.mjs",
             "server/event-store.mjs",
             "src/main/telemetry.ts",
             "src/main/pdf-worker.ts",
+            "src/renderer/lib/scenario.ts",
+            "src/renderer/screens/Reader.tsx",
+            "src/renderer/lib/ttsController.ts",
             "stats/server.py",
             "stats/index.html",
             ".github/workflows/release-macos.yml"
@@ -50,12 +53,12 @@
       {
         "id": "traction_contract",
         "label": "Traction — canonical Overview и контракт модуля",
-        "href": "https://github.com/q121212/Traction/tree/44f99efb55b721b08b4ebbdb6cc4df73b8523b91",
+        "href": "https://github.com/q121212/Traction/tree/144341a12c07c625d99c172eed62681e3f14ce2d",
         "query": {
           "engine": "artifact-snapshot",
           "sql": "SELECT metric, narra_definition, window, guardrail FROM canonical_metrics ORDER BY order",
           "description": "Ревью SPEC, ONBOARDING, hub и контрактных тестов после унификации шести canonical-метрик.",
-          "executed_at": "2026-07-23T13:20:00+03:00",
+          "executed_at": "2026-07-23T14:29:41+03:00",
           "language": "Markdown/Python/JavaScript",
           "tables_used": [
             "SPEC.md",
@@ -92,11 +95,31 @@
         }
       },
       {
+        "id": "salutespeech_staging_benchmark",
+        "label": "Narra SaluteSpeech staging benchmark — 23 июля 2026",
+        "query": {
+          "engine": "Railway staging console",
+          "description": "Пять последовательных синтезов одного текста длиной 708 символов для Erm_24000 и Erm_48000; затем exact-case probe присланных private voice codes. Credentials не извлекались из Railway и не печатались.",
+          "executed_at": "2026-07-23T18:30:00+03:00",
+          "language": "JavaScript",
+          "tables_used": [
+            "server/http.mjs",
+            "server/sber-tls.mjs",
+            "https://smartspeech.sber.ru/rest/v1/text:synthesize"
+          ],
+          "metric_definitions": [
+            "latency_ms = wall-clock duration одного synchronous synthesis request",
+            "avg_bytes = средний размер полученного WAV",
+            "Один текст и пять последовательных запусков на качество; это направляющий тест, не полный load benchmark"
+          ]
+        }
+      },
+      {
         "id": "engineering_estimate",
         "label": "Инженерная оценка плана Narra от 23 июля 2026",
         "query": {
           "engine": "duckdb",
-          "sql": "SELECT * FROM (VALUES ('0 · Contract freeze', 0.75, '0.5–1 день', 'Нет'), ('1 · Security foundation', 3.0, '2–4 дня', 'Нет'), ('2 · Gateway v2', 2.5, '2–3 дня', 'Нет'), ('3 · OpenRouter + Giga', 1.5, '1–2 дня', 'OpenRouter live; Giga ждёт secure transport'), ('4 · Analytics/outbox', 2.0, '1.5–2.5 дня', 'Завершено: отдельный stats endpoint/Volume/token'), ('5 · stats-narra', 2.0, '1.5–2.5 дня', 'Завершено: production Traction live'), ('6 · Updater/signing', 2.5, '2–3 дня', 'Workflow готов; ждём Apple Team secrets'), ('7 · Railway staging', 1.5, '1–2 дня', 'Завершено; public transport gates отдельно'), ('8 · Release', 1.5, '1–2 дня + наблюдение', 'Все release gates')) AS effort(phase, effort_mid, estimate, dependency)",
+          "sql": "SELECT * FROM (VALUES ('0 · Contract freeze', 0.75, '0.5–1 день', 'Нет'), ('1 · Security foundation', 3.0, '2–4 дня', 'Нет'), ('2 · Gateway v2', 2.5, '2–3 дня', 'Нет'), ('3 · OpenRouter + Giga', 1.5, '1–2 дня', 'OpenRouter live; Giga ждёт secure transport'), ('4 · Analytics/outbox', 2.0, '1.5–2.5 дня', 'Завершено: отдельный stats endpoint/Volume/token'), ('5 · stats-narra', 2.0, '1.5–2.5 дня', 'Завершено: production Traction live'), ('6 · Updater/signing', 2.5, '2–3 дня', 'Local path готов; ждём notarization profile'), ('7 · Railway staging', 1.5, '1–2 дня', 'Завершено; public transport gates отдельно'), ('8 · Release', 1.5, '1–2 дня + наблюдение', 'Все release gates')) AS effort(phase, effort_mid, estimate, dependency)",
           "description": "Диапазоны трудоёмкости по этапам, сформированные из объёма известных изменений и обязательных проверок; midpoint используется только для сравнительного графика.",
           "executed_at": "2026-07-23T12:00:00+03:00",
           "language": "sql",
@@ -286,7 +309,7 @@
       {
         "id": "responsibilities_table",
         "title": "Что делаем сейчас и что ждёт внешнего доступа",
-        "subtitle": "Инфраструктура уже live; оставшиеся действия зависят от transport, entitlement и подписанного release",
+        "subtitle": "Инфраструктура уже live; оставшиеся действия зависят от transport, installation registry и подписанного release",
         "dataset": "responsibilities",
         "source": {
           "label": "Матрица зависимостей и ответственности",
@@ -300,18 +323,45 @@
           { "field": "later", "label": "Что потребуется позже", "type": "text" },
           { "field": "owner", "label": "Владелец решения", "type": "text" }
         ]
+      },
+      {
+        "id": "tts_quality_benchmark_table",
+        "title": "SaluteSpeech: 24 kHz и 48 kHz на staging",
+        "subtitle": "Одинаковый текст, 708 символов, пять последовательных запусков на качество",
+        "dataset": "tts_quality_benchmark",
+        "sourceId": "salutespeech_staging_benchmark",
+        "source": {
+          "id": "salutespeech_staging_benchmark",
+          "label": "Narra SaluteSpeech staging benchmark — 23 июля 2026",
+          "query": {
+            "engine": "artifact-snapshot",
+            "sql": "SELECT sample_rate_hz, quality, provider_code, avg_ms, median_ms, avg_wav_mb, success FROM tts_quality_benchmark ORDER BY sample_rate_hz",
+            "description": "Читает reviewed результаты одинакового synchronous synthesis test из bounded snapshot."
+          }
+        },
+        "defaultSort": { "field": "sample_rate_hz", "direction": "asc" },
+        "density": "spacious",
+        "columns": [
+          { "field": "sample_rate_hz", "label": "Sample rate, Hz", "type": "number" },
+          { "field": "quality", "label": "Качество", "type": "text" },
+          { "field": "provider_code", "label": "Код", "type": "text" },
+          { "field": "avg_ms", "label": "Среднее, мс", "type": "number" },
+          { "field": "median_ms", "label": "Медиана, мс", "type": "number" },
+          { "field": "avg_wav_mb", "label": "Средний WAV, МБ", "type": "number" },
+          { "field": "success", "label": "Успех", "type": "text" }
+        ]
       }
     ],
     "blocks": [
       {
         "id": "title",
         "type": "markdown",
-          "body": "# Narra: план безопасного релиза и аналитики\n\n**Обновлено:** 23 июля 2026 · **Статус:** gateway и отдельный stats staging прошли E2E; Narra активна в production Traction; update-feed workflow подготовлен; публичный клиентский релиз ждёт Apple credentials, защищённый video transport, entitlement и production cutover"
+          "body": "# Narra: план безопасного релиза и аналитики\n\n**Обновлено:** 23 июля 2026 · **Статус:** gateway и stats staging прошли E2E; Narra активна в production Traction; 48 kHz проверен; публичный клиентский релиз ждёт installation registry, защищённый video transport, local notarization credentials и production cutover"
       },
       {
         "id": "technical_summary",
         "type": "markdown",
-          "body": "## Техническое резюме\n\n- **Release foundation реализован и проверен.** Gateway v2, server-side routing, квоты и bounded queues, SSRF/архив/IPC/Electron hardening, безопасный updater, priority telemetry queue и stats-narra покрыты тестами и повторными agent gates.\n- **Traction показывает все шесть canonical-слотов.** `Ever used`, `DAU`, `WAU`, `MAU`, `Sessions / DAU`, `Tools / DAU` всегда видимы; при `DAU = 0` две доли показываются как `—`, а не исчезают и не превращаются в ложный ноль.\n- **Essential telemetry всегда включена; opt-out отключает только extended.** Планируемые import, book-analysis, media, playback и voice events относятся к Extended. Gateway отдельно хранит безакторные operational counters; тексты, prompts, URL, имена файлов и media не попадают в аналитику.\n- **OpenRouter остаётся безопасным HTTPS-маршрутом до появления relay.** Giga/LiteLLM и video не отключены, но public HTTP не используется для пользовательского контента в production.\n- **Текущая пропускная способность video очень низкая.** Код принимает четыре задачи вместе с активной, обрабатывает одну за раз и отклоняет остальные `429`. При фактических 10–15 мин на job это лишь 4–6 jobs/hour; это расчёт по наблюдаемой длительности, а не benchmark.\n- **Разметку TTS можно ускорить.** Сейчас фрагменты по ~1 500 символов идут строго последовательно; adaptive chunks, bounded parallelism и progressive result дают расчётный ориентир 2–4× для полной главы и намного более ранний первый звук.\n- **SaluteSpeech ограничен реальным scope.** `SALUTE_SPEECH_PERS` допускает максимум пять upstream streams; gateway теперь отклоняет Railway override выше пяти.\n- **Universal release workflow подготовлен безопасно.** Он собирает signed/notarized arm64+x64 RC, проверяет артефакты и складывает их в draft GitHub Release. Публикация draft вручную включает HTTPS update-feed.\n- **Выбран Developer ID Жени.** Локальная identity Evgeny Tsapnikov найдена; для публичного notarized DMG всё ещё нужны matching App Store Connect credentials его Apple Team и разрешение на `com.narra.app`.\n- **Исторического backfill нет.** Narra ещё не релизнута: аналитика начинается с чистой даты cutover."
+          "body": "## Техническое резюме\n\n- **Release foundation реализован и проверен.** Gateway v2, server-side routing, hardening, telemetry/outbox и stats-narra покрыты тестами и agent gates.\n- **Traction показывает все шесть canonical-слотов.** `Ever used`, `DAU`, `WAU`, `MAU`, `Sessions / DAU`, `Tools / DAU` всегда видимы; при `DAU = 0` ratios показываются как `—`.\n- **Essential telemetry всегда включена; opt-out отключает только extended.** Целевой enum `origin=user|background` исключает фоновые jobs из activity/session/Tools; его реализация остаётся P0.\n- **No-invite beta — принятое целевое решение, ещё не готовый продукт.** До внешней раздачи нужны auto-enrollment/revocation, короткие bearer, quotas, cohort-token grace и global budget.\n- **Быстрый first-audio — целевой pipeline, ещё не реализованный.** План: bootstrap 600–900 символов, первый audio segment 150–300 символов и остальная разметка параллельно; один prefetch проверяется benchmark.\n- **48 kHz принято для будущего registry.** Staging-тест Joy/Erm показал медиану 2 179 мс против 1 960 мс; текущий код всё ещё 24 kHz и будет изменён отдельным P0.\n- **Plaintext video остаётся только внутренним staging.** Server-to-server скрывает ключи от клиента, но не даёт confidentiality; внешняя beta ждёт TLS relay.\n- **Local release path теперь соответствует политике credentials.** Hosted CI делает только manual unsigned preflight; подпись/notarization и draft upload выполняются локально. Signed артефакт ещё не собран.\n- **Исторического backfill нет.** Narra ещё не релизнута: аналитика начинается с чистой даты cutover."
       },
       {
         "id": "decisions_heading",
@@ -327,7 +377,7 @@
       {
         "id": "architecture_heading",
         "type": "markdown",
-      "body": "## Целевая архитектура: один защищённый вход, раздельные контуры\n\n```text\nElectron Narra\n  ├─ локальные книги, заметки и медиа-кэш остаются на устройстве\n  ├─ priority bounded event queue ────────────────┐\n  └─ AI-запросы + per-install token ──────────────┤\n                                                  ▼\n                                  Narra Gateway (Railway)\n                    ┌───────────────┼───────────────┬───────────────┐\n                    ▼               ▼               ▼               ▼\n             Giga / LiteLLM    OpenRouter      SaluteSpeech   Kandinsky / Video\n                    └───────────────┬───────────────┴───────────────┘\n                                    ▼\n                 Rotated JSONL audit + segmented outbox (/data)\n                                    ▼\n                     stats-narra /events → Traction hub\n```\n\nПосле импорта в фоне готовятся book-level character/voice plan, разметка первой главы, обложка и портреты главного героя плюс 2–3 основных персонажей. Аудио всегда генерируется только по явному запуску пользователя; портреты второстепенных героев — при открытии карточки.\n\nTraction ingest token хранится только на gateway. Клиент получает подписанный per-install token с TTL и квотами. Текущие stateless-токены не имеют revocation, поэтому публичный релиз отдельно заблокирован до entitlement/revocation-механизма."
+      "body": "## Целевая архитектура: один защищённый вход, раздельные контуры\n\n```text\nElectron Narra\n  ├─ локальные книги, заметки и медиа-кэш остаются на устройстве\n  ├─ priority bounded event queue ────────────────┐\n  └─ AI-запросы + per-install token ──────────────┤\n                                                  ▼\n                                  Narra Gateway (Railway)\n                    ┌───────────────┼───────────────┬───────────────┐\n                    ▼               ▼               ▼               ▼\n             Giga / LiteLLM    OpenRouter      SaluteSpeech   Kandinsky / Video\n                    └───────────────┬───────────────┴───────────────┘\n                                    ▼\n                 Rotated JSONL audit + segmented outbox (/data)\n                                    ▼\n                     stats-narra /events → Traction hub\n```\n\nЦелевой post-import pipeline готовит book-level voice plan, bootstrap первой главы, cover и 2–3 основных portraits; audio остаётся on-demand. Сейчас эти bootstrap/voice-registry изменения ещё не реализованы.\n\nTraction token уже хранится только на gateway. Auto-enrolled revocable installation record, короткий bearer и quota checks — обязательный P0 до внешней no-invite beta."
       },
       { "id": "architecture", "type": "table", "tableId": "architecture_table" },
       {
@@ -367,22 +417,30 @@
     {
       "id": "tts_markup_speed",
       "type": "markdown",
-      "body": "## Разметку глав можно заметно ускорить\n\nСейчас глава режется примерно по 1 500 символов, каждый фрагмент отправляется в LLM строго последовательно, а TTS ждёт весь результат. Глава на 30 000 символов — около 20 последовательных запросов.\n\nЦелевой путь: адаптивные чанки 3–5 тысяч символов по границам абзацев и прямой речи; до трёх параллельных server-side задач; компактный ответ по sentence IDs вместо повторения текста; немедленная передача первого готового непрерывного блока в progressive TTS; coalescing одинаковых jobs; versioned cache; предварительная разметка первой главы после импорта и следующей главы при 70–80% текущей.\n\nФоновая разметка получает `origin=background` и не создаёт active day, session или Tools / DAU. Actor-linked диагностика таких jobs относится к Extended и исчезает при opt-out; essential остаются только безакторные operational aggregates gateway без installation ID.\n\nИнженерный ориентир полной разметки — **2–4× быстрее до benchmark**, а первый звук должен появляться существенно раньше, потому что больше не ждёт всю главу. Следующий этап оптимизации — локально выделять прямую речь, оставляя LLM только определение говорящего и эмоции; его включаем лишь после quality benchmark на разных стилях книг."
+      "sourceId": "narra_release_foundation_worktree",
+      "body": "## Разметку главы и первый звук можно заметно ускорить\n\nСейчас глава режется примерно по 1 500 символов, каждый фрагмент идёт в LLM строго последовательно, а TTS ждёт весь результат. Целевой, ещё не реализованный путь: 600–900-char bootstrap после импорта; 150–300-char first-audio по нажатию; остаток по 3–5 тысяч символов до трёх LLM jobs параллельно.\n\nОдинаковые jobs coalesce; background job получает интерактивный приоритет. Ответ возвращает sentence IDs/speaker/emotion, а cache key включает text hash, markup/model/voice-plan и для audio — voice/48 kHz/prosody. Начинаем с одного prefetch, но его достаточность является acceptance criterion: concurrent end-to-end benchmark должен подтвердить underrun rate и p95 buffer headroom.\n\nЗакрытый enum `origin=user|background` также ещё нужно добавить в allowlist. Только `user` может входить в activity/session/Tools; background actor diagnostics — Extended. Ориентир полной разметки **2–4×** остаётся оценкой до benchmark."
     },
+    {
+      "id": "tts_quality_heading",
+      "type": "markdown",
+      "sourceId": "salutespeech_staging_benchmark",
+      "body": "## 48 kHz принято для будущего registry после staging-теста\n\nПроверенный exact-case код Joy — `Erm_48000`. Медианная задержка 48 kHz выросла примерно на 11%, средняя — примерно на 30% из-за run 4 = 3 877 мс, а WAV стал почти вдвое больше. Целевой registry использует единое 48 kHz качество и 150–300-char first segment; текущий код пока остаётся 24 kHz.\n\nAPI probe 48 kHz успешен для `Che`, `She`, `Erm`, `Gal`, `Ast`, `Ste`, `Tso`, `Bez`, `Ego`, `Izv`, `Chr`, `Saf`, `Ksa`, `Bsa`, `Mar`, `Kas`; `Get` возвращает HTTP 400. Voice picker подтверждает пары `Erm→Джой`, `Gal→Галустян`, `Saf→Сафронова`, `Ast→Стерлинг`, `Ste→Стремпаржевская`, `Pik→ПИК`, `Boc→Бочаров`, `Kha→Хачатрян`, `Kud→Кудряшова`; последние четыре ещё ждут API probe.\n\nSafronova — целевое child-role exception: age ≤12 либо `age_group=child` с confidence ≥0.8; при неизвестном возрасте — gender-compatible pool. Markov/Pirat manual-only."
+    },
+    { "id": "tts_quality_benchmark", "type": "table", "tableId": "tts_quality_benchmark_table" },
     {
       "id": "transport_workaround",
       "type": "markdown",
-      "body": "## Workaround без HTTPS-туннеля\n\n### LiteLLM\n\nДо защищённого транспорта все LLM purposes идут через OpenRouter по HTTPS. Giga adapter остаётся в gateway и возвращается в server-side routes без пересборки клиента, когда появится защищённый endpoint.\n\n### Video\n\nRailway-generated `*.up.railway.app` можно использовать как HTTPS-вход Narra Gateway. Но relay `клиент → HTTPS Railway → HTTP 87.242.117.37:5051` шифрует только первый участок; второй остаётся открытым по интернету. Поэтому это staging workaround с единой авторизацией и лимитами, а не production transport fix.\n\nБезопасный вариант — маленький HTTPS edge relay на самом video host или в той же приватной сети: `Railway → HTTPS + service token → Caddy/Nginx → http://127.0.0.1:5051`. Если можно установить `cloudflared`, временный Quick Tunnel даст случайный HTTPS URL без домена, но URL меняется и подходит только для тестов. Для стабильного production hostname нужен named tunnel с доменом либо Caddy/Nginx и управляемый DNS. Если доступа к host нет, HTTP остаётся только closed-staging degraded mode без пользовательских production-данных."
+      "body": "## Workaround без HTTPS-туннеля\n\n### LiteLLM\n\nДо защищённого транспорта все LLM purposes идут через OpenRouter по HTTPS. Giga adapter остаётся server-side и возвращается без пересборки клиента после защищённого endpoint.\n\n### Video\n\n`клиент → HTTPS Railway → HTTP <video-origin>` скрывает master credential от клиента, но второй hop остаётся plaintext. HMAC/allowlist ограничивают replay/tampering, но не дают confidentiality. Поэтому HTTP разрешён только внутреннему staging с контролируемыми test data; внешняя no-invite beta ждёт HTTPS edge relay рядом с video host.\n\n### Поддомен MultiTool\n\nИмена разделены: `narra-staging.multitool.works` для Railway staging, `narra.multitool.works` зарезервирован в Vercel под production v2 и пока ожидаемо отвечает `DEPLOYMENT_NOT_FOUND`. Railway staging Custom Domain уже создан; в Vercel DNS нужны CNAME `narra-staging → eb0cgdqy.up.railway.app` и TXT `_railway-verify.narra-staging → railway-verify=e50d4dec8125f3033c2140416ff008a5db67d600c8a3e1cff8c9bbc9b212b939`. После propagation проверяем TLS и `/health`."
     },
     {
       "id": "client_credentials_access",
       "type": "markdown",
-      "body": "## Ключи и доступ к beta\n\nProvider credentials OpenRouter/Giga/LiteLLM, SaluteSpeech, Kandinsky/video и Traction хранятся только как server/Railway secrets. В клиенте остаются публичные gateway/update URLs.\n\nТекущее исключение — общий `NARRA_ACTIVATION_TOKEN`, встроенный в beta-сборку. Это не provider API key, но извлекаемый общий секрет. Он отправляется только registration endpoint при регистрации/перерегистрации — в том числе после истечения bearer, смены gateway URL или `401`. Gateway выдаёт stateless installation bearer с текущим TTL по умолчанию 30 дней; на macOS он хранится через Keychain-backed `safeStorage`.\n\nОтдельных приглашений в Narra сейчас нет. Пользоваться может любой, у кого есть beta-сборка либо извлечённый общий token и совместимый клиент; официальная сборка не является границей доступа, одну установку нельзя отозвать. В production отсутствие activation secret длиной минимум 32 символа блокирует запуск; открытая регистрация возможна только в non-production. До внешнего распространения общий token нужно заменить одноразовым invite/account entitlement."
+      "body": "## Ключи и доступ к beta\n\nProvider credentials хранятся только как Railway secrets. Сейчас клиент содержит извлекаемый общий activation token, gateway выдаёт 30-дневный stateless bearer, а одну установку отозвать нельзя. Поэтому текущая сборка ещё не готова к внешней no-invite beta.\n\nЦелевой P0: автоматическая installation record без аккаунта; registration IP/velocity/global limits; bearer TTL в часах; status/token_version/per-install quota/global budget checks; revocation и circuit breaker. Cohort tokens хранятся hashed и версионируются: новая и предыдущая версии действуют в grace window не короче bearer TTL + update window; старая отключается после adoption gate либо emergency revoke.\n\nUX после реализации остаётся «скачал — запустил», без приглашений и PII. Provider keys в приложение не попадают."
     },
       {
         "id": "release_preparation",
         "type": "markdown",
-      "body": "## Entitlement, update-feed и Apple: что именно требуется\n\n### Server-side entitlement\n\nОбщий activation secret внутри Electron можно извлечь и раздать. Entitlement — серверная запись `installation_id/status/quota/token_version`, позволяющая отозвать одну установку. Для beta достаточно SQLite на Railway Volume и одноразовых invite codes. **От владельца не нужен новый сервис или ключ** — нужно только выбрать invite-only beta или модель «все, у кого есть сборка либо скопированный token»; рекомендация — invite-only до внешнего распространения.\n\n### HTTPS update-feed\n\nЭто публичный HTTPS-каталог `latest-mac.yml`, universal ZIP и blockmap. Workflow использует `https://github.com/sboo-create/narra/releases/latest/download/`, создаёт draft GitHub Release и загружает DMG/ZIP/metadata/checksums/SBOM. **Draft не доступен как публичный feed**, поэтому настоящий auto-update до публикации через него проверить нельзя.\n\nДля первого релиза официальной предыдущей версии нет: проверяем clean install и сохранение данных поверх внутренней lower-version RC, закрываем все gates, публикуем release без внешней раздачи, немедленно проверяем public feed и updater canary. При ошибке снимаем release; при успехе начинаем распространение. Начиная со второго публичного обновления нужен отдельный HTTPS RC-feed. Workflow уже поддерживает его через repository variable `NARRA_UPDATE_BASE_URL`, но staging origin ещё нужно выбрать.\n\n### Apple credentials\n\nПринято продуктовое решение пока собирать с Developer ID Жени: локально найдена identity `Developer ID Application: Evgeny Tsapnikov (LTS79DWRGJ)`. Это не заменяет разрешение владельца Apple Team на подпись `com.narra.app`. Для GitHub Environment `narra-production` всё равно нужны matching `MACOS_CERTIFICATE_P12_BASE64`, `MACOS_CERTIFICATE_PASSWORD`, App Store Connect **Team API key** `APPLE_API_KEY_P8`, пригодный для `notarytool` (не individual key), `APPLE_API_KEY_ID`, `APPLE_API_ISSUER`, `APPLE_TEAM_ID`, плюс reviewed `NARRA_PROXY_URL` и временный `NARRA_ACTIVATION_TOKEN`. Без Team approval и matching notarization credentials можно подписать локальный QA, но нельзя подготовить публичный notarized DMG."
+        "body": "## Installation registry, update-feed и Apple: что требуется\n\n### Открытая beta без приглашений\n\nПланируемый SQLite registry хранит `installation_id/status/quota/issued_at/last_seen_at/token_version`; он ещё не реализован и является P0. После реализации пользователь ничего не вводит, а revocation/quota/budget ограничивают abuse.\n\n### HTTPS update-feed\n\nПубличный feed — `latest-mac.yml`, universal ZIP и blockmap. Первый release проходит internal lower-version upgrade, затем краткую публикацию и immediate updater canary до внешней раздачи; со второго релиза нужен отдельный RC-feed.\n\n### Apple credentials\n\nHosted workflow теперь только manual unsigned preflight с `contents: read` и без Apple secrets. Локальный `npm run release:local -- vX.Y.Z` использует Keychain identity `Developer ID Application: Evgeny Tsapnikov (LTS79DWRGJ)`, локальный `APPLE_KEYCHAIN_PROFILE` либо Team API key, выполняет tests/sign/notarize/staple/Gatekeeper/checksums/SBOM и только затем загружает готовые assets в draft GitHub Release. Credential material не покидает Mac. Signed/notarized артефакт ещё не собран."
       },
       {
         "id": "production_cutover",
@@ -422,23 +480,23 @@
       {
         "id": "limitations",
         "type": "markdown",
-      "body": "## Ограничения и неизвестные\n\n- Старый Railway production gateway не изменялся; публичный cutover на v2 остаётся отдельной операцией.\n- Текущий LiteLLM и video upstream доступны только по public HTTP. OpenRouter HTTPS остаётся LLM workaround; video production fail-closed до edge relay.\n- Railway HTTPS relay сам по себе не защищает HTTP-участок от Railway до video host.\n- Оценка video 4–6 jobs/hour и ускорение TTS-разметки 2–4× являются расчётными и ещё не подтверждены benchmark.\n- Production Traction live, но база пуста до первого клиентского релиза. Staging events не переносятся.\n- Общий activation token подходит только закрытому staging. Для внешнего релиза нужен отзывной server-side entitlement.\n- Matching Apple notarization credentials команды Жени ещё должен добавить владелец Team.\n- Локальный unsigned universal preflight `arm64 + x64` пройден; signed/notarized проверка всё равно выполняется только с matching Apple Team secrets.\n- Exact cost отражает только наблюдаемые provider usage/source; missing не превращается в ноль.\n- Формулировка «закрыть все уязвимости» недоказуема; release gate покрывает известные находки, audits, agent review и проверяемые abuse-сценарии."
+      "body": "## Ограничения и неизвестные\n\n- Production gateway/cutover ещё не выполнен.\n- Plaintext video разрешён только внутреннему staging; внешняя beta ждёт TLS relay.\n- Video 4–6 jobs/hour и ускорение полной LLM-разметки 2–4× — расчёт до load benchmark; один TTS prefetch — проверяемая гипотеза.\n- TTS 24/48 kHz измерен на одном 708-char тексте и пяти последовательных runs; raw latency rows сохранены в snapshot.\n- Production Traction live, но база пуста до первого клиента; staging events не переносятся.\n- Полный voice mapping не получен; `Get` возвращает 400, `Pik/Boc/Kha/Kud` ещё не API-probed.\n- Auto-enrollment/revocation, origin allowlist, first-audio и 48 kHz registry пока P0, а не работающие функции.\n- Matching local Apple notarization profile/API key пока не найден; signed artifact ещё не собран.\n- Формулировка «закрыть все уязвимости» недоказуема; gate покрывает известные находки и abuse-сценарии."
       },
       {
         "id": "next_steps",
         "type": "markdown",
-      "body": "## Следующие шаги после уже завершённого foundation\n\n1. **Готово:** gateway v2, all-OpenRouter staging, fingerprint-verified SaluteSpeech, Kandinsky image/video E2E, essential/extended telemetry, durable outbox, stats staging, production Traction со всеми шестью canonical-слотами и draft GitHub Release workflow.\n2. Добавить новый voice registry и корректный cache-key; удалить старые автоматические voice pools.\n3. Реализовать background-разметку первой главы, adaptive chunks, bounded parallelism и progressive TTS; затем durable media jobs и Extended import/media instrumentation.\n4. Поставить HTTPS edge relay перед video; тем же способом можно вернуть Giga/LiteLLM.\n5. Реализовать invite-only revocable entitlement до внешнего распространения.\n6. Получить matching Apple secrets команды Жени, собрать signed/notarized universal RC и проверить clean install/upgrade на Apple Silicon и Intel.\n7. Провести capacity benchmark `1 → 2 → 5 → 10` и отдельный TTS markup benchmark.\n8. Отдельно переключить production gateway и только после всех gates опубликовать draft GitHub Release."
+      "body": "## Следующие шаги после уже завершённого foundation\n\n1. **Готово:** gateway v2, all-OpenRouter staging, media E2E, telemetry/outbox, stats staging, production Traction с шестью slots, local release script и manual unsigned CI preflight.\n2. Добавить обязательный `origin=user|background` allowlist/tiering и canonical exclusions.\n3. Получить остальные voice pairs, исправить `Get`, probe `Pik/Boc/Kha/Kud`, внедрить 48 kHz registry, deterministic Safronova rule и cache keys.\n4. Реализовать bootstrap/first-audio/parallel markup/prefetch/coalescing и подтвердить underrun/p95 benchmark.\n5. Реализовать auto-enrollment/revocation, short bearer, multi-version cohort grace и cost controls.\n6. Подключить DNS `narra-staging.multitool.works`; перед внешней beta поставить HTTPS video relay.\n7. Получить local notarization profile/API key, собрать signed/notarized universal RC и проверить Apple Silicon/Intel.\n8. Провести capacity benchmark, production gateway cutover и только после gates загрузить/опубликовать release."
       },
       {
         "id": "further_questions",
         "type": "markdown",
-      "body": "## Оставшиеся внешние входы\n\n- Доступ к beta: модель «все, у кого есть сборка либо скопированный общий token» или одноразовые invites? Рекомендация — invites до внешнего распространения.\n- Точный список отмеченных Соней фамилий/technical codes для автоназначения второстепенным героям.\n- Sample rate по умолчанию: 24 kHz для скорости или обязательный 48 kHz? Рекомендация — 24 kHz first playback, 48 kHz как high-quality option.\n- Может ли владелец video host поставить Caddy/Nginx или `cloudflared` рядом с `:5051`?\n- Может ли владелец LiteLLM host поставить такой же HTTPS relay?\n- Кто добавит matching `.p12`, пароль и App Store Connect Team API key `.p8` команды Жени в `narra-production` и подтвердит `com.narra.app`?\n- Сколько портретов генерировать автоматически? Рекомендация — главный герой плюс 2–3 основных.\n- Какой бюджет допустим для benchmark `1 → 2 → 5 → 10`?\n- Safronova подтверждена как детский авто-голос или остаётся только ручной?\n- Кто подтвердит Intel install/launch/upgrade?\n- Под «APK» действительно имеется в виду Android? Текущий Narra — Electron desktop; Android — отдельный клиентский проект."
+      "body": "## Оставшиеся внешние входы\n\n- Остальные пары `display name → exact code`; причина 400 для `Get`.\n- Правило `Sber narrator + male protagonist`; рекомендация — первый мужской library voice.\n- Может ли владелец video/LiteLLM host поставить HTTPS relay рядом с process?\n- Local matching App Store Connect Team API key/profile Жени и разрешение на `com.narra.app`.\n- Добавить в Vercel DNS выданные CNAME/TXT для `narra-staging`; production `narra` уже зарезервирован.\n- Сколько portraits генерировать автоматически? Рекомендация — главный плюс 2–3 основных.\n- Бюджет benchmark `1 → 2 → 5 → 10` и владелец Intel проверки.\n- Под «APK» действительно имеется в виду Android? Electron Narra требует отдельного Android-клиента."
       }
     ]
   },
   "snapshot": {
     "version": 1,
-    "generatedAt": "2026-07-23T15:00:00+03:00",
+    "generatedAt": "2026-07-23T20:30:00+03:00",
     "status": "ready",
     "datasets": {
       "decisions": [
@@ -453,13 +511,31 @@
         { "order": 9, "area": "API cutover", "decision": "Legacy endpoint не поддерживается", "consequence": "Клиент и gateway переходят на v2 синхронно до первого внешнего релиза" },
         { "order": 10, "area": "Traction", "decision": "Narra активна в production hub с найденным логотипом", "consequence": "Loopback stats service, Caddy Basic Auth, public health/tokened ingest и poller cache прошли live smoke" },
         { "order": 11, "area": "Staging credentials", "decision": "Отдельных upstream staging keys не будет", "consequence": "Копируются только конкретные credentials без раскрытия; unsafe public HTTP URLs и Giga fallbacks не копируются; Narra/Traction secrets, environment и данные отдельные" },
-        { "order": 12, "area": "Apple", "decision": "Пока использовать Developer ID Жени — Evgeny Tsapnikov (LTS79DWRGJ)", "consequence": "Владелец этой Team должен добавить matching notarization credentials в Narra и подтвердить bundle ID com.narra.app" }
+        { "order": 12, "area": "Apple", "decision": "Подписывать локально Developer ID Жени — Evgeny Tsapnikov (LTS79DWRGJ)", "consequence": "Credentials не выгружаются; для notarization нужен локальный matching Team API key/profile и разрешение на com.narra.app" },
+        { "order": 13, "area": "Beta-доступ", "decision": "Цель: без приглашений и аккаунтов", "consequence": "Auto-enrollment registry, short bearer, revocation, multi-token grace, quotas и global budget обязательны до внешней раздачи" },
+        { "order": 14, "area": "SaluteSpeech", "decision": "Для будущего registry выбрано 48 kHz; Safronova для подтверждённых child-role", "consequence": "Текущий код ещё 24 kHz; first-audio, name/code mapping, Get и child_rule_version остаются P0" }
+      ],
+      "tts_quality_benchmark": [
+        { "sample_rate_hz": 24000, "quality": "24 kHz", "provider_code": "Erm_24000", "runs": 5, "chars": 708, "avg_ms": 2023, "median_ms": 1960, "avg_wav_bytes": 2250092, "avg_wav_mb": 2.25, "success": "5/5 HTTP 200" },
+        { "sample_rate_hz": 48000, "quality": "48 kHz", "provider_code": "Erm_48000", "runs": 5, "chars": 708, "avg_ms": 2625, "median_ms": 2179, "avg_wav_bytes": 4429484, "avg_wav_mb": 4.43, "success": "5/5 HTTP 200" }
+      ],
+      "tts_quality_runs": [
+        { "sample_rate_hz": 24000, "provider_code": "Erm_24000", "run": 1, "latency_ms": 2095 },
+        { "sample_rate_hz": 24000, "provider_code": "Erm_24000", "run": 2, "latency_ms": 1922 },
+        { "sample_rate_hz": 24000, "provider_code": "Erm_24000", "run": 3, "latency_ms": 2199 },
+        { "sample_rate_hz": 24000, "provider_code": "Erm_24000", "run": 4, "latency_ms": 1939 },
+        { "sample_rate_hz": 24000, "provider_code": "Erm_24000", "run": 5, "latency_ms": 1960 },
+        { "sample_rate_hz": 48000, "provider_code": "Erm_48000", "run": 1, "latency_ms": 2162 },
+        { "sample_rate_hz": 48000, "provider_code": "Erm_48000", "run": 2, "latency_ms": 2792 },
+        { "sample_rate_hz": 48000, "provider_code": "Erm_48000", "run": 3, "latency_ms": 2179 },
+        { "sample_rate_hz": 48000, "provider_code": "Erm_48000", "run": 4, "latency_ms": 3877 },
+        { "sample_rate_hz": 48000, "provider_code": "Erm_48000", "run": 5, "latency_ms": 2117 }
       ],
       "architecture": [
         { "order": 1, "layer": "Electron client", "owns": "UI, локальные книги/заметки/кэш, installation identity, always-on essential + default-on extended telemetry, bounded offline event queue", "never": "Не содержит provider keys/Traction token и не выбирает provider/model", "state": "Реализовано локально; unsigned universal QA пройден" },
         { "order": 2, "layer": "Narra Gateway", "owns": "Auth, schemas, quotas, routing, request/attempt/usage telemetry, content fetch, generic update feed", "never": "Не принимает анонимные дорогие запросы и не пишет сырой контент в аналитику", "state": "Gateway v2 в Railway staging; auth/events/OpenRouter complete/SSE smoke зелёные" },
         { "order": 3, "layer": "Provider adapters", "owns": "Giga/LiteLLM, OpenRouter ZDR/data-deny, SaluteSpeech, Kandinsky, video; единый error contract", "never": "Не определяют продуктовую активность, не получают клиентский analytics token и не обходят CENSOR retry/fallback", "state": "OpenRouter staging live; Giga blocked by public HTTP; Sber CA bundle fingerprint-verified и Sber-only; strict attempt/body/SSE semantics готовы" },
-        { "order": 4, "layer": "Railway state", "owns": "Rotated JSONL audit, bounded segmented Traction outbox и dead-letter; in-memory quotas", "never": "Не хранит книги, чаты, заметки, изображения или аудио; не заявляет revocation stateless-токенов", "state": "Gateway Volume `/data` и matching stats endpoint/token live; backlog=0, restart/replay/dedupe проверены; entitlement остаётся отдельным gate" },
+        { "order": 4, "layer": "Railway state", "owns": "Rotated JSONL audit, bounded segmented Traction outbox/dead-letter и planned installation registry", "never": "Не хранит книги, чаты, заметки, изображения или аудио", "state": "Gateway Volume `/data` и stats delivery live; auto-enrollment/revocation остаётся release gate" },
         { "order": 5, "layer": "stats-narra", "owns": "Traction contract, агрегаты, Narra dashboard, retention и data-quality", "never": "Не обращается к production-клиентам и не хранит provider secrets", "state": "Отдельный Railway staging и loopback production service live; databases/tokens раздельны, read/ingest auth и persistence проверены" },
         { "order": 6, "layer": "Traction hub", "owns": "Overview, health polling, общий доступ и сравнимость продуктов", "never": "Не угадывает продуктовые определения Narra", "state": "Production slot active с логотипом; poller healthy, dashboard за Basic Auth, health public, ingest token-protected" }
       ],
@@ -473,11 +549,11 @@
       ],
       "canonical_metrics": [
         { "order": 1, "metric": "Ever used", "narra_definition": "Distinct HMAC installation IDs, которые хотя бы раз открыли книгу; простая установка или app_open не считается", "window": "Вся история с cutover", "guardrail": "Один installation actor-space; test/staging исключены" },
-        { "order": 2, "metric": "DAU", "narra_definition": "Distinct installations с квалифицированной reading session или осмысленным продуктовым действием", "window": "Trailing 24h", "guardrail": "Фоновые health/update события не создают активность" },
+        { "order": 2, "metric": "DAU", "narra_definition": "Distinct installations с квалифицированной reading session или осмысленным продуктовым действием", "window": "Trailing 24h", "guardrail": "Только origin=user; background/health/update не создают активность" },
         { "order": 3, "metric": "WAU", "narra_definition": "Те же active actors, что в DAU", "window": "Trailing 7d", "guardrail": "Не сумма DAU; только distinct actor IDs" },
         { "order": 4, "metric": "MAU", "narra_definition": "Те же active actors, что в DAU", "window": "Trailing 30d", "guardrail": "Не рисовать периоды до начала измерения нулями" },
         { "order": 5, "metric": "Sessions / DAU", "narra_definition": "Distinct qualified sessions за 24h / DAU; новая сессия после 30 минут бездействия", "window": "Trailing 24h", "guardrail": "Сессия квалифицируется ≥60 с или значимым действием; denominator=0 → ключ опускается" },
-        { "order": 6, "metric": "Tools / DAU", "narra_definition": "Пользовательские AI requests за 24h / DAU", "window": "Trailing 24h", "guardrail": "Retry/fallback attempts не увеличивают tool count" }
+        { "order": 6, "metric": "Tools / DAU", "narra_definition": "Logical AI requests с origin=user за 24h / DAU", "window": "Trailing 24h", "guardrail": "Background jobs и provider retry/fallback attempts не увеличивают tool count" }
       ],
       "narra_dashboard": [
         { "order": 1, "section": "Audience", "metrics": "Ever used, DAU/WAU/MAU, new installations, active versions", "decision": "Есть ли реальное использование и принят ли новый релиз" },
@@ -494,17 +570,17 @@
       ],
       "events": [
         { "order": 1, "group": "Lifecycle", "events": "app_opened, app_closed, update_offered/downloaded/verified/installed, app_version_seen", "safe_properties": "app_version, OS major, arch, channel, status, duration bucket", "exclude": "Имя пользователя, пути к файлам, device fingerprint" },
-        { "order": 2, "group": "Library/import · Extended", "events": "book_import_started/completed/failed, book_analysis_started/completed/failed", "safe_properties": "format, source_class, size/chapter/duration/character-count buckets, stage, safe error_code", "exclude": "Название, автор, URL, имя файла, текст, prompt/response" },
+        { "order": 2, "group": "Library/import · Extended", "events": "book_import_started/completed/failed, book_analysis_started/completed/failed", "safe_properties": "format, source_class, size/chapter/duration/character-count buckets, stage, safe error_code, origin=user|background", "exclude": "Название, автор, URL, имя файла, текст, prompt/response" },
         { "order": 3, "group": "Reading", "events": "reading_session_started/qualified/ended, chapter_changed/completed", "safe_properties": "session_id, elapsed seconds, chapter position bucket, navigation type", "exclude": "Текст страницы, цитаты, заголовки глав" },
         { "order": 4, "group": "Immersive features", "events": "bookmark_added, note_added, character_opened, chat_opened", "safe_properties": "feature, builtin/imported, success", "exclude": "Заметка, цитата, имя персонажа, контекст сцены" },
-        { "order": 5, "group": "AI request", "events": "ai_request_started/completed/failed; answer_feedback_submitted schema ready, UI producer planned", "safe_properties": "request_id, purpose, route, status, latency, safe error_code, rating", "exclude": "Prompt, response, messages, memory, book excerpt" },
-        { "order": 6, "group": "Provider attempt", "events": "provider_attempt_completed/failed/not_configured", "safe_properties": "attempt event_id, request_id, provider, model, retry_index, latency, status, safe error_code", "exclude": "Credentials, headers, provider response body" },
-        { "order": 7, "group": "Media/playback · Extended", "events": "media_job enqueued/started/completed/failed/cancelled; tts_first_audio_ready; playback started/abandoned", "safe_properties": "Closed enums и coarse buckets: job type, provider/model, quality, cache hit, queue wait, latency, retries, size", "exclude": "Audio, image, video, transcript, generation prompt, book/character names" }
+        { "order": 5, "group": "AI request", "events": "ai_request_started/completed/failed; answer_feedback_submitted schema ready, UI producer planned", "safe_properties": "request_id, purpose, route, status, latency, safe error code, rating, origin=user|background; background actor events are Extended", "exclude": "Prompt, response, messages, memory, book excerpt" },
+        { "order": 6, "group": "Provider attempt", "events": "provider_attempt_completed/failed/not_configured", "safe_properties": "attempt event_id, request_id, provider, model, retry_index, latency, status, safe error code, origin=user|background", "exclude": "Credentials, headers, provider response body" },
+        { "order": 7, "group": "Media/playback · Extended", "events": "media_job enqueued/started/completed/failed/cancelled; tts_first_audio_ready; playback started/abandoned", "safe_properties": "Closed enums/coarse buckets: job type, provider/model, quality, cache hit, queue wait, latency, retries, size, origin=user|background", "exclude": "Audio, image, video, transcript, generation prompt, book/character names" }
       ],
       "security_work": [
-        { "order": 1, "priority": "P0", "area": "Gateway auth", "work": "Закрытый staging: signed per-install token с TTL, registration/IP limits и per-install quotas. Public: отдельный entitlement + revocation", "acceptance": "Дорогой endpoint без token получает 401; общий секрет сборки не используется как публичная лицензия" },
+        { "order": 1, "priority": "P0", "area": "Gateway auth", "work": "Открытая auto-enrollment beta: короткий per-install token, registration/IP velocity limits, revocation и per-install/global quotas", "acceptance": "Дорогой endpoint без token получает 401; конкретная установка отзывается; утечка cohort token ограничена budget/circuit breaker" },
         { "order": 2, "priority": "P0", "area": "Rate/queue limits", "work": "Ограничить RPM, concurrency, body sizes, retries и очередь отдельно для LLM/image/video/speech", "acceptance": "Один клиент не может занять все GPU/LLM slots или вызвать неограниченный расход" },
-        { "order": 3, "priority": "P0", "area": "Transport", "work": "HTTPS к LiteLLM; video HTTP разрешается только явным staging flag и виден в readiness; до public — HTTPS/защищённый туннель", "acceptance": "Публичный релиз не передаёт ключи и пользовательский контент через plaintext HTTP" },
+        { "order": 3, "priority": "P0", "area": "Transport", "work": "Video HTTP только internal staging test data; до внешней no-invite beta — HTTPS relay. LiteLLM возвращается только через HTTPS/private tunnel", "acceptance": "Ни один внешний beta/public media или credential не пересекает plaintext network hop" },
         { "order": 4, "priority": "P0", "area": "Updater", "work": "HTTPS latest-mac.yml с SHA-512, Developer-ID-signed app, notarized/stapled DMG, tag/version gate и rollback; renderer не задаёт URL", "acceptance": "Подменённый ZIP/app отвергается updater/code signature; clean install проходит Gatekeeper" },
         { "order": 5, "priority": "P1", "area": "Import/SSRF", "work": "Повторная проверка каждого redirect, DNS/IP policy, timeout, streaming byte cap, safe content types", "acceptance": "Open redirect не достигает private/metadata addresses; oversized response не буферизуется" },
         { "order": 6, "priority": "P1", "area": "EPUB/ZIP", "work": "Path containment, realpath/symlink checks, entry/count/ratio limits, temp cleanup", "acceptance": "Traversal, symlink escape и zip bomb fixtures безопасно отклоняются" },
@@ -520,7 +596,7 @@
         { "order": 3, "phase": "3 · OpenRouter + Giga routing", "scope": "Purpose routes, ZDR/data-deny, input/output tokens, exact cost + coverage, retry/fallback policy, staging evaluation set", "result": "OpenRouter E2E зелёный; Giga adapter готов, но fail-closed ждёт HTTPS/private tunnel LiteLLM", "estimate": "1–2 дня", "dependency": "Копировать credentials точечно; public HTTP LLM URL и Giga fallbacks исключить" },
         { "order": 4, "phase": "4 · Analytics client/outbox", "scope": "Installation ID, priority local queue, essential/extended event tiers, rotated JSONL audit, segmented Traction outbox, extended opt-out", "result": "Offline/restart не теряют и не дублируют essential события; poison events изолируются; opt-out не отключает canonical минимум", "estimate": "1.5–2.5 дня", "dependency": "Volume нужен только для staging проверки" },
         { "order": 5, "phase": "5 · stats-narra + Traction", "scope": "Шесть canonical KPI, 6 Tools definitions, 10 diagnostics, provider/model/token/cost quality, contract tests, logo", "result": "Production hub показывает Narra live; staging/production databases раздельны, Overview и detailed dashboard честно считаются", "estimate": "1.5–2.5 дня", "dependency": "Завершено; AIWA late tuning и live cutover учтены" },
-        { "order": 6, "phase": "6 · Safe updater and signing", "scope": "Universal arm64+x64 build, hardened runtime, Developer ID signing, SHA-512 metadata, app+DMG notarization/stapling, draft GitHub Release", "result": "Clean install проходит Gatekeeper на Apple Silicon и Intel; данные сохраняются", "estimate": "2–3 дня", "dependency": "Владелец Apple Team добавляет matching certificate/API key secrets; update-feed workflow готов" },
+        { "order": 6, "phase": "6 · Safe updater and signing", "scope": "Manual unsigned CI preflight; local Keychain signing/notarization/stapling; verify/checksums/SBOM; local upload to draft Release", "result": "Clean install проходит Gatekeeper на Apple Silicon и Intel; credentials не покидают Mac", "estimate": "2–3 дня", "dependency": "Нужны local matching Team profile/API key и разрешение com.narra.app; signed artifact ещё не собран" },
         { "order": 7, "phase": "7 · Railway staging", "scope": "Read-only prod audit, staging + /data, selected safe provider credentials, separate app/analytics secrets, HTTP-video risk flag, smoke/load/failure tests", "result": "Gateway/stats infrastructure, auth, OpenRouter, Sber media, Kandinsky/video и analytics persistence E2E зелёные; старый production gateway не изменён", "estimate": "1–2 дня", "dependency": "Завершено; public release ждёт secure LiteLLM/video transports" },
         { "order": 8, "phase": "8 · Release and observation", "scope": "RC, update внутренних установок, version adoption, provider/cost reconciliation, rollback rehearsal", "result": "Подписанный релиз, наблюдаемый gateway и проверенный rollback", "estimate": "1–2 дня + наблюдение", "dependency": "Все release gates" }
       ],
@@ -531,7 +607,7 @@
         { "phase": "3 · OpenRouter + Giga", "effort_mid": 1.5, "estimate": "1–2 дня", "dependency": "OpenRouter live; Giga ждёт secure transport" },
         { "phase": "4 · Analytics/outbox", "effort_mid": 2.0, "estimate": "1.5–2.5 дня", "dependency": "Завершено: отдельный stats endpoint/Volume/token" },
         { "phase": "5 · stats-narra", "effort_mid": 2.0, "estimate": "1.5–2.5 дня", "dependency": "Завершено: production Traction live" },
-        { "phase": "6 · Updater/signing", "effort_mid": 2.5, "estimate": "2–3 дня", "dependency": "Workflow готов; ждём Apple Team secrets" },
+        { "phase": "6 · Updater/signing", "effort_mid": 2.5, "estimate": "2–3 дня", "dependency": "Local path готов; ждём notarization profile" },
         { "phase": "7 · Railway staging", "effort_mid": 1.5, "estimate": "1–2 дня", "dependency": "Завершено; public transport gates отдельно" },
         { "phase": "8 · Release", "effort_mid": 1.5, "estimate": "1–2 дня + наблюдение", "dependency": "Все release gates" }
       ],
@@ -548,11 +624,11 @@
       ],
       "responsibilities": [
         { "order": 1, "lane": "Репозиторий Narra", "now": "Schemas, tests, hardening, import/EPUB, provider abstraction, analytics queue, logo asset", "later": "Merge/release после ревью", "owner": "Мы" },
-        { "order": 2, "lane": "Gateway", "now": "Railway staging v2, /data, separate secrets, quotas, exact-host video HTTP policy, ZDR/data-deny, strict terminal attempts и Traction outbox live", "later": "Secure LiteLLM/video transport, entitlement и отдельный production gateway cutover", "owner": "Мы + Railway access" },
+        { "order": 2, "lane": "Gateway", "now": "Railway staging v2, /data, separate secrets, quotas, exact-host video HTTP policy, ZDR/data-deny, strict terminal attempts и Traction outbox live", "later": "Auto-enrollment/revocation, secure LiteLLM/video transport и отдельный production gateway cutover", "owner": "Мы + Railway access" },
         { "order": 3, "lane": "OpenRouter/Giga", "now": "OpenRouter HTTPS purpose routes и E2E; Giga adapter/usage/cost harness готов, но current LiteLLM public HTTP исключён", "later": "HTTPS/private tunnel LiteLLM, затем Giga smoke и billing reconciliation", "owner": "Мы + владелец LiteLLM transport" },
         { "order": 4, "lane": "Traction", "now": "Production module active: loopback systemd service, separate token/database, logo, six canonical KPI, healthy poller and protected dashboard", "later": "Подключить production gateway token только во время reviewed v2 cutover", "owner": "Мы + доступ к Traction ingest" },
         { "order": 5, "lane": "Railway", "now": "Production read-only audited; isolated gateway/stats staging domains, Volumes and secrets live; analytics/media E2E зелёные", "later": "Reviewed source/autodeploy policy и отдельный production cutover после release gates", "owner": "Мы; production gateway mutation только по отдельному release gate" },
-        { "order": 6, "lane": "Apple release", "now": "Universal packaging, entitlements/fuses, локальная Developer ID identity Жени и draft GitHub Release/update-feed workflow готовы", "later": "Владелец Team Жени добавляет matching Apple notarization secrets; затем signed/notarized RC и двухархитектурный upgrade test", "owner": "Мы + владелец Apple Team Жени + владелец Intel-проверки" },
+        { "order": 6, "lane": "Apple release", "now": "Manual unsigned CI preflight, local release script, entitlements/fuses и локальная Developer ID identity Жени готовы", "later": "Local matching Team profile/API key; signed/notarized RC и двухархитектурный upgrade test", "owner": "Мы + владелец Apple Team Жени + владелец Intel-проверки" },
         { "order": 7, "lane": "Telemetry policy", "now": "Всегда включённый essential tier + default-on extended tier с opt-out, allowlist и selective queue cleanup", "later": "Финальный privacy text перед релизом", "owner": "Мы + утверждение текста от тебя/Сони" }
       ]
     }
@@ -578,20 +654,20 @@
       "query": {
         "engine": "git",
         "description": "Текущий reviewed candidate ветки feat/narra-release-foundation; production gateway этой веткой ещё не переключался.",
-        "executed_at": "2026-07-23T15:00:00+03:00",
+        "executed_at": "2026-07-23T20:30:00+03:00",
         "language": "TypeScript/JavaScript/Python/HTML",
-        "tables_used": ["server/index.mjs", "server/event-store.mjs", "src/main/telemetry.ts", "src/main/pdf-worker.ts", "stats/server.py", "stats/index.html", ".github/workflows/release-macos.yml"]
+        "tables_used": ["server/index.mjs", "server/event-store.mjs", "src/main/telemetry.ts", "src/main/pdf-worker.ts", "src/renderer/lib/scenario.ts", "src/renderer/screens/Reader.tsx", "src/renderer/lib/ttsController.ts", "stats/server.py", "stats/index.html", ".github/workflows/release-macos.yml"]
       }
     },
     {
       "id": "traction_contract",
       "label": "Traction — canonical Overview и контракт модуля",
-      "href": "https://github.com/q121212/Traction/tree/44f99efb55b721b08b4ebbdb6cc4df73b8523b91",
+      "href": "https://github.com/q121212/Traction/tree/144341a12c07c625d99c172eed62681e3f14ce2d",
       "query": {
         "engine": "artifact-snapshot",
         "sql": "SELECT metric, narra_definition, window, guardrail FROM canonical_metrics ORDER BY order",
         "description": "Ревью SPEC, ONBOARDING, hub и контрактных тестов после унификации шести canonical-метрик.",
-        "executed_at": "2026-07-23T13:20:00+03:00",
+        "executed_at": "2026-07-23T14:29:41+03:00",
         "language": "Markdown/Python/JavaScript",
         "tables_used": ["SPEC.md", "ONBOARDING.md", "service/server.py", "hub/index.html", "tests/test_contract.py"]
       }
@@ -617,11 +693,27 @@
       }
     },
     {
+      "id": "salutespeech_staging_benchmark",
+      "label": "Narra SaluteSpeech staging benchmark — 23 июля 2026",
+      "query": {
+        "engine": "Railway staging console",
+        "description": "Пять последовательных синтезов одного текста длиной 708 символов для Erm_24000 и Erm_48000; затем exact-case probe присланных private voice codes. Credentials не извлекались из Railway и не печатались.",
+        "executed_at": "2026-07-23T18:30:00+03:00",
+        "language": "JavaScript",
+        "tables_used": ["server/http.mjs", "server/sber-tls.mjs", "https://smartspeech.sber.ru/rest/v1/text:synthesize"],
+        "metric_definitions": [
+          "latency_ms = wall-clock duration одного synchronous synthesis request",
+          "avg_bytes = средний размер полученного WAV",
+          "Один текст и пять последовательных запусков на качество; это направляющий тест, не полный load benchmark"
+        ]
+      }
+    },
+    {
       "id": "engineering_estimate",
       "label": "Инженерная оценка плана Narra от 23 июля 2026",
       "query": {
         "engine": "duckdb",
-        "sql": "SELECT * FROM (VALUES ('0 · Contract freeze', 0.75, '0.5–1 день', 'Нет'), ('1 · Security foundation', 3.0, '2–4 дня', 'Нет'), ('2 · Gateway v2', 2.5, '2–3 дня', 'Нет'), ('3 · OpenRouter + Giga', 1.5, '1–2 дня', 'OpenRouter live; Giga ждёт secure transport'), ('4 · Analytics/outbox', 2.0, '1.5–2.5 дня', 'Завершено: отдельный stats endpoint/Volume/token'), ('5 · stats-narra', 2.0, '1.5–2.5 дня', 'Завершено: production Traction live'), ('6 · Updater/signing', 2.5, '2–3 дня', 'Workflow готов; ждём Apple Team secrets'), ('7 · Railway staging', 1.5, '1–2 дня', 'Завершено; public transport gates отдельно'), ('8 · Release', 1.5, '1–2 дня + наблюдение', 'Все release gates')) AS effort(phase, effort_mid, estimate, dependency)",
+        "sql": "SELECT * FROM (VALUES ('0 · Contract freeze', 0.75, '0.5–1 день', 'Нет'), ('1 · Security foundation', 3.0, '2–4 дня', 'Нет'), ('2 · Gateway v2', 2.5, '2–3 дня', 'Нет'), ('3 · OpenRouter + Giga', 1.5, '1–2 дня', 'OpenRouter live; Giga ждёт secure transport'), ('4 · Analytics/outbox', 2.0, '1.5–2.5 дня', 'Завершено: отдельный stats endpoint/Volume/token'), ('5 · stats-narra', 2.0, '1.5–2.5 дня', 'Завершено: production Traction live'), ('6 · Updater/signing', 2.5, '2–3 дня', 'Local path готов; ждём notarization profile'), ('7 · Railway staging', 1.5, '1–2 дня', 'Завершено; public transport gates отдельно'), ('8 · Release', 1.5, '1–2 дня + наблюдение', 'Все release gates')) AS effort(phase, effort_mid, estimate, dependency)",
         "description": "Диапазоны трудоёмкости по этапам, сформированные из объёма известных изменений и обязательных проверок; midpoint используется только для сравнительного графика.",
         "executed_at": "2026-07-23T12:00:00+03:00",
         "language": "sql",

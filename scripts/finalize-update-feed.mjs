@@ -3,13 +3,26 @@ import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import YAML from 'yaml'
 
-const releaseDir = path.resolve('release')
+const versionIndex = process.argv.indexOf('--version')
+const expectedVersion =
+  versionIndex >= 0
+    ? String(process.argv[versionIndex + 1] || '').trim()
+    : String(process.env.npm_package_version || '').trim()
+if (!expectedVersion) throw new Error('Expected --version X.Y.Z')
+
+const releaseDir = path.resolve(process.env.NARRA_RELEASE_DIR || 'release')
 const feedPath = path.join(releaseDir, 'latest-mac.yml')
 const document = YAML.parse(await fs.readFile(feedPath, 'utf8'))
+const expectedZipName = `Narra-${expectedVersion}-universal.zip`
+if (String(document.version) !== expectedVersion) {
+  throw new Error(`latest-mac.yml version must be ${expectedVersion}`)
+}
 const zipFiles = Array.isArray(document.files)
-  ? document.files.filter((entry) => typeof entry?.url === 'string' && entry.url.endsWith('-universal.zip'))
+  ? document.files.filter((entry) => entry?.url === expectedZipName)
   : []
-if (zipFiles.length !== 1) throw new Error('latest-mac.yml must contain exactly one universal ZIP')
+if (zipFiles.length !== 1) {
+  throw new Error(`latest-mac.yml must contain exactly one ${expectedZipName}`)
+}
 
 const zip = zipFiles[0]
 const zipPath = path.join(releaseDir, path.basename(zip.url))

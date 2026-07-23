@@ -1,15 +1,18 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP="release/mac-universal/Narra.app"
-DMG="$(find release -maxdepth 1 -name 'Narra-*-universal.dmg' -print -quit)"
-ZIP="$(find release -maxdepth 1 -name 'Narra-*-universal.zip' -print -quit)"
-UPDATE_YML="release/latest-mac.yml"
+APP_VERSION="${1:-}"
+[ -n "$APP_VERSION" ] || { echo "Usage: scripts/verify-macos-release.sh X.Y.Z"; exit 1; }
+RELEASE_DIR="${NARRA_RELEASE_DIR:-release}"
+APP="$RELEASE_DIR/mac-universal/Narra.app"
+DMG="$RELEASE_DIR/Narra-${APP_VERSION}-universal.dmg"
+ZIP="$RELEASE_DIR/Narra-${APP_VERSION}-universal.zip"
+UPDATE_YML="$RELEASE_DIR/latest-mac.yml"
 [ -d "$APP" ] || { echo "Missing universal app: $APP"; exit 1; }
-[ -n "$DMG" ] || { echo "Missing universal DMG"; exit 1; }
-[ -n "$ZIP" ] || { echo "Missing universal ZIP for macOS auto-update"; exit 1; }
+[ -s "$DMG" ] || { echo "Missing exact universal DMG: $DMG"; exit 1; }
+[ -s "$ZIP" ] || { echo "Missing exact universal ZIP for macOS auto-update: $ZIP"; exit 1; }
 [ -s "$UPDATE_YML" ] || { echo "Missing latest-mac.yml"; exit 1; }
-node scripts/finalize-update-feed.mjs --verify
+node scripts/finalize-update-feed.mjs --verify --version "$APP_VERSION"
 
 ARCHS="$(lipo -archs "$APP/Contents/MacOS/Narra")"
 case " $ARCHS " in *' arm64 '* ) ;; *) echo "arm64 slice missing"; exit 1;; esac

@@ -13,7 +13,8 @@
 | Traction production | ✅ Live | Narra активна, dashboard защищён, poller healthy |
 | Шесть canonical-метрик | ✅ Контракт готов | При пустом DAU ratios показываются как `—`, а не исчезают и не превращаются в ложный `0` |
 | Universal unsigned macOS | ✅ QA готов | arm64 + x64 упаковываются в один артефакт |
-| Signed/notarized macOS | ⏳ Credentials | Workflow готов; Apple-секретов Narra пока нет |
+| Signed macOS | ⏳ Local RC | Локальный release path готов; подписанный артефакт ещё не собран |
+| Notarized macOS | ⏳ Credentials | Для публичного DMG всё ещё нужен matching Team API key Жени |
 | Giga через LiteLLM | ⏳ Transport | Адаптер сохранён; до защищённого relay используется OpenRouter |
 | Video в public release | ⏳ Transport/capacity | В staging работает по явно разрешённому HTTP; для public нужен HTTPS edge relay и durable queue |
 | Production gateway | ⏳ One-time cutover | Не миграция старых пользователей, а отдельная проверяемая публикация нового production-контура |
@@ -112,21 +113,30 @@ LLM-запросов. TTS не может начать работу, пока н
 ### Целевой алгоритм
 
 1. После импорта и закрепления voice plan первая глава размечается в фоне.
-2. Чанки делаются адаптивными, ориентир — 3–5 тысяч символов с разбиением по
-   абзацам и границам прямой речи.
-3. До трёх чанков размечаются параллельно; результаты собираются в исходном
+2. Первый bootstrap-чанк намеренно маленький: 600–900 символов, но заканчивается
+   только на границе предложения или реплики.
+3. Из готового bootstrap-чанка первым синтезируется микро-сегмент на 150–300
+   символов — обычно 1–2 предложения. Он начинает играть немедленно.
+4. Остальная глава режется адаптивно по 3–5 тысяч символов с сохранением
+   абзацев и границ прямой речи.
+5. До трёх оставшихся чанков размечаются параллельно; результаты собираются в исходном
    порядке. Лимит остаётся server-side и не может занять все LLM slots.
-4. Модель возвращает компактные метки по paragraph/sentence IDs:
+6. Модель возвращает компактные метки по paragraph/sentence IDs:
    `narration|speech`, character ID и emotion — без повторной отправки полного
    текста главы в JSON-ответе.
-5. Первый готовый непрерывный блок сразу передаётся в progressive TTS.
-   Пользователь слышит начало, пока остальная глава продолжает размечаться.
-6. При 70–80% чтения или прослушивания текущей главы в фоне размечается следующая.
-7. Одновременные запросы одной и той же главы coalesce в одну job; результат
-   кэшируется по hash текста, markup version, model и voice-plan version.
+7. Пока первый микро-сегмент играет, TTS готовит следующий сегмент. Начинаем с
+   одного prefetch; достаточно ли его при реальной параллельной нагрузке,
+   проверяет end-to-end benchmark по underrun rate и p95 buffer headroom.
+8. При 70–80% чтения или прослушивания текущей главы в фоне размечается следующая.
+9. Одновременные запросы одной и той же главы coalesce в одну job; если
+   пользователь нажал «Слушать» во время background job, существующий
+   bootstrap-чанк получает интерактивный приоритет без второго LLM-запроса.
+10. Результат кэшируется по hash текста, markup version, model и voice-plan
+   version; аудио — дополнительно по voice, sample rate и prosody version.
 
-Фоновая разметка помечается `origin=background` и не считается пользовательским
-tool action: она не создаёт active day, reading session или Tools / DAU.
+Закрытый event-контракт получает enum `origin=user|background`. Только
+`origin=user` может создавать active day, reading session или Tools / DAU.
+`origin=background` не считается пользовательским tool action.
 Actor-linked диагностика фоновых jobs относится к Extended и исчезает при
 opt-out; всегда включёнными остаются только безакторные operational aggregates
 gateway — количество, длительность, ошибки и расход без installation ID.
@@ -221,21 +231,39 @@ throughput ≈ 60 минут / средняя длительность job
 
 ### Video
 
-Для public release простой `Railway → http://87.242.117.37:5051` неприемлем: по незашифрованному каналу проходят bearer credential, изображение и иногда аудио.
+Для внешней beta простой `Railway → http://<video-origin>` неприемлем: по
+незашифрованному каналу проходят credential, изображение и иногда аудио.
 
 Railway может выдать новому proxy-service бесплатный HTTPS-домен
 `*.up.railway.app`. Это защищает только участок `клиент/gateway → Railway`.
-Если proxy затем обращается к `http://87.242.117.37:5051`, второй участок всё
+Если proxy затем обращается к `http://<video-origin>`, второй участок всё
 равно идёт открытым по интернету. Такой relay полезен для единой авторизации,
 лимитов и скрытия upstream URL, но **не закрывает transport risk** и годится
 только как временный staging workaround.
+
+То, что HTTP-запрос делает наш Railway server, лучше прямого доступа клиента:
+upstream URL и master credentials не попадают в приложение. Но соединение
+`Railway → <video-origin>` всё равно идёт через публичную сеть. Провайдеры сети
+могут увидеть или изменить media body и перехватить повторно используемый
+bearer. Поэтому plaintext разрешён только для внутреннего staging на
+контролируемых тестовых данных. Открытая beta без приглашений ждёт HTTPS relay.
+
+До появления TLS риск ограничиваем:
+
+- отдельным video credential, не совпадающим ни с одним другим ключом;
+- HMAC-подписью `timestamp + nonce + body hash`, если video server можно
+  доработать: секрет не передаётся в каждом HTTP-запросе, replay блокируется;
+- Railway static outbound IP и firewall allowlist на `:5051`, если это доступно;
+- короткими timeout, body/concurrency limits и логами без media;
+- запретом отправлять тексты книг: только необходимые image/audio артефакты;
+- явным degraded readiness и отдельным бюджетным/queue circuit breaker.
 
 Workaround без VPN/tunnel — **HTTPS edge relay на самом video host**:
 
 ```text
 Railway Gateway
   → HTTPS + service token / optional mTLS
-  → Caddy/Nginx relay на 87.242.117.37
+  → Caddy/Nginx relay на video host
   → http://127.0.0.1:5051
 ```
 
@@ -255,16 +283,26 @@ Railway Gateway
 
 Тот же edge relay можно поставить перед LiteLLM, если он находится на контролируемом сервере.
 
-Если своего поддомена пока нет:
+### Поддомен MultiTool
 
-- для обычного Narra Gateway достаточно Railway-generated HTTPS domain;
-- для video staging можно временно оставить текущий exact-host HTTP с degraded
-  gate — пользовательские production-данные туда не направляются;
-- если можно установить `cloudflared` на video host, Quick Tunnel даст временный
-  случайный HTTPS URL без собственного домена, но он меняется при перезапуске и
-  подходит только для тестов;
-- для стабильного production hostname нужен named Cloudflare Tunnel с доменом
-  либо Caddy/Nginx и управляемый DNS.
+Разделяем имена:
+
+- `narra-staging.multitool.works` → изолированный Railway staging;
+- `narra.multitool.works` → зарезервирован в Vercel под reviewed production v2.
+
+Production-имя сейчас закономерно отвечает Vercel `DEPLOYMENT_NOT_FOUND`; к
+staging его не направляем. Для staging в Vercel DNS нужны записи:
+
+| Type | Name | Value |
+|---|---|---|
+| CNAME | `narra-staging` | `eb0cgdqy.up.railway.app` |
+| TXT | `_railway-verify.narra-staging` | `railway-verify=e50d4dec8125f3033c2140416ff008a5db67d600c8a3e1cff8c9bbc9b212b939` |
+
+После propagation Railway автоматически выпускает TLS; затем проверяем
+`HTTPS /health` и убеждаемся, что ответ больше не содержит `server: Vercel`.
+
+Поддомен закрывает TLS только до gateway. Маршрут к video остаётся
+server-to-server HTTP до установки TLS/HMAC/firewall-контролей выше.
 
 ---
 
@@ -290,8 +328,10 @@ provider API key, но это всё равно извлекаемый общи�
 gateway выдаёт stateless installation bearer с текущим TTL по умолчанию 30 дней;
 на macOS он хранится через Keychain-backed `safeStorage`, а не открытым текстом.
 
-Перед публичным релизом общий activation token должен быть заменён на
-одноразовый invite/account entitlement. Provider keys в клиенте не появятся.
+Принято целевое решение выпускать beta **без приглашений**, но безопасная
+auto-enrollment модель ещё не реализована и остаётся P0 gate до внешней раздачи.
+Provider keys в клиенте не появятся, а cohort token будет только мягким
+distribution gate, не криптографической защитой.
 
 ### Как доступ устроен сейчас
 
@@ -307,16 +347,20 @@ gateway выдаёт stateless installation bearer с текущим TTL по у
   символов блокирует запуск; открытая регистрация без него возможна только в
   non-production режиме после осознанного изменения конфигурации.
 
-Invite-only — это предлагаемая следующая реализация, а не уже существующая
-функция.
+Это текущее техническое состояние, но ещё не готовая открытая beta-модель.
+Технически нельзя доказать, что запрос
+пришёл именно из официального Electron binary: статический секрет можно
+извлечь, User-Agent подделать. Поэтому безопасность строится не на скрытности
+сборки, а на ограничении ущерба.
 
 ---
 
-## Что такое server-side entitlement и что требуется от владельца
+## Без приглашений: безопасная auto-enrollment модель
 
 Сейчас закрытая сборка использует общий activation secret. Если положить его в публичное Electron-приложение, его можно извлечь и раздать; уже выданные stateless install tokens нельзя индивидуально отозвать.
 
-Entitlement — простая серверная запись:
+В целевой реализации вместо invite entitlement используем автоматически
+создаваемую запись установки:
 
 ```text
 installation_id
@@ -329,19 +373,25 @@ token_version
 
 Поток:
 
-1. Пользователь вводит одноразовый invite code либо входит в аккаунт.
-2. Gateway проверяет разрешение.
-3. Gateway выдаёт stateless install token; сейчас TTL по умолчанию — 30 дней.
-4. Каждый дорогой запрос проверяет активность entitlement и quota.
-5. Конкретную установку можно отозвать без перевыпуска приложения.
+1. Приложение генерирует installation identity; пользователь ничего не вводит.
+2. Registration endpoint автоматически создаёт запись установки, но ограничен
+   по IP, частоте и общему числу новых регистраций.
+3. Cohort tokens версионируются server-side. Новая и предыдущая версии активны
+   одновременно в grace window не короче максимального bearer TTL плюс окна
+   обновления; старый token отключается только после adoption gate или
+   emergency revoke. Gateway хранит несколько hashed active token versions, а
+   не один секрет.
+4. Gateway выдаёт короткий bearer; целевой TTL — часы, а не текущие 30 дней.
+5. Refresh и дорогие запросы проверяют `status`, `token_version` и quota.
+6. Конкретную установку можно отозвать; повторная массовая регистрация
+   ограничивается IP/velocity controls.
+7. Отдельные per-install daily quotas, global provider budget, concurrency
+   fairness и emergency circuit breaker ограничивают стоимость даже при утечке
+   cohort token.
 
-Для закрытой beta достаточно SQLite на Railway Volume и списка одноразовых invites. От тебя не нужен внешний ключ или сервис.
-
-Нужно только продуктовое решение:
-
-- **рекомендация:** invite-only beta;
-- альтернатива: открытый anonymous launch с автоматическим entitlement и жёсткими квотами;
-- позднее: привязка к полноценному аккаунту/подписке.
+После реализации P0 пользовательский UX будет полностью открытым: скачал
+сборку — запустил — работает. Аккаунтов, invite codes и персональных данных для
+этого не требуется. До этого внешняя beta не раздаётся.
 
 ---
 
@@ -388,9 +438,10 @@ https://github.com/sboo-create/narra/releases/latest/download/
    внешнее распространение.
 
 Начиная со второго публичного обновления до релиза нужен отдельный HTTPS RC-feed.
-Workflow уже поддерживает его через repository variable
+Локальный release-скрипт уже принимает HTTPS URL через окружение
 `NARRA_UPDATE_BASE_URL`; сам staging origin (например, отдельный bucket/domain)
-ещё предстоит выбрать и предоставить.
+ещё предстоит выбрать и предоставить. Hosted workflow остаётся только unsigned
+preflight и намеренно не собирает публичный RC-feed.
 
 ---
 
@@ -401,14 +452,15 @@ Workflow уже поддерживает его через repository variable
 - universal `arm64 + x86_64` DMG и ZIP;
 - hardened runtime;
 - Electron fuses;
-- pinned release workflow;
+- ручной hosted unsigned preflight без Apple secrets;
+- локальный fail-closed `npm run release:local -- vX.Y.Z`;
 - exact tag/version check;
-- Developer ID signing inputs;
-- App Store Connect API-key notarization;
+- Developer ID signing из локального Keychain;
+- notarization через локальный `APPLE_KEYCHAIN_PROFILE` либо локальный Team API key;
 - stapling DMG;
 - Gatekeeper/codesign/lipo verification;
 - SHA-256, SHA-512 metadata и SBOM;
-- draft GitHub Release/update-feed;
+- загрузка только уже проверенных артефактов в draft GitHub Release;
 - отсутствие legacy endpoint в новом клиенте.
 
 ### Что найдено и принято
@@ -417,32 +469,30 @@ Workflow уже поддерживает его через repository variable
 - Принято продуктовое решение пока собирать Narra с Developer ID Жени.
 - Это решение само по себе не является разрешением владельца Apple Team на
   подпись `com.narra.app`; подтверждение остаётся release gate.
-- Identity пригодна для локального signed QA, но notarization всё равно требует credentials той же Apple Team.
-- GigaType workflows ожидают Apple secrets, но через доступный GitHub API они отсутствуют в repo/environment secrets.
-- Значения GitHub Actions secrets принципиально нельзя прочитать или скопировать из одного репозитория в другой.
+- Все signing/notarization credentials остаются только локально. В GitHub,
+  Railway и репозиторий их не добавляем.
+- Identity пригодна для локального signed QA, но notarization всё равно требует
+  локальный Team API key или сохранённый `notarytool` profile той же Apple Team.
+- Hosted workflow больше не подписывает и не notarize: он запускается только
+  вручную, делает unsigned universal preflight и имеет `contents: read`.
+- Локальный release script проверяет tag/version, тесты, Keychain identity,
+  notarization, stapling, Gatekeeper, архитектуры, checksums и SBOM; только затем
+  через локально авторизованный `gh` загружает готовые файлы в **draft** Release.
 - Локальных `.p8`/`.p12` файлов GigaType не найдено.
 
-### Что должен добавить Женя или владелец его Apple Team
+### Что требуется только для локальной notarization
 
-В GitHub Environment `narra-production` репозитория Narra:
+- App Store Connect **Team API key** `AuthKey_*.p8`, пригодный для `notarytool`;
+- Key ID, Issuer ID и Team ID той же команды;
+- разрешение владельца Team подписывать `com.narra.app`.
 
-| Narra secret | Откуда взять в GigaType/Apple |
-|---|---|
-| `MACOS_CERTIFICATE_P12_BASE64` | содержимое Developer ID Application `.p12` в base64 |
-| `MACOS_CERTIFICATE_PASSWORD` | пароль `.p12` |
-| `APPLE_API_KEY_P8` | App Store Connect **Team API key** `AuthKey_*.p8`, пригодный для `notarytool`; не individual API key |
-| `APPLE_API_KEY_ID` | Key ID |
-| `APPLE_API_ISSUER` | Issuer ID |
-| `APPLE_TEAM_ID` | Team ID сертификата |
-| `NARRA_PROXY_URL` | reviewed production gateway HTTPS origin |
-| `NARRA_ACTIVATION_TOKEN` | временный beta activation secret, минимум 32 символа |
-
-`NARRA_UPDATE_BASE_URL` теперь не secret: по умолчанию используется GitHub Releases. При переносе на object storage его можно задать repository variable.
-
-Нужно получить matching App Store Connect Team API key `.p8`, Key ID, Issuer ID и Team ID,
-а также подтвердить, что команда Жени разрешает подписывать bundle ID
-`com.narra.app`. Для локальной подписи можно использовать уже установленную
-identity; без matching notarization credentials публичный DMG всё равно не готов.
+Эти значения вводятся только в локальный Keychain/notarytool profile и не
+печатаются в логах. Для profile-варианта достаточно один раз выполнить локально
+`xcrun notarytool store-credentials <profile>` и перед сборкой задать только имя
+`APPLE_KEYCHAIN_PROFILE`; пароль и ключевой материал остаются в Keychain.
+Matching profile/API key пока не найден, поэтому notarized public DMG
+заблокирован. Наличие identity означает готовность пути, а не уже собранный
+signed артефакт.
 
 ---
 
@@ -464,26 +514,32 @@ identity; без matching notarization credentials публичный DMG всё
 | `book_import_started` | Extended | format, source_class, size_bucket |
 | `book_import_completed` | Extended | format, size_bucket, chapter_count_bucket, duration_bucket |
 | `book_import_failed` | Extended | format, stage, safe_error_code |
-| `book_analysis_started` | Extended | analysis_version, chapter_count_bucket |
-| `book_analysis_completed` | Extended | duration_bucket, character_count_bucket, pov, confidence_bucket |
-| `book_analysis_failed` | Extended | stage, safe_error_code |
+| `book_analysis_started` | Extended | analysis_version, chapter_count_bucket, `origin` |
+| `book_analysis_completed` | Extended | duration_bucket, character_count_bucket, pov, confidence_bucket, `origin` |
+| `book_analysis_failed` | Extended | stage, safe_error_code, `origin` |
 
 ### Media jobs
 
 | Событие | Tier | Безопасные свойства |
 |---|---|---|
-| `media_job_enqueued` | Extended | job_type, provider, model, quality, queue_depth_bucket |
-| `media_job_started` | Extended | job_type, queue_wait_bucket |
-| `media_job_completed` | Extended | job_type, generation_time_bucket, cache_hit, result_size_bucket |
-| `media_job_failed` | Extended | job_type, stage, safe_error_code, retry_count_bucket |
-| `media_job_cancelled` | Extended | job_type, queue_or_running |
-| `tts_first_audio_ready` | Extended | voice_id, sample_rate, first_audio_latency_bucket |
-| `tts_playback_started` | Extended | source, cache_hit |
-| `tts_playback_abandoned` | Extended | source, listened_fraction_bucket |
+| `media_job_enqueued` | Extended | job_type, provider, model, quality, queue_depth_bucket, `origin` |
+| `media_job_started` | Extended | job_type, queue_wait_bucket, `origin` |
+| `media_job_completed` | Extended | job_type, generation_time_bucket, cache_hit, result_size_bucket, `origin` |
+| `media_job_failed` | Extended | job_type, stage, safe_error_code, retry_count_bucket, `origin` |
+| `media_job_cancelled` | Extended | job_type, queue_or_running, `origin` |
+| `tts_first_audio_ready` | Extended | voice_id, sample_rate, first_audio_latency_bucket, `origin` |
+| `tts_playback_started` | Extended | source, cache_hit, `origin=user` |
+| `tts_playback_abandoned` | Extended | source, listened_fraction_bucket, `origin=user` |
 
 Все перечисленные import/media/playback события относятся к `Extended` и удаляются из локальной очереди при opt-out. Для incident response и защиты квот gateway независимо держит always-on агрегированные operational counters/logs без installation actor: общую глубину очереди, active jobs, provider error code, latency histogram и saturation. Они не отправляются как пользовательские Traction events.
 
-Все строковые значения закрыты enum-списками: `job_type`, `provider`, `model`, `quality`, `stage`, `safe_error_code`, `voice_id`, `sample_rate` и `source`. Все размеры, длительности, retry count и глубина очереди передаются заранее определёнными buckets, а не произвольными числами или строками.
+Все строковые значения закрыты enum-списками, включая обязательный
+`origin=user|background`. Background AI/media события всегда Extended и не
+могут входить в actor activity, sessions или Tools; если Extended отключена,
+для эксплуатации остаются только безакторные агрегаты. Foreground AI request
+учитывается в Tools один раз по logical `request_id`, provider attempts — никогда.
+Все размеры, длительности, retry count и глубина очереди передаются заранее
+определёнными buckets, а не произвольными числами или строками.
 
 Никогда не отправляются:
 
@@ -534,10 +590,30 @@ Cutover — не сложная миграция и не поддержка lega
 Клиент хранит стабильный `voice_id`, gateway хранит точный provider code:
 
 ```text
-joy → Erm_24000
+joy → Erm_48000
 ```
 
-Коды регистрозависимы: реальный AIWA-тест подтвердил, что `erm_24000` не работает, а `Erm_24000` работает.
+Коды регистрозависимы: реальный AIWA-тест подтвердил, что `erm_24000` не
+работает, а `Erm_24000` работает. Новый staging-тест подтвердил `Erm_48000`.
+
+### 24 kHz против 48 kHz
+
+23 июля 2026 на реальном staging key выполнено по пять последовательных
+синтезов одинакового текста длиной 708 символов:
+
+| Quality | Среднее | Медиана | Размер WAV |
+|---|---:|---:|---:|
+| `Erm_24000` | 2 023 мс | 1 960 мс | ~2,25 МБ |
+| `Erm_48000` | 2 625 мс | 2 179 мс | ~4,43 МБ |
+
+Raw latency rows, мс: `24 kHz = [2095, 1922, 2199, 1939, 1960]`;
+`48 kHz = [2162, 2792, 2179, 3877, 2117]`.
+
+48 kHz увеличил медианное время примерно на 11%, среднее — примерно на 30% из-за
+одного медленного ответа, а размер ответа — почти ровно вдвое. Решение: **48 kHz
+по умолчанию для нового voice registry**, без переключения качества посреди
+главы. Удвоенный first-audio payload компенсируем микро-сегментом 150–300
+символов; остальные сегменты синтезируются с одним prefetch.
 
 Реестр содержит:
 
@@ -558,23 +634,50 @@ joy → Erm_24000
 - остальные — по полу и приоритету;
 - unnamed extras — narrator;
 - Markov/Pirat — manual-only;
+- в целевом registry детским персонажам назначается Safronova по
+  детерминированному правилу ниже;
 - voice plan закрепляется на всю книгу;
 - ручная смена инвалидирует только аудио этого героя.
 
 Старые автоматические пулы `Bys/Tur/Pon` и `Ost/May/Nec` удаляются при
 подключении нового registry. Для narrator/главного героя используются
 ассистентские голоса Афина, Сбер и Джой. Остальные герои получают по полу только
-фамилии, отмеченные Соней в библиотеке
-`webfront-dev.cloud.delta.sbrf.ru/tts`. Само выделение/скриншот в текущем
-сообщении не передалось, поэтому перед реализацией нужен точный список отмеченных
-фамилий или технических кодов.
+библиотечные голоса Фокина, Стерлинга, Галустяна, Стремпаржевской, Цокаевой,
+Безлепкина, Егорова, Чернышовой, Изволова, Сафроновой и Ковалева. Марков и Пират
+не участвуют в автоназначении и остаются ручными пасхалками.
+
+На staging key в 48 kHz успешно проверены exact-case base codes:
+`Che`, `She`, `Erm`, `Gal`, `Ast`, `Ste`, `Tso`, `Bez`, `Ego`, `Izv`, `Chr`,
+`Saf`, `Ksa`, `Bsa`, `Mar`, `Kas`.
+
+Новый скриншот из внутреннего voice picker подтверждает пары
+`Erm→Джой`, `Gal→Галустян`, `Saf→Сафронова`, `Ast→Стерлинг`,
+`Ste→Стремпаржевская`, `Pik→ПИК`, `Boc→Бочаров`, `Kha→Хачатрян`,
+`Kud→Кудряшова`. Первые пять пересекаются с successful API probe; `Pik/Boc/Kha/Kud`
+ещё нужно отдельно проверить на текущем key и в 48 kHz.
+
+Код `Get` вернул HTTP 400 и с `24000`, и с `48000`; проверены все варианты
+регистра букв. Это либо опечатка, либо голос ещё не добавлен в key `gigacons`.
+Для остальных нужных фамилий полный `display name → exact code` mapping всё ещё
+не получен; сопоставлять старые отдельные списки по позиции нельзя.
+
+### Детерминированное правило Safronova
+
+- `child=true`, если подтверждённый возраст персонажа `≤12` **или** book-level
+  анализ вернул закрытый `age_group=child` с confidence `≥0.8`;
+- при неизвестном возрасте либо меньшей confidence используется обычный
+  gender-compatible library pool, а не Safronova;
+- Safronova — осознанное продуктовое исключение для child-role независимо от
+  пола персонажа; ручное переопределение остаётся доступным;
+- результат и `child_rule_version` фиксируются в voice plan на всю книгу, чтобы
+  повторный импорт или новая модель не меняли голос без явной миграции.
 
 Нерешённое правило: `Sber narrator + male third-person protagonist`. Среди оставшихся assistant voices нет мужского. Рекомендация — дать protagonist первому мужскому library voice, а не нарушать пол и не дублировать narrator.
 
-Каждый приватный голос тестируется на реальном ключе:
+Перед включением registry оставшаяся проверка:
 
-- exact case;
-- `24000` и `48000`;
+- exact `display name → provider code` mapping;
+- почему `Get` не provisioned;
 - text и текущий SSML;
 - HTTP status/content type;
 - WAV sample rate/duration;
@@ -584,22 +687,24 @@ joy → Erm_24000
 
 ## План реализации
 
-### P0 — до signed beta
+### P0 — до внешней beta без приглашений
 
 - [x] Gateway v2 и OpenRouter staging
 - [x] Stats staging и production Traction module
 - [x] Essential/extended telemetry split
 - [x] Universal unsigned package
-- [x] Draft GitHub Release/update-feed workflow
-- [ ] Apple secrets в `narra-production`
+- [x] Local release path + manual unsigned hosted preflight
+- [x] Local Developer ID identity для signed QA
+- [ ] Local matching Apple Team API key/profile для notarization
 - [x] Все шесть Traction slots видны постоянно
 - [ ] Voice registry и исправленные cache keys
 - [ ] Background-разметка первой главы после импорта
 - [ ] Bounded parallel/streaming chapter markup
 - [ ] Progressive TTS first-audio
 - [ ] Durable media job API и queue UX
-- [ ] HTTPS edge relay для video либо явный closed-beta gate
-- [ ] Minimal revocable invite entitlement
+- [x] Внутренний staging-only degraded HTTP video gate с тестовыми данными
+- [ ] HTTPS video relay до передачи media внешних beta-пользователей
+- [ ] Auto-enrolled revocable installation registry без приглашений
 
 ### P1 — перед public release
 
@@ -620,28 +725,23 @@ joy → Erm_24000
 - [ ] Server-side object cache/coalescing при доказанной потребности
 - [ ] Второй video worker/provider при недостаточном jobs/hour
 - [ ] Полная offline chapter/book synthesis
-- [ ] Account/subscription entitlement вместо invite beta
+- [ ] Account/subscription entitlement при появлении продуктовой потребности
 
 ---
 
 ## Что нужно решить владельцам
 
-1. Доступ к beta: оставить модель «все, у кого есть сборка или скопированный
-   общий token» или сделать одноразовые invites? Рекомендация: invite-only до
-   внешнего распространения.
-2. Пришли точный список фамилий/technical codes, которые Соня отметила для
-   автоматического назначения второстепенным героям.
-3. Как назначать голос при `Sber narrator + male protagonist`? Рекомендация:
+1. Нужны оставшиеся пары `display name → technical code`; девять пар со второго
+   скриншота уже зафиксированы без позиционных догадок. Отдельно нужно уточнить,
+   почему `Get` не provisioned на staging key.
+2. Как назначать голос при `Sber narrator + male protagonist`? Рекомендация:
    первый мужской library voice.
-4. Sample rate: `24000` по умолчанию или обязательный `48000`? Рекомендация:
-   `24000` для первого быстрого воспроизведения, `48000` как high-quality option.
-5. Сколько портретов готовить автоматически? Рекомендация: главный герой плюс
+3. Сколько портретов готовить автоматически? Рекомендация: главный герой плюс
    2–3 основных; остальные — при открытии карточки.
-6. Может ли владелец video host установить Caddy/Nginx или `cloudflared` рядом
-   с `:5051`? Без этого Railway proxy не шифрует второй участок.
-7. Может ли Женя/владелец его Apple Team дать matching notarization `.p8`,
+4. Может ли владелец video host установить Caddy/Nginx или `cloudflared` рядом
+   с process? Без этого Railway proxy не шифрует второй участок.
+5. Может ли Женя/владелец его Apple Team дать matching notarization `.p8`,
    Key ID, Issuer ID, Team ID и подтвердить `com.narra.app`?
-8. Какой бюджет/лимит допустим для capacity benchmark `1 → 2 → 5 → 10`?
-9. Safronova действительно подходит детям? До подтверждения не включать автоматически.
-10. Под «APK» имеется в виду Android? Текущий Narra — Electron desktop;
+6. Какой бюджет/лимит допустим для capacity benchmark `1 → 2 → 5 → 10`?
+7. Под «APK» имеется в виду Android? Текущий Narra — Electron desktop;
     Android потребует отдельного клиентского проекта.

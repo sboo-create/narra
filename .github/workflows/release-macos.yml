@@ -1,34 +1,25 @@
-name: Signed macOS release
+name: macOS release preflight (unsigned)
+
 on:
   workflow_dispatch:
     inputs:
       release_version:
-        description: 'Exact tag to build, for example v0.7.7'
+        description: 'Exact tag to verify, for example v0.7.7'
         required: true
         type: string
-  push:
-    tags: ['v*']
+
 permissions:
-  contents: write
+  contents: read
+
 jobs:
-  release:
+  preflight:
     runs-on: macos-14
-    # Configure required reviewers and branch/tag protection for this GitHub Environment.
-    environment: narra-production
     env:
-      RELEASE_VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.release_version || github.ref_name }}
-      # A published GitHub Release exposes latest-mac.yml and its ZIP through
-      # this stable HTTPS origin. Override with a repository variable only if
-      # Narra later moves the feed to dedicated object storage.
-      UPDATE_BASE_URL: ${{ vars.NARRA_UPDATE_BASE_URL || 'https://github.com/sboo-create/narra/releases/latest/download/' }}
+      RELEASE_VERSION: ${{ inputs.release_version }}
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          # Both tag pushes and manual runs build the exact immutable tag that
-          # is verified below, never whatever happens to be the default branch.
           ref: ${{ env.RELEASE_VERSION }}
-          # Do not leave the job-wide contents:write token in git config while
-          # dependency install, tests and build scripts execute.
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
@@ -42,84 +33,16 @@ jobs:
       - run: npm audit --prefix server --audit-level=moderate
       - run: python -m venv stats/.venv && stats/.venv/bin/pip install -r stats/requirements.txt
       - run: npm run typecheck && npm run test:gateway && npm run test:release && npm run test:stats
-      - name: Materialize App Store Connect key
-        env:
-          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
-          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-        run: |
-          umask 077
-          key_path="$RUNNER_TEMP/AuthKey_${APPLE_API_KEY_ID}.p8"
-          test -n "$APPLE_API_KEY_P8"
-          printf '%s' "$APPLE_API_KEY_P8" > "$key_path"
-          echo "APPLE_API_KEY=$key_path" >> "$GITHUB_ENV"
-      - name: Build signed universal app
-        env:
-          NODE_ENV: production
-          NARRA_PROXY_URL: ${{ secrets.NARRA_PROXY_URL }}
-          NARRA_ACTIVATION_TOKEN: ${{ secrets.NARRA_ACTIVATION_TOKEN }}
-          NARRA_UPDATE_BASE_URL: ${{ env.UPDATE_BASE_URL }}
-          CSC_LINK: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
-          CSC_KEY_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
-          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: npm run dist
-      - name: Notarize and staple DMG
-        env:
-          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: bash scripts/notarize-dmg.sh
-      - name: Remove temporary notarization key
-        if: always()
-        run: |
-          case "${APPLE_API_KEY:-}" in
-            "$RUNNER_TEMP"/AuthKey_*.p8) [ ! -f "$APPLE_API_KEY" ] || rm -f -- "$APPLE_API_KEY" ;;
-          esac
+      - name: Build unsigned universal preflight
+        run: npm run dist:unsigned
       - run: npm run smoke:pdf-worker
-      - run: npm run release:verify
-      - run: npm sbom --sbom-format cyclonedx > "release/Narra-${RELEASE_VERSION}.cdx.json"
+      - run: npm run release:verify:unsigned
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: Narra-${{ env.RELEASE_VERSION }}-universal
+          name: Narra-${{ env.RELEASE_VERSION }}-unsigned-preflight
           path: |
             release/Narra-*-universal.dmg
             release/Narra-*-universal.zip
             release/latest-mac.yml
             release/*.blockmap
-            release/Narra-*-universal.dmg.sha256
-            release/Narra-*-universal.zip.sha256
-            release/*.cdx.json
           if-no-files-found: error
-      - name: Stage verified files in a draft GitHub Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          if gh release view "$RELEASE_VERSION" >/dev/null 2>&1; then
-            test "$(gh release view "$RELEASE_VERSION" --json isDraft --jq .isDraft)" = true
-          else
-            gh release create "$RELEASE_VERSION" \
-              --verify-tag \
-              --draft \
-              --title "Narra ${RELEASE_VERSION}" \
-              --notes "Signed universal macOS release candidate. Do not publish until every documented release gate passes. For the first release, run the updater canary immediately after publication and before external distribution."
-          fi
-          shopt -s nullglob
-          assets=(
-            release/Narra-*-universal.dmg
-            release/Narra-*-universal.zip
-            release/latest-mac.yml
-            release/*.blockmap
-            release/*.sha256
-            release/*.cdx.json
-          )
-          test "${#assets[@]}" -ge 5
-          gh release upload "$RELEASE_VERSION" "${assets[@]}" --clobber
-      - name: Confirm temporary notarization key is absent
-        if: always()
-        run: |
-          case "${APPLE_API_KEY:-}" in
-            "$RUNNER_TEMP"/AuthKey_*.p8) test ! -e "$APPLE_API_KEY" ;;
-            "") ;;
-            *) exit 1 ;;
-          esac

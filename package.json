@@ -10,6 +10,7 @@
     "proxy": "node --env-file=server/.env server/index.mjs",
     "build": "electron-vite build",
     "dist": "node scripts/verify-release-env.mjs && electron-vite build && electron-builder --mac",
+    "release:local": "bash scripts/release-macos-local.sh",
     "dist:unsigned": "NARRA_UPDATE_BASE_URL=https://updates.invalid electron-vite build && CSC_IDENTITY_AUTO_DISCOVERY=false NARRA_UPDATE_BASE_URL=https://updates.invalid electron-builder --mac -c.mac.identity=null -c.mac.hardenedRuntime=false -c.mac.notarize=false && node scripts/finalize-update-feed.mjs",
     "release:verify": "bash scripts/verify-macos-release.sh",
     "release:verify:unsigned": "bash scripts/verify-unsigned-macos.sh",
