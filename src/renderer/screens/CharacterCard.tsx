@@ -99,8 +99,9 @@ export function CharacterCard({ id }: Props) {
       return
     }
     setSampling(true)
+    const voice = voiceFor(id)
     const res = await window.narra.synthesize(
-      { ssml: buildSsml(char.speechExamples[0] || 'Здравствуй.', 'neutral'), voice: voiceFor(id) },
+      { ssml: buildSsml(char.speechExamples[0] || 'Здравствуй.', 'neutral', voice), voice },
       `voicesample-${id}`
     )
     setSampling(false)

@@ -133,7 +133,7 @@ export class TtsController {
     const seg = this.opts.segments[idx]
     const voice = this.opts.voiceFor(seg.character)
     const res = await window.narra.synthesize(
-      { ssml: buildSsml(seg.text, seg.emotion), voice },
+      { ssml: buildSsml(seg.text, seg.emotion, voice), voice },
       this.opts.cacheKeyFor(idx)
     )
     if (res.ok) return res.data!.dataUrl
