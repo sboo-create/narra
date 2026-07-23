@@ -2,10 +2,13 @@ import base64
 import json
 import os
 from pathlib import Path
+import re
+import sys
 import tempfile
 import time
 import unittest
 import uuid
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 os.environ["STATS_DB"] = os.path.join(tempfile.mkdtemp(prefix="narra-stats-"), "events.db")
@@ -13,6 +16,7 @@ os.environ["STATS_ALLOW_UNAUTHENTICATED_INGEST"] = "1"
 os.environ["STATS_ENVIRONMENT"] = "test"
 
 import server  # noqa: E402
+import monitoring  # noqa: E402
 from starlette.requests import Request  # noqa: E402
 
 
@@ -54,6 +58,7 @@ class NarraStatsTest(unittest.TestCase):
     def setUp(self):
         with server.DB_LOCK:
             server._db.execute("DELETE FROM events")
+            server._db.execute("DELETE FROM monitor_samples")
             server._db.commit()
 
     def test_railway_config_pins_launcher_healthcheck_and_restart_policy(self):
@@ -68,10 +73,17 @@ class NarraStatsTest(unittest.TestCase):
         self.assertIn("railway up stats --path-as-root", readme)
         self.assertIn("/stats/railway.json", readme)
 
-    def test_i167_deploy_restarts_an_existing_service_after_code_update(self):
+    def test_i167_deploy_is_reviewed_staged_and_rollback_capable(self):
         deploy = Path(__file__).with_name("deploy.sh").read_text()
-        create_index = deploy.index("sudo install -d -o root -g root -m 0755")
-        rsync_index = deploy.index('rsync "${FLAGS[@]}"')
+        precondition_index = deploy.index("REMOTE_VERSION=")
+        create_index = deploy.index("sudo install -d -o root -g root -m 0755 '$REMOTE_RELEASES'")
+        rsync_indexes = [
+            match.start()
+            for match in re.finditer(r'rsync "\$\{FLAGS\[@\]\}"', deploy)
+        ]
+        self.assertEqual(len(rsync_indexes), 2)
+        rsync_index = rsync_indexes[1]
+        self.assertLess(precondition_index, create_index)
         self.assertLess(create_index, rsync_index)
         version_write_index = deploy.index("printf '%s\\n' \"$VERSION\"")
         version_mode_index = deploy.index('chmod 0644 "$TMP_VERSION"')
@@ -82,6 +94,18 @@ class NarraStatsTest(unittest.TestCase):
         self.assertLess(version_mode_index, version_rsync_index)
         self.assertIn("systemctl enable stats-narra", deploy)
         self.assertIn("systemctl restart stats-narra", deploy)
+        self.assertIn("REVIEWED_COMMIT", deploy)
+        self.assertIn("EXPECTED_REMOTE_SERVER_SHA256", deploy)
+        self.assertIn("source.backup(target)", deploy)
+        self.assertIn("rollback()", deploy)
+        self.assertIn("bash -se", deploy)
+        self.assertIn("flock -x /run/lock/stats-narra-deploy.lock", deploy)
+        self.assertGreaterEqual(deploy.count("EXPECTED_REMOTE_SERVER_SHA256"), 4)
+        self.assertLess(deploy.index("rollback()"), deploy.index('mv "$REMOTE_DIR" "$REMOTE_ROLLBACK"'))
+        self.assertIn('data.get("fresh") is True', deploy)
+        self.assertIn('min(checks) >= cutoff', deploy)
+        self.assertIn('deploy_started_at="$(date +%s)"', deploy)
+        self.assertIn("REMOTE_UNIT_BACKUP", deploy)
         self.assertNotIn("systemctl enable --now stats-narra", deploy)
 
     def test_railway_port_takes_precedence_over_local_stats_port(self):
@@ -122,12 +146,246 @@ class NarraStatsTest(unittest.TestCase):
                 server.dashboard_data(request_for("/dashboard")).status_code, 401
             )
             self.assertEqual(
+                server.monitors(request_for("/monitors")).status_code, 401
+            )
+            self.assertEqual(
                 server.summary(
                     request_for("/summary", f"Basic {encoded}")
                 ).status_code,
                 200,
             )
             self.assertEqual(server.health().status_code, 200)
+
+    def test_monitor_targets_are_fixed_https_and_classify_expected_states(self):
+        monitoring.validate_targets(server.MONITOR_TARGETS)
+        production = next(
+            target for target in server.MONITOR_TARGETS
+            if target.identifier == "production_gateway"
+        )
+        staging = next(
+            target for target in server.MONITOR_TARGETS
+            if target.identifier == "staging_gateway"
+        )
+        self.assertEqual(
+            monitoring.classify_response(
+                production,
+                503,
+                b'{"ok":false,"status":"not_ready","service":"narra-production"}',
+            ),
+            ("standby", None),
+        )
+        self.assertEqual(
+            monitoring.classify_response(
+                production,
+                503,
+                b'{"ok":true,"status":"not_ready","service":"narra-production"}',
+            ),
+            ("down", "HTTP_503"),
+        )
+        self.assertEqual(
+            monitoring.classify_response(
+                staging,
+                200,
+                b'{"ok":true,"degraded":[{"code":"VIDEO_PLAINTEXT_HTTP"}]}',
+            ),
+            ("degraded", "UPSTREAM_DEGRADED"),
+        )
+        self.assertEqual(
+            monitoring.classify_response(staging, 302, b"{}"),
+            ("down", "HTTP_302"),
+        )
+        with self.assertRaises(RuntimeError):
+            monitoring.validate_targets((
+                monitoring.MonitorTarget(
+                    "unsafe",
+                    "Unsafe",
+                    "https://127.0.0.1/health",
+                    "health",
+                ),
+            ))
+
+    def test_monitor_report_keeps_standby_available_and_down_visible(self):
+        now = time.time()
+        monitoring.store_samples(
+            server._db,
+            server.DB_LOCK,
+            [
+                {
+                    "target_id": "production_gateway",
+                    "checked_at": now - 30,
+                    "state": "standby",
+                    "http_status": 503,
+                    "latency_ms": 50.0,
+                    "tls_days_remaining": 80,
+                    "error_code": None,
+                },
+                {
+                    "target_id": "staging_gateway",
+                    "checked_at": now - 30,
+                    "state": "down",
+                    "http_status": 502,
+                    "latency_ms": 120.0,
+                    "tls_days_remaining": 80,
+                    "error_code": "HTTP_502",
+                },
+            ],
+        )
+        report = monitoring.monitor_report(
+            server._db, server.DB_LOCK, server.MONITOR_TARGETS, now=now
+        )
+        rows = {row["id"]: row for row in report["targets"]}
+        self.assertEqual(report["overall"], "down")
+        self.assertEqual(rows["production_gateway"]["windows"]["1h"]["availability"], 100.0)
+        self.assertEqual(rows["staging_gateway"]["windows"]["1h"]["availability"], 0.0)
+        self.assertEqual(rows["production_gateway"]["tls_days_remaining"], 80)
+
+    def test_monitor_report_marks_old_samples_stale(self):
+        now = time.time()
+        monitoring.store_samples(
+            server._db,
+            server.DB_LOCK,
+            [{
+                "target_id": "production_gateway",
+                "checked_at": now - 181,
+                "state": "standby",
+                "http_status": 503,
+                "latency_ms": 50.0,
+                "tls_days_remaining": 80,
+                "error_code": None,
+            }],
+        )
+        report = monitoring.monitor_report(
+            server._db,
+            server.DB_LOCK,
+            server.MONITOR_TARGETS,
+            now=now,
+            stale_after_seconds=180,
+        )
+        row = next(
+            item for item in report["targets"]
+            if item["id"] == "production_gateway"
+        )
+        self.assertEqual(row["state"], "down")
+        self.assertEqual(row["error_code"], "STALE")
+        self.assertFalse(report["fresh"])
+
+    def test_monitor_report_counts_large_probe_gaps_as_missing_coverage(self):
+        now = time.time()
+        monitoring.store_samples(
+            server._db,
+            server.DB_LOCK,
+            [
+                {
+                    "target_id": "production_gateway",
+                    "checked_at": now - 23 * 3600,
+                    "state": "standby",
+                    "http_status": 503,
+                    "latency_ms": 50.0,
+                    "tls_days_remaining": 80,
+                    "error_code": None,
+                },
+                {
+                    "target_id": "production_gateway",
+                    "checked_at": now - 10,
+                    "state": "standby",
+                    "http_status": 503,
+                    "latency_ms": 45.0,
+                    "tls_days_remaining": 80,
+                    "error_code": None,
+                },
+            ],
+        )
+        report = monitoring.monitor_report(
+            server._db,
+            server.DB_LOCK,
+            server.MONITOR_TARGETS,
+            now=now,
+            stale_after_seconds=180,
+            interval_seconds=60,
+        )
+        row = next(
+            item for item in report["targets"]
+            if item["id"] == "production_gateway"
+        )
+        day = row["windows"]["24h"]
+        self.assertEqual(row["state"], "standby")
+        self.assertEqual(day["samples"], 2)
+        self.assertGreater(day["expected_samples"], 1300)
+        self.assertLess(day["coverage"], 1.0)
+        self.assertEqual(day["availability"], day["coverage"])
+
+    def test_monitor_probe_enforces_total_deadline(self):
+        target = monitoring.MonitorTarget(
+            "deadline",
+            "Deadline",
+            "https://example.com/health",
+            "health",
+        )
+
+        def slow_request(_url, _timeout):
+            time.sleep(0.02)
+            return 200, b'{"ok":true}'
+
+        sample = monitoring.probe_target(
+            target,
+            timeout=0.01,
+            request_fn=slow_request,
+            tls_fn=lambda _url, _timeout: 80,
+        )
+        self.assertEqual(sample["state"], "down")
+        self.assertEqual(sample["error_code"], "TIMEOUT")
+
+    def test_monitor_process_is_terminated_at_absolute_deadline(self):
+        target = monitoring.MonitorTarget(
+            "deadline",
+            "Deadline",
+            "https://example.com/health",
+            "health",
+        )
+        started = time.monotonic()
+        sample = monitoring.probe_target_isolated(
+            target,
+            timeout=0.05,
+            command=[sys.executable, "-c", "import time; time.sleep(30)"],
+        )
+        self.assertLess(time.monotonic() - started, 1)
+        self.assertEqual(sample["state"], "down")
+        self.assertEqual(sample["error_code"], "TIMEOUT")
+
+    def test_monitor_rejects_dns_names_resolving_to_private_addresses(self):
+        with patch(
+            "monitoring.socket.getaddrinfo",
+            return_value=[
+                (
+                    monitoring.socket.AF_INET,
+                    monitoring.socket.SOCK_STREAM,
+                    6,
+                    "",
+                    ("127.0.0.1", 443),
+                )
+            ],
+        ):
+            with self.assertRaises(ValueError):
+                monitoring._public_addresses("example.com", 443)
+
+    def test_dashboard_includes_operational_monitoring_without_product_events(self):
+        data = server.compute_dashboard(1)
+        self.assertEqual(data["monitoring"]["overall"], "unknown")
+        self.assertEqual(
+            {row["id"] for row in data["monitoring"]["targets"]},
+            {
+                "production_gateway",
+                "staging_gateway",
+                "production_analytics",
+                "staging_analytics",
+            },
+        )
+        health = server.health().body.decode()
+        self.assertIn('"monitoring_fresh":false', health)
+        self.assertEqual(
+            server.MONITOR_STALE_AFTER_SECONDS,
+            max(90, server.MONITOR_INTERVAL_SECONDS * 3),
+        )
 
     def test_canonical_six_count_value_not_app_open_and_dedupe_requests(self):
         session_one = str(uuid.uuid4())
@@ -174,7 +432,7 @@ class NarraStatsTest(unittest.TestCase):
         self.assertEqual(len(data["series"]), 1)
         self.assertTrue(data["quality"]["warnings"])
 
-    def test_canonical_ratios_are_trailing_24h_not_selected_dashboard_window(self):
+    def test_canonical_ratios_use_today_msk_not_selected_dashboard_window(self):
         recent_session = str(uuid.uuid4())
         recent_request = str(uuid.uuid4())
         add("book_opened", session=recent_session, properties={"book_kind": "builtin"})
@@ -189,6 +447,52 @@ class NarraStatsTest(unittest.TestCase):
         self.assertEqual(day["tools_per_dau"], 1.0)
         self.assertEqual(week["sessions_per_dau"], day["sessions_per_dau"])
         self.assertEqual(week["tools_per_dau"], day["tools_per_dau"])
+
+    def test_overview_uses_moscow_day_iso_week_and_calendar_month(self):
+        now = datetime(2026, 7, 8, 12, 0, tzinfo=timezone.utc).timestamp()
+        add(
+            "book_opened",
+            actor=ACTOR_A,
+            session=str(uuid.uuid4()),
+            properties={"book_kind": "builtin"},
+            ts=datetime(2026, 7, 7, 21, 1, tzinfo=timezone.utc).timestamp(),
+        )
+        add(
+            "ai_request_started",
+            actor=ACTOR_A,
+            properties={"request_id": str(uuid.uuid4()), "purpose": "summary"},
+            ts=datetime(2026, 7, 8, 8, 0, tzinfo=timezone.utc).timestamp(),
+        )
+        add(
+            "book_opened",
+            actor=ACTOR_B,
+            session=str(uuid.uuid4()),
+            properties={"book_kind": "builtin"},
+            ts=datetime(2026, 7, 6, 8, 0, tzinfo=timezone.utc).timestamp(),
+        )
+        add(
+            "book_opened",
+            actor="c" * 64,
+            session=str(uuid.uuid4()),
+            properties={"book_kind": "builtin"},
+            ts=datetime(2026, 7, 5, 8, 0, tzinfo=timezone.utc).timestamp(),
+        )
+        add(
+            "book_opened",
+            actor="d" * 64,
+            session=str(uuid.uuid4()),
+            properties={"book_kind": "builtin"},
+            ts=datetime(2026, 6, 30, 20, 59, tzinfo=timezone.utc).timestamp(),
+        )
+
+        with patch("server.time.time", return_value=now):
+            overview = server.compute_dashboard(1)["overview"]
+
+        self.assertEqual(overview["dau"], 1)
+        self.assertEqual(overview["wau"], 2)
+        self.assertEqual(overview["mau"], 3)
+        self.assertEqual(overview["sessions_per_dau"], 1)
+        self.assertEqual(overview["tools_per_dau"], 1)
 
     def test_privacy_schema_is_event_scoped(self):
         with self.assertRaises(ValueError):
@@ -309,10 +613,10 @@ class NarraStatsTest(unittest.TestCase):
         selected = [row for row in data["tool_definitions"] if row["selected_for_overview"]]
         self.assertEqual(len(data["tool_definitions"]), 6)
         self.assertEqual(len(selected), 1)
-        self.assertEqual(selected[0]["id"], "logical_ai_requests_24h_dau")
+        self.assertEqual(selected[0]["id"], "logical_ai_requests_calendar_day_dau")
         self.assertEqual(selected[0]["value"], data["overview"]["tools_per_dau"])
-        self.assertEqual(tools["provider_attempts_24h_dau"]["value"], 2.0)
-        self.assertEqual(tools["logical_ai_requests_24h_dau"]["value"], 1.0)
+        self.assertEqual(tools["provider_attempts_calendar_day_dau"]["value"], 2.0)
+        self.assertEqual(tools["logical_ai_requests_calendar_day_dau"]["value"], 1.0)
         self.assertEqual(len(data["diagnostics"]), 10)
         self.assertEqual(data["quality"]["token_coverage"], 100.0)
         feature_names = {row["name"] for row in data["features"]}
@@ -356,6 +660,10 @@ class NarraStatsTest(unittest.TestCase):
         self.assertIn("Total tokens", html)
         self.assertIn("diagnosticValue", html)
         self.assertIn("outcome coverage", html)
+        self.assertIn("Domains and critical endpoints", html)
+        self.assertIn("TLS left", html)
+        self.assertIn('data-days="1" class="active">Today</button>', html)
+        self.assertIn('data-days="7">7 dates</button>', html)
 
     def test_request_success_counts_overdue_pending_and_excludes_orphans(self):
         old = time.time() - server.AI_OUTCOME_GRACE_SECONDS - 10

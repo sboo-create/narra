@@ -18,4 +18,8 @@ test('TTS cache key rejects unsafe base keys', () => {
     () => versionedAudioCacheKey('../chapter', { text: 'Привет', voice: 'Che' }),
     /Некорректный ключ/
   )
+  assert.throws(
+    () => versionedAudioCacheKey('chapter', { text: 'Привет', voice: 'Nec' }),
+    /Неподдерживаемый голос/
+  )
 })

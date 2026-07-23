@@ -52,7 +52,15 @@ test('media and speech contracts reject unknown or oversized inputs', () => {
     text: 'hello',
     ssml: undefined,
     voice: 'Che',
-    providerVoice: 'Che_48000'
+    providerVoice: 'Che_48000',
+    sampleRate: 48000
+  })
+  assert.deepEqual(parseSynthesisBody({ text: 'hello', voice: 'Ana' }), {
+    text: 'hello',
+    ssml: undefined,
+    voice: 'Ana',
+    providerVoice: 'Ana_24000',
+    sampleRate: 24000
   })
   assert.throws(() => parseSynthesisBody({ text: 'hello', voice: 'Nec' }), /не поддерживается/)
   assert.throws(() => parseSynthesisBody({ text: 'hello', voice: 'Che_24000' }), /не поддерживается/)

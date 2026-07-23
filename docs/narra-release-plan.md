@@ -1,8 +1,8 @@
 # Narra — release, media capacity и аналитика
 
 > Обновлено 23 июля 2026
-> Рабочая ветка: `feat/narra-release-foundation`
-> Статус: foundation и staging готовы; Narra подключена к production Traction; публичный macOS-релиз ещё не выпущен.
+> Рабочая ветка: `feat/narra-monitoring-and-voices`
+> Статус: foundation и staging готовы; stats-модуль Narra подключён к production Traction, обновление общей карточки Traction ещё не выкачено; публичный macOS-релиз ещё не выпущен.
 > Классификация: внутренний рабочий документ. Перед внешней публикацией удалить
 > имена владельцев, Apple Team ID, инфраструктурный IP и DNS verification data.
 
@@ -12,8 +12,10 @@
 |---|---|---|
 | Gateway staging | ✅ Live | OpenRouter, SaluteSpeech, Kandinsky, video и analytics outbox проверены |
 | Stats staging | ✅ Live | Отдельные token, database и Volume; restart/dedupe проверены |
-| Traction production | ✅ Live | Narra активна, dashboard защищён, poller healthy |
-| Шесть canonical-метрик | ✅ Контракт готов | При пустом DAU ratios показываются как `—`, а не исчезают и не превращаются в ложный `0` |
+| Traction production stats | ✅ Live | Narra stats-модуль активен, dashboard защищён, poller healthy |
+| Общая карточка Traction | ⏳ Deploy | Ветка с шестью постоянными слотами не в `main`; live hub пока показывает только четыре значения |
+| Шесть canonical-метрик | ✅ Контракт готов | После выкладки hub при пустом DAU ratios показываются как `—`, а не исчезают и не превращаются в ложный `0` |
+| Мониторинг доменов/ручек | ✅ Код готов | 4 fixed-target HTTPS probe, TLS/latency/availability/coverage и 30-дневная история; ждёт reviewed deploy |
 | Universal unsigned macOS | ✅ QA готов | arm64 + x64 упаковываются в один артефакт |
 | Signed macOS | ⏳ Local RC | Локальный release path готов; подписанный артефакт ещё не собран |
 | Notarized macOS | ⏳ Credentials | Для публичного DMG всё ещё нужен matching Team API key Жени |
@@ -75,8 +77,8 @@ Production Narra пока не получала пользовательских
 - video фактически обрабатывает один job одновременно;
 - кэш существует только на текущем Mac;
 - исторический TTS cache key не учитывал голос/sample rate/prosody; в текущей
-  ветке это исправлено versioned fingerprint по rendered text + voice + 48 kHz
-  + prosody version;
+  ветке это исправлено versioned fingerprint по rendered text + voice + реальный
+  sample rate + prosody version;
 - главный герой определяется недостаточно надёжно для правил Сони.
 
 ## Целевой book preparation pipeline
@@ -348,6 +350,39 @@ Railway fallback `Application not found` — это нормально: edge м�
 Поддомен закрывает TLS только до gateway. Маршрут к video остаётся
 server-to-server HTTP до установки TLS/HMAC/firewall-контролей выше.
 
+### Read-only аудит сервера `i46`
+
+`i46` — это отдельный хост `167.233.103.46`; текущий
+`narra.multitool.works` смотрит на другой сервер `158.160.163.167`. На `i46`
+нет systemd-сервисов Caddy, Nginx, Apache или HAProxy, но порты `80/443` уже
+заняты Docker-контейнером `bizzy-radio-caddy-1` (`caddy:2`). Он обслуживает
+Bizzy Radio и Gigagochi, использует:
+
+- read-only конфиг `/opt/bizzy-radio/Caddyfile`;
+- Docker network `bizzy-radio_default`;
+- persistent volumes `bizzy-radio_caddy_data` и
+  `bizzy-radio_caddy_config`.
+
+Поэтому ставить второй Caddy/Nginx на `i46` нельзя: он конфликтует за
+`80/443` и может уронить соседние проекты. Безопасная процедура добавления
+нового exact-host:
+
+1. Сохранить копию и SHA-256 текущего Caddyfile.
+2. Добавить отдельный host block без изменения существующих radio/Gigagochi
+   блоков.
+3. Выполнить `caddy validate` внутри работающего контейнера.
+4. Применить `caddy reload`, не перезапуская весь compose stack.
+5. Проверить новый hostname и обязательные regression probes radio/Gigagochi.
+6. При любой регрессии вернуть исходный файл и повторить reload.
+
+Это пока только изучено; на `i46` ничего не изменялось. Кроме того, Caddy на
+`i46`, проксирующий `http://87.242.117.37:5051`, **не решает transport risk**:
+TLS будет только до `i46`, а последний публичный участок
+`i46 → video-origin` останется незашифрованным. Для безопасного production
+нужны HTTPS на самом video host либо приватный WireGuard/SSH-туннель между
+video host и `i46`. После этого `i46` можно использовать как аккуратный
+публичный TLS edge.
+
 ---
 
 ## Какие ключи находятся в приложении
@@ -600,6 +635,51 @@ signed артефакт.
 
 Essential остаётся всегда включённой. Extended opt-out отключает import/book-analysis/media/playback/voice диагностику и очищает ещё не отправленные extended events; остаётся только уже зафиксированный canonical/security минимум и безакторные operational counters gateway.
 
+## Мониторинг доменов и критических ручек
+
+Narra stats теперь содержит отдельный operational monitor, который не зависит
+от наличия пользовательских событий и не влияет на DAU/WAU/MAU. Раз в минуту
+он параллельно проверяет четыре server-owned HTTPS target:
+
+| Контур | Ручка | Что проверяем |
+|---|---|---|
+| Production gateway | `https://narra.multitool.works/health` | HTTP, JSON contract, latency, TLS expiry; reviewed `503 not_ready` считается `standby`, а не аварией |
+| Staging gateway | `https://narra-staging.multitool.works/ready` | Готовность routes и явный degraded upstream |
+| Production analytics | `https://stats.multitool.works/p/narra/health` | Доступность Narra stats через production Traction proxy |
+| Staging analytics | `https://stats-narra-staging-staging.up.railway.app/health` | Независимая доступность staging stats |
+
+В dashboard и authenticated `GET /monitors` показываются:
+
+- текущий state: `up`, `degraded`, `standby`, `down`, `unknown`;
+- HTTP status, latency последней проверки и срок TLS-сертификата;
+- availability, coverage и p95 latency за `1h`, `24h`, `7d`; пропущенные
+  плановые проверки уменьшают availability, поэтому свежий probe после простоя
+  монитора не превращает неизвестный период в `100% uptime`;
+- coarse error code без response body;
+- 30-дневная SQLite history с автоматической очисткой.
+
+Безопасность monitor:
+
+- URL нельзя передать через HTTP request; список задаёт только reviewed code
+  или Railway/root environment;
+- принимаются только credential-free HTTPS URL;
+- redirects запрещены;
+- response body ограничен 64 KiB, используется только для contract check и
+  никогда не сохраняется;
+- probes не содержат provider credentials, текстов книг или media;
+- DNS-ответы проверяются на public IP, а TLS-соединение закрепляется за уже
+  проверенным адресом с сохранением hostname/SNI verification;
+- каждая проверка выполняется в отдельном disposable process с абсолютным
+  deadline и принудительным terminate; четыре процесса запускаются параллельно.
+
+Это даёт видимость внутри Traction, но не заменяет внешний alerting: если упадёт
+сам Traction/stats, его внутренний monitor тоже не сможет сообщить об аварии.
+Перед beta нужно добавить out-of-process UptimeRobot/аналог минимум для
+production gateway и production analytics, с уведомлением в согласованный
+Telegram/Slack канал. Платные/side-effect provider canaries для LLM, TTS,
+Kandinsky и video включаются отдельно только после согласования тестового
+бюджета и безопасных синтетических данных.
+
 ---
 
 ## Что означает production gateway cutover
@@ -654,10 +734,14 @@ Raw latency rows, мс: `24 kHz = [2095, 1922, 2199, 1939, 1960]`;
 `48 kHz = [2162, 2792, 2179, 3877, 2117]`.
 
 48 kHz увеличил медианное время примерно на 11%, среднее — примерно на 30% из-за
-одного медленного ответа, а размер ответа — почти ровно вдвое. Решение: **48 kHz
-по умолчанию для нового voice registry**, без переключения качества посреди
-главы. Удвоенный first-audio payload компенсируем микро-сегментом 150–300
-символов; остальные сегменты синтезируются с одним prefetch.
+одного медленного ответа, а размер ответа — почти ровно вдвое. Решение:
+**приоритетно использовать 48 kHz там, где этот голос доступен, и расширить
+разнообразие проверенными 24 kHz голосами**. Sample rate закреплён за конкретным
+voice ID: один герой не переключается между 24 и 48 kHz посреди книги. Плеер
+проигрывает каждый WAV-сегмент отдельно, поэтому соседние реплики разных героев
+могут иметь разные sample rate. Удвоенный first-audio payload основного
+48 kHz-голоса компенсируем микро-сегментом 150–300 символов; остальные сегменты
+синтезируются с одним prefetch.
 
 Реестр содержит:
 
@@ -684,34 +768,48 @@ Raw latency rows, мс: `24 kHz = [2095, 1922, 2199, 1939, 1960]`;
 - voice plan закрепляется на всю книгу;
 - ручная смена инвалидирует только аудио этого героя.
 
-Старые автоматические пулы `Bys/Tur/Pon` и `Ost/May/Nec` удаляются при
-подключении нового registry. Для narrator/главного героя используются
-ассистентские голоса Афина, Сбер и Джой. Остальные герои получают по полу только
-обычные второстепенные герои получают по полу мужские
-`Ast/Gal/Bez/Ego/Izv` или женские `Ste/Tso/Chr`. `Ksa/Saf/Bsa` не входят в
-обычный gender pool и назначаются только отдельным детерминированным
-child-rule.
-Фокин и Ковалев исключены из v1 из-за отсутствия рабочего 48 kHz-варианта.
-Марков и Пират не участвуют в автоназначении и остаются ручными пасхалками.
+Старые автоматические пулы `Bys/Tur/Pon` и `Ost/May/Nec` удалены. Для
+narrator/главного героя используются ассистентские голоса Афина, Сбер и Джой.
+Обычные второстепенные герои сначала получают по полу проверенные 48 kHz
+голоса, затем — подтверждённый по picker расширенный 24 kHz pool. `Ksa/Saf/Bsa` и дополнительные
+детские 24 kHz варианты не входят в обычный gender pool и назначаются только
+отдельным детерминированным child-rule. Марков и Пират не участвуют в
+автоназначении и остаются ручными пасхалками. Ещё 32 успешно синтезирующих
+24 kHz голоса зарезервированы как manual-only: до продуктового прослушивания
+и подтверждения пола они намеренно не участвуют в автоматической разметке.
+Сам UI ручной смены ещё относится к последующей продуктовой доработке.
 
-| Группа | Мужских | Женских | Голоса |
-|---|---:|---:|---|
-| Главные роли / assistant | 1 | 2 | Сбер; Афина, Джой |
-| Второстепенные, обычный auto-pool | 5 | 3 | `Ast/Gal/Bez/Ego/Izv`; `Ste/Tso/Chr` |
-| Детский auto-pool | 1 | 2 | `Ksa`; `Saf/Bsa` |
-| Ручные пасхалки | 2 | 0 | `Mar`, `Kas` |
-| Исключены из v1 | 2 | 0 | `Efo`, `Kov` |
+| Группа | 48 kHz | 24 kHz | Мужских | Женских | Пол не подтверждён |
+|---|---:|---:|---:|---:|---:|
+| Главные роли / assistant | 3 | 0 | 1 | 2 | 0 |
+| Второстепенные, обычный auto-pool | 8 | 34 | 26 | 16 | 0 |
+| Детский auto-pool | 3 | 4 | 3 | 4 | 0 |
+| Manual-only allowlist / пасхалки | 2 | 32 | 2 | 0 | 32 |
+| **Итого active registry** | **16** | **70** | **32** | **22** | **32** |
 
-Итого в активном 48 kHz registry — **16 голосов: 9 мужских и 7 женских**.
-Из них главные/assistant — **1 мужской + 2 женских**; второстепенные обычные —
-**5 + 3**; детские варианты — **1 + 2**; ручные пасхалки — **2 + 0**.
-После реализации child/assistant assignment целевой auto-eligible set без
-ручных пасхалок составит 14 голосов: 7 мужских и 7 женских. **Текущий runtime**
-автоматически назначает только 8 обычных library-голосов (5 мужских + 3
-женских), а narrator по умолчанию — Афина `Che`; UI выбора narrator и
-детерминированный child assignment ещё остаются в P0. Присланный provider UI
-подтверждает exact mapping:
-`Che→Афина`, `She→Сбер`, `Erm→Джой`.
+Итого в server-side allowlist — **86 голосов**:
+
+- главные/assistant — **1 мужской + 2 женских**;
+- обычные второстепенные — **26 мужских + 16 женских**;
+- детские — **3 мужских + 4 женских**;
+- ручные — **2 мужских + 32 пока без подтверждённого пола**.
+
+Из них 48 kHz — прежние **16 голосов: 9 мужских и 7 женских**. Новые 24 kHz —
+**70 голосов**: 21 мужской + 13 женских обычного pool, 2 + 2 детских и 32
+manual-only с пока незафиксированным полом. Все 70 добавленных exact-case codes
+уже присутствуют в сохранённом staging probe и вернули реальный WAV 24 kHz.
+Gateway сам подставляет `_24000` или `_48000`; клиент не может передать
+произвольное provider-имя. Cache schema обновлена до v3 и включает реальный
+sample rate.
+
+48 kHz остаются первыми в auto-pool, поэтому первые пять мужских и первые три
+женских обычных роли сохраняют максимальное качество. 24 kHz подключаются для
+следующих персонажей, чтобы голоса не начали повторяться уже на шестом мужском
+или четвёртом женском герое. Автопул теперь даёт 26 мужских и 16 женских
+вариантов; остальные успешные 24 kHz голоса не попадут туда, пока Соня не
+подтвердит их пол и пригодность после прослушивания. Narrator по умолчанию — Афина `Che`; UI выбора
+narrator и детерминированный child assignment ещё остаются в P0. Provider UI
+подтверждает exact mapping: `Che→Афина`, `She→Сбер`, `Erm→Джой`.
 
 На staging key в 48 kHz успешно проверены exact-case base codes:
 `Che`, `She`, `Erm`, `Gal`, `Ast`, `Ste`, `Tso`, `Bez`, `Ego`, `Izv`, `Chr`,
@@ -739,7 +837,7 @@ evidence; используем именно YourVoice-варианты там, �
 | Сафронова | `Saf` | child-role exception | `48000` — HTTP 200 |
 | kid Сафронов | `Ksa` | male child auto-pool | `48000` — HTTP 200 |
 | Сафронова сказки | `Bsa` | female child / fairy-tale auto-pool | `48000` — HTTP 200 |
-| Ковалев | `Kov` | excluded from v1 | `24000` — HTTP 200; `48000` — HTTP 400 |
+| Ковалев | `Kov` | manual-only pending review | `24000` — HTTP 200; `48000` — HTTP 400 |
 | Марков | `Mar` | manual-only | `48000` — HTTP 200 |
 | Пират Касперович | `Kas` | manual-only | `48000` — HTTP 200 |
 
@@ -762,11 +860,10 @@ artifact/HTML как отдельные evidence datasets. Неизменяем�
 показывает `Efo→Фокин`. `Get_24000/Get_48000` и `Efo_48000` возвращают HTTP 400;
 `Efo_24000` возвращает gateway HTTP 502, но причина этого ответа пока не
 установлена. `Kov_24000` работает, а `Kov_48000` возвращает HTTP 400.
-Продуктовая логика на Фокина и Ковалева не завязана: это были обычные элементы
-library pool, поэтому в v1 исключаем оба голоса целиком и не создаём отдельное
-требование на их provisioning. Пул станет меньше на два голоса; для книг с
-большим числом персонажей раньше включится разрешённое повторение голоса с
-изменённой просодией.
+Продуктовая логика на Фокина не завязана, поэтому `Efo` остаётся исключён.
+Ковалев `Kov_24000` входит только в manual-only часть registry: мы не подменяем
+утверждённый Сони 48 kHz mapping вариантом другого качества и не используем его
+автоматически до отдельного прослушивания.
 
 ### Расширенный probe всех голосов со скриншотов
 
@@ -780,12 +877,13 @@ library pool, поэтому в v1 исключаем оба голоса цел
 - `Ast` и `Bsa` при этом работают в 48 kHz: capability зависит не только от
   base code, но и от конкретного sample rate/provisioning.
 
-Рабочий длинный 24 kHz pool нельзя автоматически раздать по полу по одним
-фамилиям. Он остаётся **candidate pool**: коды проверены технически, но Соне
-нужно прослушать выбранные варианты и подтвердить пол/тембр/допустимость.
-Смешивать 24 и 48 kHz внутри главы не будем. Текущий код выпуска использует
-закрытый allowlist из 16 проверенных 48 kHz голосов; suffix выбирает только
-gateway, клиент не может подставить произвольную provider model.
+Из технически рабочего 24 kHz набора в active registry добавлены 58 кодов со
+скриншотов. Для 54 из них пол определён по provider display name и назначению;
+`Aso/Pik/Roz/Voy` оставлены только для ручного выбора до прослушивания. Это
+позволяет безопасно расширить автоматические пулы, не добавляя в них
+непроверенный по полу голос. Перед публичной beta Соне всё равно нужно
+прослушать одинаковые samples: технический HTTP/WAV probe подтверждает
+работоспособность, но не художественную пригодность тембра.
 
 ### Детерминированное правило детского пула
 
@@ -793,18 +891,17 @@ gateway, клиент не может подставить произвольн�
   анализ вернул закрытый `age_group=child` с confidence `≥0.8`;
 - при неизвестном возрасте либо меньшей confidence используется обычный
   gender-compatible library pool, а не детский;
-- мальчику назначается `Ksa`, девочке — `Saf`; `Bsa` приоритетен для девочки в
-  сказочном/детском жанре. Пол голоса не нарушаем; ручное переопределение
-  остаётся доступным;
+- мальчику назначается `Ksa`, затем `Kkr/Ktr`; девочке — `Saf`, затем
+  `Bsa/Kbu/Koz`; `Bsa` приоритетен для девочки в сказочном/детском жанре.
+  Пол голоса не нарушаем; ручное переопределение остаётся доступным;
 - результат и `child_rule_version` фиксируются в voice plan на всю книгу, чтобы
   повторный импорт или новая модель не меняли голос без явной миграции.
 
 Нерешённое правило: `Sber narrator + male third-person protagonist`. Среди оставшихся assistant voices нет мужского. Рекомендация — дать protagonist первому мужскому library voice, а не нарушать пол и не дублировать narrator.
 
-Перед включением расширенного 24 kHz candidate pool остаётся дать Соне
-прослушать одинаковые audible samples и утвердить конкретные коды. Техническая
-проверка 94 кодов, HTTP status, content type и фактический WAV sample rate уже
-выполнены.
+До публичной beta остаётся дать Соне прослушать одинаковые audible samples и
+при необходимости сократить active 24 kHz pool. Техническая проверка 94 кодов,
+HTTP status, content type и фактический WAV sample rate уже выполнены.
 
 ---
 
@@ -819,9 +916,11 @@ gateway, клиент не может подставить произвольн�
 - [x] Local release path + manual unsigned hosted preflight
 - [x] Local Developer ID identity для signed QA
 - [ ] Local matching Apple Team API key/profile для notarization
-- [x] Все шесть Traction slots видны постоянно
-- [x] Server-side 48 kHz voice registry, allowlist и миграция старых голосов
+- [ ] Выкатить общую карточку Traction, чтобы все шесть slots были видны постоянно
+- [x] Server-side mixed 48/24 kHz registry из 86 голосов, allowlist и миграция старых голосов
 - [x] Versioned TTS cache keys с text/voice/sample-rate/prosody
+- [x] Fixed-target domain/endpoint monitoring в Narra stats
+- [ ] Reviewed deploy monitor в staging и production Traction
 - [ ] Background-разметка первой главы после импорта
 - [ ] Bounded parallel/streaming chapter markup
 - [ ] Progressive TTS first-audio
@@ -835,6 +934,7 @@ gateway, клиент не может подставить произвольн�
 - [ ] Production gateway cutover
 - [ ] Capacity benchmark `1 → 2 → 5 → 10`
 - [ ] Import/media instrumentation
+- [ ] Out-of-process uptime alerts для production gateway/stats
 - [ ] Signed/notarized universal RC
 - [ ] Clean install на Apple Silicon
 - [ ] Intel install/launch verification — Intel Mac отсутствует, риск принят до появления устройства
@@ -857,20 +957,39 @@ gateway, клиент не может подставить произвольн�
 
 ### От Макса
 
-1. Перед production cutover выбрать target нового Railway v2 production
-   service. TLS-заглушка на `158.160.163.167` уже готова и не проксирует
+1. Для production cutover создать/выбрать новый Railway v2 production service.
+   TLS-заглушка на `158.160.163.167` уже готова и не проксирует
    staging/legacy; после создания service меняем только upstream exact-host
-   блока и проводим отдельный canary.
-2. Согласовать безопасный способ локальной notarization с Apple Team Жени:
+   блока и проводим отдельный canary. Существующий `narra.multitool.works`
+   **не переносить на `i46`**.
+2. Для внешних uptime alerts дать доступ к существующему UptimeRobot/аналогу
+   либо самому создать monitor production analytics
+   `/p/narra/health`; production gateway `/health` включить после cutover,
+   потому что сейчас его ожидаемый `503 not_ready` обычный uptime monitor
+   справедливо посчитает аварией. Сообщить, куда слать аварии:
+   Telegram/Slack/email и через сколько минут считать outage. Внутренний
+   Traction monitor уже не требует отдельных ключей.
+3. Если хотим использовать `i46` как TLS edge для video/LiteLLM, выбрать
+   отдельные имена вроде `narra-video.multitool.works` и
+   `narra-llm.multitool.works`, но создавать DNS только после подтверждения
+   HTTPS на origin либо WireGuard/SSH tunnel. Один reverse proxy до HTTP origin
+   недостаточен. После выбора нужен короткий maintenance window и разрешение
+   reload существующего Caddy с обязательными regression probes соседних
+   сервисов.
+4. Согласовать безопасный способ локальной notarization с Apple Team Жени:
    credentials не присылать в чат и не коммитить, а вместе с владельцем Team
    создать локальный `notarytool` profile либо положить matching Team API key в
    локальный Keychain.
-3. Назвать денежный либо запросный лимит capacity benchmark
+5. Назвать денежный либо запросный лимит capacity benchmark
    `1 → 2 → 5 → 10` и разрешённое окно теста, чтобы проверка не создала
    неожиданный расход у провайдеров.
-4. Intel Mac сейчас отсутствует: универсальную сборку продолжаем готовить, но
+6. Подтвердить политику голосов для beta: 48 kHz остаются первыми, 24 kHz
+   используются для следующих персонажей; один voice ID всегда имеет один
+   sample rate. Если нужен только 48 kHz, разнообразие снова сократится до 16
+   голосов.
+7. Intel Mac сейчас отсутствует: универсальную сборку продолжаем готовить, но
    отсутствие install/launch smoke фиксируем как принятый release risk.
-5. Уточнить, означает ли «APK» отдельное Android-приложение. Текущая Narra —
+8. Уточнить, означает ли «APK» отдельное Android-приложение. Текущая Narra —
    Electron desktop; Android/iOS не получаются из universal macOS build и
    требуют отдельного клиентского проекта.
 
@@ -879,25 +998,40 @@ gateway, клиент не может подставить произвольн�
 1. Утвердить fallback для комбинации `Sber narrator + male third-person
    protagonist`. Рекомендация: главному герою назначать первый доступный мужской
    library voice, а не женский assistant voice и не голос narrator.
-2. Прослушать одинаковые samples и подтвердить основной 48 kHz registry:
-   мужской pool `Ast/Gal/Bez/Ego/Izv`, женский `Ste/Tso/Chr`, детские
-   `Ksa/Saf/Bsa`, manual-only `Mar/Kas`. Отдельно выбрать дополнительные
-   голоса из технически рабочего 24 kHz candidate pool, если важнее разнообразие,
-   чем единое высокое качество.
+2. Прослушать одинаковые samples и подтвердить mixed registry. Уже технически
+   работают 86 голосов: 16 × 48 kHz и 70 × 24 kHz. В автоматическом обычном
+   pool 26 мужских и 16 женских, в детском — 3 и 4. Ещё 32 24 kHz голоса,
+   включая `Kov/Aso/Pik/Roz/Voy`, доступны только вручную: они работают, но их
+   пол и художественное назначение пока намеренно не используются автоматикой.
 3. Подтвердить объём автоматических портретов. Текущая рекомендация: главный
    герой плюс 2–3 основных персонажа при импорте; остальные — по запросу при
    открытии карточки.
+4. Подтвердить, что 24 kHz допустимы второстепенным героям при сохранении 48 kHz
+   для narrator/первых ролей. Замер показал лишь ~11% медианного выигрыша по
+   latency, но WAV примерно вдвое меньше; главное преимущество здесь —
+   разнообразие доступных тембров.
 
 ### От Юры или владельца video host
 
-1. Разрешить поставить Caddy/Nginx либо `cloudflared` рядом с
-   `<video-origin>:5051` или выполнить установку владельцем сервера по
-   подготовленной инструкции.
+1. Выбрать один безопасный transport: HTTPS Caddy/Nginx рядом с
+   `<video-origin>:5051`, либо WireGuard/SSH tunnel от origin до `i46`.
+   Установка Caddy только на `i46` без туннеля не закрывает последний
+   незашифрованный участок.
 2. Самому записать отдельный Narra video credential прямо в Railway secret
    либо согласованный secret manager и сообщить только имя переменной/факт
    готовности — без значения в чате, документах или логах. Также подтвердить
-   лимит одновременных jobs. До HTTPS relay origin используется только во
+   лимит одновременных jobs, размер очереди, типичный/предельный runtime,
+   rate-limit и стоимость. До HTTPS/tunnel origin используется только во
    внутреннем staging с тестовыми данными.
+
+### От владельца LiteLLM/Giga
+
+1. Сообщить управляемый hostname/порт origin и поддерживается ли HTTPS на нём.
+   API key не передавать: владелец сам добавляет его в Railway secret.
+2. Если origin HTTP-only, разрешить TLS на том же сервере либо приватный туннель
+   до `i46`; только после этого возвращаем Giga в server-side routing.
+3. Подтвердить модели, rate limits, timeout, fallback policy и способ отличать
+   moderation error от retryable provider failure.
 
 ### От Жени или владельца Apple Team
 

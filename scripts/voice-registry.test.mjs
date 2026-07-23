@@ -1,9 +1,31 @@
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
 import test from 'node:test'
 import {
+  AUTO_FEMALE_VOICES,
+  AUTO_MALE_VOICES,
+  CHILD_FEMALE_VOICES,
+  CHILD_MALE_VOICES,
+  SALUTE_24K_VOICES,
+  SALUTE_VOICES,
   normalizeCharacterVoices,
-  normalizeNarratorVoice
+  normalizeNarratorVoice,
+  saluteVoiceSampleRate
 } from '../src/shared/types.ts'
+import { SUPPORTED_VOICES, voiceConfig } from '../server/voices.mjs'
+
+const manifest = JSON.parse(
+  fs.readFileSync(new URL('../docs/evidence/salutespeech-active-voices.json', import.meta.url), 'utf8')
+)
+const probeRows = fs
+  .readFileSync(new URL('../docs/evidence/salutespeech-voice-probe-2026-07-23.csv', import.meta.url), 'utf8')
+  .trim()
+  .split('\n')
+  .slice(1)
+  .map((line) => {
+    const [code, sampleRate, status, contentType, actualRate] = line.split(',')
+    return { code, sampleRate: Number(sampleRate), status: Number(status), contentType, actualRate: Number(actualRate) }
+  })
 
 function character(id, gender, voice) {
   return {
@@ -32,4 +54,63 @@ test('legacy narrator and character voices migrate to the 48 kHz registry', () =
     character('kept', 'female', 'Erm')
   ])
   assert.deepEqual(migrated.map((item) => item.voice), ['Ast', 'Gal', 'Ste', 'Tso', 'Erm'])
+})
+
+test('client, gateway, reviewed manifest and saved provider probes agree', () => {
+  const reviewed = manifest.groups.flatMap((group) =>
+    group.codes.map((code) => ({
+      code,
+      sampleRate: group.sample_rate,
+      gender: group.gender,
+      group: group.group
+    }))
+  )
+  assert.equal(SALUTE_VOICES.length, 86)
+  assert.equal(new Set(SALUTE_VOICES).size, SALUTE_VOICES.length)
+  assert.deepEqual(new Set(SUPPORTED_VOICES), new Set(SALUTE_VOICES))
+  assert.deepEqual(new Set(reviewed.map((row) => row.code)), new Set(SALUTE_VOICES))
+  assert.equal(SALUTE_24K_VOICES.length, 70)
+
+  for (const voice of SALUTE_VOICES) {
+    const config = voiceConfig(voice)
+    const evidence = reviewed.find((row) => row.code === voice)
+    assert.ok(config)
+    assert.ok(evidence)
+    assert.equal(config.sampleRate, saluteVoiceSampleRate(voice))
+    assert.equal(config.providerVoice, `${voice}_${config.sampleRate}`)
+    assert.equal(config.sampleRate, evidence.sampleRate)
+    assert.equal(config.gender, evidence.gender)
+    assert.equal(config.group, evidence.group)
+    assert.ok(
+      probeRows.some(
+        (row) =>
+          row.code === voice &&
+          row.sampleRate === config.sampleRate &&
+          row.status === 200 &&
+          row.contentType === 'audio/wav' &&
+          row.actualRate === config.sampleRate
+      ),
+      `${voice}_${config.sampleRate} has no saved successful WAV probe`
+    )
+  }
+})
+
+test('automatic pools prioritize 48 kHz and exclude probe-only manual voices', () => {
+  assert.deepEqual(AUTO_MALE_VOICES.slice(0, 5), ['Ast', 'Gal', 'Bez', 'Ego', 'Izv'])
+  assert.deepEqual(AUTO_FEMALE_VOICES.slice(0, 3), ['Ste', 'Tso', 'Chr'])
+  assert.equal(AUTO_MALE_VOICES.length, 26)
+  assert.equal(AUTO_FEMALE_VOICES.length, 16)
+  assert.deepEqual(CHILD_MALE_VOICES, ['Ksa', 'Kkr', 'Ktr'])
+  assert.deepEqual(CHILD_FEMALE_VOICES, ['Saf', 'Bsa', 'Kbu', 'Koz'])
+  const automatic = new Set([
+    ...AUTO_MALE_VOICES,
+    ...AUTO_FEMALE_VOICES,
+    ...CHILD_MALE_VOICES,
+    ...CHILD_FEMALE_VOICES
+  ])
+  const pending = manifest.groups.find(
+    (group) => group.evidence_id === 'probe-only-pending-product-review'
+  )
+  assert.ok(pending)
+  for (const voice of pending.codes) assert.equal(automatic.has(voice), false)
 })

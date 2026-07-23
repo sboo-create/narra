@@ -23,6 +23,7 @@ jobs:
       - run: npm audit --prefix server --audit-level=moderate
       - run: npm run typecheck
       - run: npm run test:gateway
+      - run: npm run test:release
       - run: python -m venv stats/.venv && stats/.venv/bin/pip install -r stats/requirements.txt
       - run: npm run test:stats
       - run: npm run build

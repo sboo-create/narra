@@ -79,7 +79,13 @@ export function parseSynthesisBody(input) {
   if (!/^[A-Za-z][A-Za-z0-9_-]{0,23}$/.test(voice)) fail('voice: недопустимое значение')
   const config = voiceConfig(voice)
   if (!config) fail('voice: голос не поддерживается')
-  return { text, ssml, voice, providerVoice: config.providerVoice }
+  return {
+    text,
+    ssml,
+    voice,
+    providerVoice: config.providerVoice,
+    sampleRate: config.sampleRate
+  }
 }
 
 export function parseAvatarBody(input) {

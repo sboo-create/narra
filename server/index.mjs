@@ -856,7 +856,7 @@ app.post('/v2/speech/synthesize', speechLimit, speechDailyLimit, express.json({ 
   let release
   try {
     release = await speechGate.acquire(clientSignal)
-    const { text, ssml, providerVoice } = parseSynthesisBody(req.body)
+    const { text, ssml, providerVoice, sampleRate } = parseSynthesisBody(req.body)
     const isSsml = !!ssml
     const payload = isSsml ? ssml : text || ''
     const token = await getToken('SALUTE_SPEECH_PERS', SALUTE_KEY, SALUTE_OAUTH_URL)
@@ -884,6 +884,7 @@ app.post('/v2/speech/synthesize', speechLimit, speechDailyLimit, express.json({ 
       return res.status(502).json({ error: `SaluteSpeech ${r.status}: ${r.body?.toString('utf8').slice(0, 160)}`, code: 'NETWORK' })
     }
     res.setHeader('Content-Type', 'audio/wav')
+    res.setHeader('X-Audio-Sample-Rate', String(sampleRate))
     res.send(r.body)
   } catch (e) {
     res.status(statusFor(e.code)).json({ error: e.message, code: e.code || 'UNKNOWN' })

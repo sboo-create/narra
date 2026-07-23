@@ -21,24 +21,55 @@ export interface Fanfic {
 
 export type Gender = 'male' | 'female'
 export const ASSISTANT_VOICES = ['Che', 'She', 'Erm'] as const
-export const AUTO_MALE_VOICES = ['Ast', 'Gal', 'Bez', 'Ego', 'Izv'] as const
-export const AUTO_FEMALE_VOICES = ['Ste', 'Tso', 'Chr'] as const
-export const CHILD_MALE_VOICES = ['Ksa'] as const
-export const CHILD_FEMALE_VOICES = ['Saf', 'Bsa'] as const
+export const AUTO_MALE_48K_VOICES = ['Ast', 'Gal', 'Bez', 'Ego', 'Izv'] as const
+export const AUTO_FEMALE_48K_VOICES = ['Ste', 'Tso', 'Chr'] as const
+export const AUTO_MALE_24K_VOICES = [
+  'Ana', 'Ann', 'Bek', 'Boc', 'Chp', 'Dsu', 'Klu', 'Min', 'Mir', 'Ovs',
+  'San', 'Sdo', 'Shc', 'Shl', 'Sid', 'Sto', 'Str', 'Tar', 'Tre', 'Uso',
+  'Vol'
+] as const
+export const AUTO_FEMALE_24K_VOICES = [
+  'Aer', 'Bal', 'Buz', 'Dad', 'Dyu', 'Kab', 'Kud', 'Mak', 'Sko', 'Smi',
+  'Sne', 'Sta', 'Ved'
+] as const
+export const AUTO_MALE_VOICES = [...AUTO_MALE_48K_VOICES, ...AUTO_MALE_24K_VOICES] as const
+export const AUTO_FEMALE_VOICES = [...AUTO_FEMALE_48K_VOICES, ...AUTO_FEMALE_24K_VOICES] as const
+export const CHILD_MALE_VOICES = ['Ksa', 'Kkr', 'Ktr'] as const
+export const CHILD_FEMALE_VOICES = ['Saf', 'Bsa', 'Kbu', 'Koz'] as const
 export const MANUAL_MALE_VOICES = ['Mar', 'Kas'] as const
+// These voices synthesize successfully, but their gender/product role has not
+// yet been approved from picker evidence. They remain selectable manually and
+// are deliberately excluded from automatic book markup.
+export const MANUAL_OTHER_VOICES = [
+  'Aso', 'Bai', 'Bik', 'Bol', 'Gav', 'Gri', 'Gur', 'Igr', 'Kai', 'Kar',
+  'Ker', 'Kha', 'Kis', 'Kka', 'Kor', 'Kov', 'Lil', 'Mel', 'Nag', 'Ore',
+  'Peh', 'Pik', 'Pot', 'Pru', 'Rab', 'Res', 'Roz', 'Rum', 'Shi', 'Tob',
+  'Tya', 'Voy'
+] as const
+export const SALUTE_24K_VOICES = [
+  ...AUTO_MALE_24K_VOICES,
+  ...AUTO_FEMALE_24K_VOICES,
+  'Kkr', 'Ktr', 'Kbu', 'Koz',
+  ...MANUAL_OTHER_VOICES
+] as const
 export const SALUTE_VOICES = [
   ...ASSISTANT_VOICES,
   ...AUTO_MALE_VOICES,
   ...AUTO_FEMALE_VOICES,
   ...CHILD_MALE_VOICES,
   ...CHILD_FEMALE_VOICES,
-  ...MANUAL_MALE_VOICES
+  ...MANUAL_MALE_VOICES,
+  ...MANUAL_OTHER_VOICES
 ] as const
 export type SaluteVoice = (typeof SALUTE_VOICES)[number]
 export const DEFAULT_NARRATOR_VOICE: SaluteVoice = 'Che'
 
 export function isSaluteVoice(value: unknown): value is SaluteVoice {
   return typeof value === 'string' && (SALUTE_VOICES as readonly string[]).includes(value)
+}
+
+export function saluteVoiceSampleRate(voice: SaluteVoice): 24000 | 48000 {
+  return (SALUTE_24K_VOICES as readonly string[]).includes(voice) ? 24000 : 48000
 }
 
 export interface ExampleTurn {

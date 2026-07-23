@@ -5,7 +5,7 @@
     "surface": "report",
     "title": "Narra: план безопасного релиза и аналитики",
     "description": "Фактический статус и технический план безопасного релиза Narra: gateway, OpenRouter + Giga, аналитика Traction и подписанные обновления.",
-    "generatedAt": "2026-07-23T20:30:00+03:00",
+    "generatedAt": "2026-07-23T20:15:00+03:00",
     "sources": [
       {
         "id": "narra_code",
@@ -28,13 +28,13 @@
         }
       },
       {
-        "id": "narra_release_foundation_worktree",
-        "label": "Narra — текущий release-foundation candidate",
-        "href": "https://github.com/sboo-create/narra/tree/feat/narra-release-foundation",
+        "id": "narra_release_candidate_worktree",
+        "label": "Narra — текущий monitoring/voices candidate",
+        "href": "https://github.com/sboo-create/narra/tree/feat/narra-monitoring-and-voices",
         "query": {
           "engine": "git",
-          "description": "Текущий reviewed candidate ветки feat/narra-release-foundation; production gateway этой веткой ещё не переключался.",
-          "executed_at": "2026-07-23T20:30:00+03:00",
+          "description": "Текущий candidate ветки feat/narra-monitoring-and-voices проходит финальные review gates; production gateway этой веткой ещё не переключался.",
+          "executed_at": "2026-07-23T20:15:00+03:00",
           "language": "TypeScript/JavaScript/Python/HTML",
           "tables_used": [
             "server/index.mjs",
@@ -259,7 +259,7 @@
       {
         "id": "canonical_metrics_table",
         "title": "Шесть canonical-метрик Traction для Narra",
-        "subtitle": "Один actor-space, фиксированные trailing-окна и честные границы session/tool",
+        "subtitle": "Один actor-space, московские календарные окна и честные границы session/tool",
         "dataset": "canonical_metrics",
         "sourceId": "traction_contract",
         "defaultSort": { "field": "metric", "direction": "asc" },
@@ -404,8 +404,8 @@
       },
       {
         "id": "voice_registry_table",
-        "title": "Целевой SaluteSpeech voice registry",
-        "subtitle": "Exact picker mapping и provisioning на key gigacons по состоянию на 23 июля 2026",
+        "title": "Именованные 48 kHz голоса и исключения",
+        "subtitle": "Exact picker mapping для основных ролей; полный active registry суммирован следующей таблицей",
         "dataset": "voice_registry",
         "sourceId": "voice_registry_review",
         "source": {
@@ -429,18 +429,37 @@
           { "field": "supporting_probe_evidence_id", "label": "Supporting probe", "type": "text" },
           { "field": "staging_result", "label": "Staging key", "type": "text" }
         ]
+      },
+      {
+        "id": "voice_pool_summary_table",
+        "title": "Active voice registry по назначению и качеству",
+        "subtitle": "86 server-allowlisted exact-case кодов: 48 kHz имеют приоритет, 24 kHz расширяют разнообразие",
+        "dataset": "voice_pool_summary",
+        "sourceId": "voice_registry_review",
+        "defaultSort": { "field": "order", "direction": "asc" },
+        "density": "spacious",
+        "columns": [
+          { "field": "order", "label": "№", "type": "number" },
+          { "field": "group", "label": "Группа", "type": "text" },
+          { "field": "rate_48k", "label": "48 kHz", "type": "number" },
+          { "field": "rate_24k", "label": "24 kHz", "type": "number" },
+          { "field": "male", "label": "Мужских", "type": "number" },
+          { "field": "female", "label": "Женских", "type": "number" },
+          { "field": "unspecified", "label": "Пол не подтверждён", "type": "number" },
+          { "field": "policy", "label": "Политика", "type": "text" }
+        ]
       }
     ],
     "blocks": [
       {
         "id": "title",
         "type": "markdown",
-        "body": "# Narra: план безопасного релиза и аналитики\n\n**Обновлено:** 23 июля 2026 · **Статус:** gateway и stats staging прошли E2E; Narra активна в production Traction; production hostname получил TLS и намеренно отвечает `503 not_ready`; 16 голосов 48 kHz проверены и закрыты server-side allowlist; публичный клиентский релиз ждёт installation registry, защищённый video transport, local notarization credentials и production cutover.\n\n**Внутренний рабочий документ:** перед внешней публикацией удалить имена владельцев, Apple Team ID, инфраструктурный IP и DNS verification data."
+        "body": "# Narra: план безопасного релиза и аналитики\n\n**Обновлено:** 23 июля 2026 · **Статус:** gateway и stats staging прошли E2E; Narra stats-модуль активен в production Traction, но обновление общей карточки Traction ещё не выкачено; production hostname намеренно отвечает `503 not_ready`; server-side allowlist расширен до 86 проверенных голосов (16 × 48 kHz + 70 × 24 kHz), причём probe-only варианты исключены из автоназначения; monitoring доменов/ручек готов к reviewed deploy; публичный клиентский релиз ждёт installation registry, защищённый video transport, local notarization credentials и production cutover.\n\n**Внутренний рабочий документ:** перед внешней публикацией удалить имена владельцев, Apple Team ID, инфраструктурный IP и DNS verification data."
       },
       {
         "id": "technical_summary",
         "type": "markdown",
-          "body": "## Техническое резюме\n\n- **Release foundation реализован и проверен.** Gateway v2, server-side routing, hardening, telemetry/outbox и stats-narra покрыты тестами и agent gates.\n- **Traction показывает все шесть canonical-слотов.** `Ever used`, `DAU`, `WAU`, `MAU`, `Sessions / DAU`, `Tools / DAU` всегда видимы; при `DAU = 0` ratios показываются как `—`.\n- **Essential telemetry всегда включена; opt-out отключает только extended.** Целевой enum `origin=user|background` исключает фоновые jobs из activity/session/Tools; его реализация остаётся P0.\n- **No-invite beta — принятое целевое решение, ещё не готовый продукт.** До внешней раздачи нужны auto-enrollment/revocation, короткие bearer, quotas, cohort-token grace и global budget.\n- **Быстрый first-audio — целевой pipeline, ещё не реализованный.** План: bootstrap 600–900 символов, первый audio segment 150–300 символов и остальная разметка параллельно; один prefetch проверяется benchmark.\n- **48 kHz registry и versioned TTS cache уже реализованы.** Gateway закрывает 16 проверенных base codes и сам выбирает `_48000`; staging-тест Joy/Erm показал медиану 2 179 мс против 1 960 мс.\n- **Plaintext video остаётся только внутренним staging.** Server-to-server скрывает ключи от клиента, но не даёт confidentiality; внешняя beta ждёт TLS relay.\n- **Local release path теперь соответствует политике credentials.** Hosted CI делает только manual unsigned preflight; подпись/notarization и draft upload выполняются локально. Signed артефакт ещё не собран.\n- **Исторического backfill нет.** Narra ещё не релизнута: аналитика начинается с чистой даты cutover."
+          "body": "## Техническое резюме\n\n- **Release foundation реализован и проверен.** Gateway v2, server-side routing, hardening, telemetry/outbox и stats-narra покрыты тестами; новый diff ещё проходит финальные agent gates.\n- **Контракт содержит шесть canonical-слотов, live hub пока показывает четыре.** Stats корректно возвращает `Ever used`, `DAU`, `WAU`, `MAU` и опускает неделимые ratios при `DAU = 0`; ветку hub, которая рисует `Sessions / DAU` и `Tools / DAU` как `—`, ещё нужно объединить с актуальным Traction main и выкатить.\n- **Monitoring доменов и критических ручек готов.** Четыре fixed-target HTTPS probe дают state, status, latency, TLS expiry, availability/p95 за 1h/24h/7d и 30-дневную историю без сохранения response bodies.\n- **Essential telemetry всегда включена; opt-out отключает только extended.** Целевой enum `origin=user|background` исключает фоновые jobs из activity/session/Tools; его реализация остаётся P0.\n- **No-invite beta — принятое целевое решение, ещё не готовый продукт.** До внешней раздачи нужны auto-enrollment/revocation, короткие bearer, quotas, cohort-token grace и global budget.\n- **Быстрый first-audio — целевой pipeline, ещё не реализованный.** План: bootstrap 600–900 символов, первый audio segment 150–300 символов и остальная разметка параллельно; один prefetch проверяется benchmark.\n- **Mixed voice registry и versioned TTS cache реализованы.** Gateway закрывает 86 проверенных base codes, сам выбирает `_24000/_48000`, а cache v3 включает voice и фактический sample rate. 48 kHz остаются первыми в auto-pool; probe-only 24 kHz голоса доступны только вручную до продуктового review.\n- **Plaintext video остаётся только внутренним staging.** Server-to-server скрывает ключи от клиента, но не даёт confidentiality; Caddy на `i46` без HTTPS/tunnel до origin не закрывает последний plaintext hop.\n- **Local release path соответствует политике credentials.** Hosted CI делает только manual unsigned preflight; подпись/notarization и draft upload выполняются локально. Signed артефакт ещё не собран.\n- **Исторического backfill нет.** Narra ещё не релизнута: аналитика начинается с чистой даты cutover."
       },
       {
         "id": "decisions_heading",
@@ -456,7 +475,7 @@
       {
         "id": "architecture_heading",
         "type": "markdown",
-      "body": "## Целевая архитектура: один защищённый вход, раздельные контуры\n\n```text\nElectron Narra\n  ├─ локальные книги, заметки и медиа-кэш остаются на устройстве\n  ├─ priority bounded event queue ────────────────┐\n  └─ AI-запросы + per-install token ──────────────┤\n                                                  ▼\n                                  Narra Gateway (Railway)\n                    ┌───────────────┼───────────────┬───────────────┐\n                    ▼               ▼               ▼               ▼\n             Giga / LiteLLM    OpenRouter      SaluteSpeech   Kandinsky / Video\n                    └───────────────┬───────────────┴───────────────┘\n                                    ▼\n                 Rotated JSONL audit + segmented outbox (/data)\n                                    ▼\n                     stats-narra /events → Traction hub\n```\n\n48 kHz voice registry и миграция legacy voice IDs уже реализованы. Целевой post-import pipeline дополнительно должен подготовить book-level assistant/child voice plan, bootstrap первой главы, cover и 2–3 основных portraits; audio остаётся on-demand. Эти bootstrap/voice-plan изменения ещё не реализованы.\n\nTraction token уже хранится только на gateway. Auto-enrolled revocable installation record, короткий bearer и quota checks — обязательный P0 до внешней no-invite beta."
+      "body": "## Целевая архитектура: один защищённый вход, раздельные контуры\n\n```text\nElectron Narra\n  ├─ локальные книги, заметки и медиа-кэш остаются на устройстве\n  ├─ priority bounded event queue ────────────────┐\n  └─ AI-запросы + per-install token ──────────────┤\n                                                  ▼\n                                  Narra Gateway (Railway)\n                    ┌───────────────┼───────────────┬───────────────┐\n                    ▼               ▼               ▼               ▼\n             Giga / LiteLLM    OpenRouter      SaluteSpeech   Kandinsky / Video\n                    └───────────────┬───────────────┴───────────────┘\n                                    ▼\n                 Rotated JSONL audit + segmented outbox (/data)\n                                    ▼\n                     stats-narra /events → Traction hub\n```\n\nMixed 48/24 kHz registry из 86 голосов и миграция legacy voice IDs уже реализованы. Целевой post-import pipeline дополнительно должен подготовить book-level assistant/child voice plan, bootstrap первой главы, cover и 2–3 основных portraits; audio остаётся on-demand. Эти bootstrap/voice-plan изменения ещё не реализованы.\n\nTraction token уже хранится только на gateway. Auto-enrolled revocable installation record, короткий bearer и quota checks — обязательный P0 до внешней no-invite beta."
       },
       { "id": "architecture", "type": "table", "tableId": "architecture_table" },
       {
@@ -488,6 +507,11 @@
         "type": "markdown",
         "body": "## Что значит «инструментировать оставшиеся import/media события»\n\nЭто значит добавить безопасные события, по которым видно, где пользователь ждёт или получает ошибку: `book_import_started/completed/failed`, `book_analysis_started/completed/failed`, `media_job_enqueued/started/completed/failed/cancelled`, `tts_first_audio_ready`, `tts_playback_started/abandoned`. **Все эти события относятся к Extended** и перестают отправляться после opt-out. Их свойства — только закрытые enum и coarse buckets: тип job, стадия, безопасный error code, cache hit, диапазон размера/времени/очереди. Названия книг и героев, URL, имена файлов, текст, prompt/response, transcript и media запрещены.\n\nGateway независимо хранит always-on агрегаты без installation actor: queue depth, active jobs, latency histogram, saturation и provider error code. Это эксплуатационные счётчики, а не пользовательские Traction events."
       },
+      {
+        "id": "operational_monitoring",
+        "type": "markdown",
+        "body": "## Traction отдельно наблюдает домены и критические ручки\n\nNarra stats раз в минуту параллельно проверяет четыре fixed-target HTTPS endpoint: production gateway `/health`, staging gateway `/ready`, production analytics `/p/narra/health` и staging analytics `/health`. Dashboard показывает `up/degraded/standby/down`, HTTP status, latency, TLS expiry, availability, scheduled-probe coverage и p95 за 1h/24h/7d. Пропущенные проверки уменьшают availability: свежий probe после простоя не маскирует неизвестный период как `100% uptime`. Reviewed production `503 not_ready` считается `standby`, а не outage.\n\nURL нельзя передать через request; redirects запрещены; response body ограничен 64 KiB, используется только для contract check и не сохраняется. DNS-ответы проверяются на public IP, TLS закрепляется за проверенным адресом с hostname/SNI verification, а каждый probe выполняется в disposable process с абсолютным deadline и terminate. SQLite хранит лишь coarse result 30 дней. Production deploy использует remote flock, повторный version/hash CAS, app+unit rollback и recovery-only online DB backup. Это не заменяет внешний UptimeRobot: при падении самого stats внутренний monitor тоже исчезнет."
+      },
     {
       "id": "capacity",
       "type": "markdown",
@@ -496,27 +520,28 @@
     {
       "id": "tts_markup_speed",
       "type": "markdown",
-      "sourceId": "narra_release_foundation_worktree",
+      "sourceId": "narra_release_candidate_worktree",
       "body": "## Разметку главы и первый звук можно заметно ускорить\n\nСейчас глава режется примерно по 1 500 символов, каждый фрагмент идёт в LLM строго последовательно, а TTS ждёт весь результат. Целевой, ещё не реализованный путь: 600–900-char bootstrap после импорта; 150–300-char first-audio по нажатию; остаток по 3–5 тысяч символов до трёх LLM jobs параллельно.\n\nОдинаковые jobs coalesce; background job получает интерактивный приоритет. Ответ возвращает sentence IDs/speaker/emotion, а cache key включает text hash, markup/model/voice-plan и для audio — voice/48 kHz/prosody. Начинаем с одного prefetch, но его достаточность является acceptance criterion: concurrent end-to-end benchmark должен подтвердить underrun rate и p95 buffer headroom.\n\nЗакрытый enum `origin=user|background` также ещё нужно добавить в allowlist. Только `user` может входить в activity/session/Tools; background actor diagnostics — Extended. Ориентир полной разметки **2–4×** остаётся оценкой до benchmark."
     },
-    {
-      "id": "tts_quality_heading",
-      "type": "markdown",
-      "sourceId": "salutespeech_staging_benchmark",
-      "body": "## 48 kHz registry включён после staging-теста\n\nProvider UI и API вместе подтвердили exact assistant mapping: `Che→Афина`, `She→Сбер`, `Erm→Джой`. Медианная задержка 48 kHz выросла примерно на 11%, средняя — примерно на 30% из-за run 4 = 3 877 мс, а WAV стал почти вдвое больше. Gateway теперь сам добавляет `_48000` и принимает только закрытый base-code allowlist; произвольную provider model клиент подставить не может.\n\nИз 94 exact-case codes 16 синтезируют реальный WAV 48 kHz, а 84 — WAV 24 kHz. Рабочий high-quality registry: 9 мужских и 7 женских. Главные assistant-роли — 1+2; обычные второстепенные — 5+3; детские `Ksa/Saf/Bsa` — 1+2; manual-only `Mar/Kas` — 2+0. После реализации child/assistant assignment целевой auto-eligible set без пасхалок будет 7+7. Текущий runtime автоматически назначает только 5+3 обычных library-голоса и default narrator Che; child assignment и narrator UI ещё P0.\n\nВсе 188 первичных probe rows сохранены в bounded snapshot и immutable CSV SHA-256 `30fee1f...51bcc`. `Efo→Фокин` и `Kov→Ковалев` исключены: 48 kHz возвращает HTTP 400, отдельной продуктовой логики на них нет. Длинный 24 kHz pool остаётся candidate pool до прослушивания Сони: picker не доказывает пол/тембр, а смешивать качество внутри главы нельзя."
+      {
+        "id": "tts_quality_heading",
+        "type": "markdown",
+        "sourceId": "salutespeech_staging_benchmark",
+        "body": "## 48 kHz остаётся приоритетом, 24 kHz даёт нужное разнообразие\n\nProvider UI и API вместе подтвердили exact assistant mapping: `Che→Афина`, `She→Сбер`, `Erm→Джой`. Медианная задержка 48 kHz выросла примерно на 11%, средняя — примерно на 30% из-за run 4 = 3 877 мс, а WAV стал почти вдвое больше. Поэтому 48 kHz сохраняется для assistant и первых обычных ролей, а технически проверенные 24 kHz голоса расширяют последующие роли. Gateway сам добавляет `_24000/_48000` и принимает только закрытый base-code allowlist.\n\nActive registry содержит 86 голосов: 16 × 48 kHz и 70 × 24 kHz. По ролям: assistants 1 мужской + 2 женских; обычные второстепенные 26 + 16; детские 3 + 4; manual-only 2 мужских + 32 пока без подтверждённого пола. Все 70 добавленных 24 kHz codes есть в сохранённом staging probe и вернули реальный WAV 24 kHz. Cache v3 включает фактический sample rate; один voice ID не меняет качество посреди книги.\n\nВсе 188 первичных probe rows сохранены в bounded snapshot и immutable CSV SHA-256 `30fee1f...51bcc`. `Efo→Фокин` остаётся исключён. `Kov/Aso/Pik/Roz/Voy` и другие probe-only варианты доступны только вручную, пока пол/назначение не утверждены."
     },
     { "id": "tts_quality_benchmark", "type": "table", "tableId": "tts_quality_benchmark_table" },
-    {
-      "id": "voice_registry_heading",
-      "type": "markdown",
-      "sourceId": "voice_registry_review",
-      "body": "## Picker mapping и технический probe закрыты\n\nДля Стерлинга используется рабочий 48 kHz `Ast`, а не неработающий `Gst`. `Saf`, `Bsa` и `Ksa` — три самостоятельных проверенных детских варианта. `Pik/Boc/Kha/Kud` и ещё десятки кодов технически работают в 24 kHz, но не входят в auto-assignment без прослушивания и утверждения пола. `Efo` и `Kov` остаются evidence-only и не являются provisioning gate."
-    },
-    { "id": "voice_registry", "type": "table", "tableId": "voice_registry_table" },
-    {
-      "id": "transport_workaround",
-      "type": "markdown",
-      "body": "## Workaround без HTTPS-туннеля\n\n### LiteLLM\n\nДо защищённого транспорта все LLM purposes идут через OpenRouter по HTTPS. Staging использует `deepseek/deepseek-v4-flash`; Giga adapter `gigachat-3-ultra` остаётся server-side и возвращается без пересборки клиента после защищённого endpoint.\n\n### Video\n\n`клиент → HTTPS Railway → HTTP <video-origin>` скрывает master credential от клиента, но второй hop остаётся plaintext. HMAC/allowlist ограничивают replay/tampering, но не дают confidentiality. Поэтому HTTP разрешён только внутреннему staging с контролируемыми test data; внешняя no-invite beta ждёт HTTPS edge relay рядом с video host.\n\n### Поддомен MultiTool\n\n`narra-staging.multitool.works` направлен в Railway staging и отвечает 200. На общем Caddy server для `narra.multitool.works` выпущен валидный TLS, но exact-host block намеренно fail-closed: `/health` и все остальные пути отвечают JSON 503, reverse proxy отсутствует. Ни staging, ни legacy Railway не подключены; соседние домены после reload сохранили прежние статусы."
+      {
+        "id": "voice_registry_heading",
+        "type": "markdown",
+        "sourceId": "voice_registry_review",
+        "body": "## Picker mapping и технический probe закрыты\n\nДля Стерлинга используется рабочий 48 kHz `Ast`, а не неработающий `Gst`. Детский pool расширен до 3 мужских и 4 женских вариантов; Сафронова остаётся приоритетом для девочек/сказочного жанра. Обычный auto-pool сначала использует 5 мужских + 3 женских 48 kHz голоса, затем 21 + 13 подтверждённых 24 kHz. Ещё 32 рабочих 24 kHz варианта остаются manual-only до прослушивания и подтверждения пола. Художественное прослушивание Сони остаётся beta gate, но произвольный или неизвестный по полу голос в автоматику не попадает."
+      },
+      { "id": "voice_registry", "type": "table", "tableId": "voice_registry_table" },
+      { "id": "voice_pool_summary", "type": "table", "tableId": "voice_pool_summary_table" },
+      {
+        "id": "transport_workaround",
+        "type": "markdown",
+        "body": "## Workaround без HTTPS-туннеля\n\n### LiteLLM\n\nДо защищённого транспорта все LLM purposes идут через OpenRouter по HTTPS. Staging использует `deepseek/deepseek-v4-flash`; Giga adapter `gigachat-3-ultra` остаётся server-side и возвращается без пересборки клиента после защищённого endpoint.\n\n### Video\n\n`клиент → HTTPS Railway → HTTP <video-origin>` скрывает master credential от клиента, но второй hop остаётся plaintext. HMAC/allowlist ограничивают replay/tampering, но не дают confidentiality. Поэтому HTTP разрешён только внутреннему staging с контролируемыми test data; внешняя no-invite beta ждёт HTTPS edge relay рядом с video host либо приватный tunnel.\n\n### Поддомены и `i46`\n\n`narra-staging.multitool.works` направлен в Railway staging и отвечает 200. `narra.multitool.works` смотрит на отдельный server `158.160.163.167` и намеренно отвечает JSON 503 без reverse proxy. Read-only аудит `i46` (`167.233.103.46`) показал: 80/443 уже заняты Docker Caddy `bizzy-radio-caddy-1`, который обслуживает Bizzy Radio и Gigagochi. Второй proxy ставить нельзя. Новый exact-host можно добавить только в существующий `/opt/bizzy-radio/Caddyfile` через backup → validate → reload → regression probes → rollback.\n\nCaddy на `i46`, проксирующий публичный HTTP `87.242.117.37:5051`, не делает последний hop шифрованным. Безопасный production-вариант требует HTTPS на video origin или WireGuard/SSH tunnel `origin → i46`; на `i46` пока ничего не менялось."
     },
     {
       "id": "client_credentials_access",
@@ -563,26 +588,26 @@
         "type": "markdown",
         "body": "## Как сформирован план\n\nПлан основан на read-only аудите Narra, canonical-контракте Traction и фактическом тюнинге AIWA. Метрики отбирались по четырём критериям: они отражают ценность продукта, меняют решение команды, доступны на нужной частоте и трудно улучшаются обманным способом. Для каждого rate зафиксированы actor, окно и знаменатель; для новых данных запрещён исторический zero-fill."
       },
-    {
-      "id": "limitations",
-      "type": "markdown",
-      "body": "## Ограничения и неизвестные\n\n- Production hostname TLS готов, но gateway/cutover ещё не выполнен: 503 является ожидаемой безопасной заглушкой.\n- Plaintext video разрешён только внутреннему staging; внешняя beta ждёт TLS relay.\n- Video 4–6 jobs/hour и ускорение полной LLM-разметки 2–4× — расчёт до load benchmark; один TTS prefetch — проверяемая гипотеза.\n- TTS 24/48 kHz измерен на одном 708-char тексте; capability probe — на одном 61-char тексте. Это техническая доступность, не оценка качества голоса.\n- Production Traction live, но база пуста до первого клиента; staging events не переносятся.\n- Assistant mapping закрыт: Che=Афина, She=Сбер, Erm=Джой. Server-side 16-voice 48 kHz allowlist и versioned text/voice/sample-rate/prosody cache key готовы; first-audio ещё P0.\n- 84 кода работают в 24 kHz, но их gender/тембр не утверждены; нельзя угадывать auto-pool по фамилиям.\n- Intel Mac отсутствует; universal x64 packaging остаётся без install/launch smoke и фиксируется как принятый риск.\n- Matching local Apple notarization profile/API key пока не найден; signed artifact ещё не собран.\n- Формулировка «закрыть все уязвимости» недоказуема; gate покрывает известные находки и abuse-сценарии."
+      {
+        "id": "limitations",
+        "type": "markdown",
+        "body": "## Ограничения и неизвестные\n\n- Production hostname TLS готов, но gateway/cutover ещё не выполнен: 503 является ожидаемой безопасной заглушкой.\n- Plaintext video разрешён только внутреннему staging; Caddy на отдельном edge без HTTPS/tunnel до origin не устраняет риск.\n- Video 4–6 jobs/hour и ускорение полной LLM-разметки 2–4× — расчёт до load benchmark; один TTS prefetch — проверяемая гипотеза.\n- TTS 24/48 kHz измерен на одном 708-char тексте; capability probe — на одном 61-char тексте. Это техническая доступность, не оценка качества голоса.\n- Production Narra stats live и база пуста до первого клиента; live hub ещё не содержит merge, который постоянно показывает все шесть slots.\n- Assistant mapping закрыт: Che=Афина, She=Сбер, Erm=Джой. Server-side 86-voice allowlist и versioned text/voice/sample-rate/prosody cache key готовы; child assignment, narrator/manual UI и first-audio ещё P0.\n- 70 добавленных 24 kHz голосов технически работают; 38 входят в обычный/детский auto-pool по reviewed evidence, 32 оставлены manual-only до продуктового прослушивания.\n- Встроенный monitor не наблюдает падение самого stats извне; нужен отдельный UptimeRobot/аналог.\n- Intel Mac отсутствует; universal x64 packaging остаётся без install/launch smoke и фиксируется как принятый риск.\n- Matching local Apple notarization profile/API key пока не найден; signed artifact ещё не собран.\n- Формулировка «закрыть все уязвимости» недоказуема; gate покрывает известные находки и abuse-сценарии."
       },
-    {
-      "id": "next_steps",
-      "type": "markdown",
-      "body": "## Следующие шаги после уже завершённого foundation\n\n1. **Готово:** gateway v2, custom staging HTTPS, fail-closed production TLS hostname, all-OpenRouter routes, media E2E, telemetry/outbox, stats staging, production Traction с шестью slots, 16-voice 48 kHz registry, versioned TTS cache keys, local release script и manual unsigned CI preflight.\n2. Добавить обязательный `origin=user|background` allowlist/tiering и canonical exclusions.\n3. Доделать deterministic child assignment и UI выбора narrator/manual voice; расширять 24 kHz pool только после прослушивания Сони.\n4. Реализовать bootstrap/first-audio/parallel markup/prefetch/coalescing и подтвердить underrun/p95 benchmark.\n5. Реализовать auto-enrollment/revocation, short bearer, multi-version cohort grace и cost controls.\n6. Перед внешней beta поставить HTTPS video relay: custom gateway TLS не шифрует второй hop до video host.\n7. Получить local notarization profile/API key, собрать signed/notarized universal RC и проверить Apple Silicon; отсутствие Intel smoke зафиксировать как риск.\n8. Провести capacity benchmark, подключить новый v2 upstream к production hostname и только после gates загрузить/опубликовать release."
+      {
+        "id": "next_steps",
+        "type": "markdown",
+        "body": "## Следующие шаги после уже завершённого foundation\n\n1. **Код готов:** gateway v2, custom staging HTTPS, fail-closed production hostname, all-OpenRouter routes, media E2E, telemetry/outbox, stats staging, 86-voice mixed registry, cache v3, domain/endpoint monitor, local release script и manual unsigned CI preflight.\n2. После agent gates выкатить monitor в staging/production stats и объединить Narra hub с актуальным Traction main, чтобы live карточка показывала шесть slots.\n3. Добавить обязательный `origin=user|background` allowlist/tiering и оставшиеся import/media producers; подключить внешний uptime alert.\n4. Доделать deterministic child assignment и UI выбора narrator/manual voice; дать Соне прослушать 24 kHz pool.\n5. Реализовать bootstrap/first-audio/parallel markup/prefetch/coalescing и подтвердить underrun/p95 benchmark.\n6. Реализовать auto-enrollment/revocation, short bearer, multi-version cohort grace и cost controls.\n7. Перед внешней beta обеспечить HTTPS на video origin либо tunnel до аккуратного edge; обычный HTTP reverse proxy на `i46` недостаточен.\n8. Получить local notarization profile/API key, собрать signed/notarized universal RC и проверить Apple Silicon; отсутствие Intel smoke зафиксировать как риск.\n9. Провести capacity benchmark, подключить новый v2 upstream к production hostname и только после gates загрузить/опубликовать release."
       },
-    {
-      "id": "further_questions",
-      "type": "markdown",
-      "body": "## Оставшиеся внешние входы\n\n### От Макса\n- После создания нового Railway v2 production service дать его upstream для reviewed Caddy cutover; TLS hostname уже готов и fail-closed.\n- Согласовать локальный Apple Team Жени notarization path; key material не получать и не передавать в чат/репозиторий.\n- Задать бюджет/окно benchmark `1 → 2 → 5 → 10`; отсутствие Intel smoke уже принято как риск; уточнить отдельный Android scope.\n\n### От Сони\n- Утвердить fallback для `Sber narrator + male protagonist`, прослушать основной 48 kHz pool и при желании выбрать дополнительные варианты из 84 технически рабочих 24 kHz кодов.\n- Подтвердить portrait preload count. Assistant mapping уже закрыт: Che=Афина, She=Сбер, Erm=Джой; Efo/Kov provisioning не требуется.\n\n### От владельца video host\n- Поставить HTTPS relay рядом с `<video-origin>:5051`, самому записать отдельный Narra credential прямо в Railway secret/secret manager без передачи значения и подтвердить concurrency limit.\n\n### От владельца Apple Team\n- Разрешить `com.narra.app` под Team `LTS79DWRGJ`, самостоятельно сохранить credentials на release Mac через `notarytool store-credentials` и сообщить только имя `APPLE_KEYCHAIN_PROFILE`; key material не передаётся."
+      {
+        "id": "further_questions",
+        "type": "markdown",
+        "body": "## Оставшиеся внешние входы\n\n### От Макса\n- После создания нового Railway v2 production service дать его upstream для reviewed cutover; существующий `narra.multitool.works` не переносить на `i46`.\n- Дать доступ к UptimeRobot/аналогу или создать внешний monitor production analytics; production gateway monitor включить после cutover. Указать канал и задержку alert.\n- Если `i46` нужен как edge, сначала получить HTTPS на origin или разрешение WireGuard/SSH tunnel; затем выбрать отдельные DNS-имена и maintenance window для validate/reload/regression probes существующего Caddy.\n- Согласовать локальный Apple Team Жени notarization path; key material не получать и не передавать в чат/репозиторий.\n- Задать бюджет/окно benchmark `1 → 2 → 5 → 10`; подтвердить mixed 48/24 kHz policy; отсутствие Intel smoke уже принято как риск; уточнить отдельный Android scope.\n\n### От Сони\n- Утвердить fallback для `Sber narrator + male protagonist` и прослушать mixed registry: assistants 1+2, обычные второстепенные 26+16, детские 3+4. Отдельно классифицировать либо оставить manual-only 32 probe-only голоса.\n- Подтвердить portrait preload count и допустимость 24 kHz второстепенным героям при 48 kHz приоритете для первых ролей.\n\n### От владельца video host\n- Поставить HTTPS рядом с `<video-origin>:5051` либо разрешить tunnel до `i46`; самому записать отдельный Narra credential в Railway secret/secret manager и подтвердить concurrency, queue, runtime, rate-limit и cost.\n\n### От владельца LiteLLM/Giga\n- Дать управляемый HTTPS origin либо разрешить private tunnel, подтвердить модели/rate limits/timeouts/fallback. API key записать в Railway самостоятельно, не передавать в чат.\n\n### От владельца Apple Team\n- Разрешить `com.narra.app` под Team `LTS79DWRGJ`, самостоятельно сохранить credentials на release Mac через `notarytool store-credentials` и сообщить только имя `APPLE_KEYCHAIN_PROFILE`; key material не передаётся."
       }
     ]
   },
   "snapshot": {
     "version": 1,
-    "generatedAt": "2026-07-23T20:30:00+03:00",
+    "generatedAt": "2026-07-23T20:15:00+03:00",
     "status": "ready",
     "datasets": {
       "decisions": [
@@ -872,6 +897,13 @@
         { "priority": 17, "product_voice": "Фокин", "base_code": "Efo", "assignment": "excluded from v1", "picker_evidence_id": "picker-154545", "probe_evidence_id": "probe-Efo-48000", "supporting_probe_evidence_id": "probe-Efo-24000", "staging_result": "24000/48000 unavailable" },
         { "priority": 18, "product_voice": "Ковалев", "base_code": "Kov", "assignment": "excluded from v1", "picker_evidence_id": "picker-154610", "probe_evidence_id": "probe-Kov-48000", "supporting_probe_evidence_id": "probe-Kov-24000", "staging_result": "24000 HTTP 200; 48000 HTTP 400" }
       ],
+      "voice_pool_summary": [
+        { "order": 1, "group": "Главные роли / assistants", "rate_48k": 3, "rate_24k": 0, "male": 1, "female": 2, "unspecified": 0, "policy": "Narrator и главные роли; пользователь выбирает narrator" },
+        { "order": 2, "group": "Обычные второстепенные", "rate_48k": 8, "rate_24k": 34, "male": 26, "female": 16, "unspecified": 0, "policy": "Сначала 48 kHz по полу, затем только подтверждённые picker evidence 24 kHz" },
+        { "order": 3, "group": "Детские", "rate_48k": 3, "rate_24k": 4, "male": 3, "female": 4, "unspecified": 0, "policy": "Только child-rule; Сафронова приоритетна девочкам/сказкам" },
+        { "order": 4, "group": "Manual-only allowlist / пасхалки", "rate_48k": 2, "rate_24k": 32, "male": 2, "female": 0, "unspecified": 32, "policy": "Успешно синтезируются, но не участвуют в auto-assignment; UI ручной смены ещё planned" },
+        { "order": 5, "group": "Итого", "rate_48k": 16, "rate_24k": 70, "male": 32, "female": 22, "unspecified": 32, "policy": "86 exact-case кодов в server-side allowlist" }
+      ],
       "architecture": [
         { "order": 1, "layer": "Electron client", "owns": "UI, локальные книги/заметки/кэш, installation identity, always-on essential + default-on extended telemetry, bounded offline event queue", "never": "Не содержит provider keys/Traction token и не выбирает provider/model", "state": "Реализовано локально; unsigned universal QA пройден" },
         { "order": 2, "layer": "Narra Gateway", "owns": "Auth, schemas, quotas, routing, request/attempt/usage telemetry, content fetch, generic update feed", "never": "Не принимает анонимные дорогие запросы и не пишет сырой контент в аналитику", "state": "Gateway v2 в Railway staging; auth/events/OpenRouter complete/SSE smoke зелёные" },
@@ -890,11 +922,11 @@
       ],
       "canonical_metrics": [
         { "order": 1, "metric": "Ever used", "narra_definition": "Distinct HMAC installation IDs, которые хотя бы раз открыли книгу; простая установка или app_open не считается", "window": "Вся история с cutover", "guardrail": "Один installation actor-space; test/staging исключены" },
-        { "order": 2, "metric": "DAU", "narra_definition": "Distinct installations с квалифицированной reading session или осмысленным продуктовым действием", "window": "Trailing 24h", "guardrail": "Только origin=user; background/health/update не создают активность" },
-        { "order": 3, "metric": "WAU", "narra_definition": "Те же active actors, что в DAU", "window": "Trailing 7d", "guardrail": "Не сумма DAU; только distinct actor IDs" },
-        { "order": 4, "metric": "MAU", "narra_definition": "Те же active actors, что в DAU", "window": "Trailing 30d", "guardrail": "Не рисовать периоды до начала измерения нулями" },
-        { "order": 5, "metric": "Sessions / DAU", "narra_definition": "Distinct qualified sessions за 24h / DAU; новая сессия после 30 минут бездействия", "window": "Trailing 24h", "guardrail": "Сессия квалифицируется ≥60 с или значимым действием; denominator=0 → ключ опускается" },
-        { "order": 6, "metric": "Tools / DAU", "narra_definition": "Logical AI requests с origin=user за 24h / DAU", "window": "Trailing 24h", "guardrail": "Background jobs и provider retry/fallback attempts не увеличивают tool count" }
+        { "order": 2, "metric": "DAU", "narra_definition": "Distinct installations с квалифицированной reading session или осмысленным продуктовым действием", "window": "Текущая дата Europe/Moscow", "guardrail": "Только origin=user; background/health/update не создают активность" },
+        { "order": 3, "metric": "WAU", "narra_definition": "Те же active actors, что в DAU", "window": "Текущая ISO-неделя Europe/Moscow", "guardrail": "Не сумма DAU; только distinct actor IDs" },
+        { "order": 4, "metric": "MAU", "narra_definition": "Те же active actors, что в DAU", "window": "Текущий календарный месяц Europe/Moscow", "guardrail": "Не рисовать периоды до начала измерения нулями" },
+        { "order": 5, "metric": "Sessions / DAU", "narra_definition": "Distinct qualified sessions текущей московской даты / DAU той же даты; новая сессия после 30 минут бездействия", "window": "Сегодня Europe/Moscow", "guardrail": "Сессия квалифицируется ≥60 с или значимым действием; denominator=0 → ключ опускается" },
+        { "order": 6, "metric": "Tools / DAU", "narra_definition": "Logical AI requests с origin=user текущей московской даты / DAU той же даты", "window": "Сегодня Europe/Moscow", "guardrail": "Background jobs и provider retry/fallback attempts не увеличивают tool count" }
       ],
       "narra_dashboard": [
         { "order": 1, "section": "Audience", "metrics": "Ever used, DAU/WAU/MAU, new installations, active versions", "decision": "Есть ли реальное использование и принят ли новый релиз" },
@@ -989,13 +1021,13 @@
       }
     },
     {
-      "id": "narra_release_foundation_worktree",
-      "label": "Narra — текущий release-foundation candidate",
-      "href": "https://github.com/sboo-create/narra/tree/feat/narra-release-foundation",
+      "id": "narra_release_candidate_worktree",
+      "label": "Narra — текущий monitoring/voices candidate",
+      "href": "https://github.com/sboo-create/narra/tree/feat/narra-monitoring-and-voices",
       "query": {
         "engine": "git",
-        "description": "Текущий reviewed candidate ветки feat/narra-release-foundation; production gateway этой веткой ещё не переключался.",
-        "executed_at": "2026-07-23T20:30:00+03:00",
+        "description": "Текущий candidate ветки feat/narra-monitoring-and-voices проходит финальные review gates; production gateway этой веткой ещё не переключался.",
+        "executed_at": "2026-07-23T20:15:00+03:00",
         "language": "TypeScript/JavaScript/Python/HTML",
         "tables_used": ["server/index.mjs", "server/event-store.mjs", "src/main/telemetry.ts", "src/main/pdf-worker.ts", "src/renderer/lib/scenario.ts", "src/renderer/screens/Reader.tsx", "src/renderer/lib/ttsController.ts", "stats/server.py", "stats/index.html", ".github/workflows/release-macos.yml"]
       }

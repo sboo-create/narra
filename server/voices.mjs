@@ -1,20 +1,42 @@
+const entries = (codes, sampleRate, gender, group) => codes.map((code) => [
+  code,
+  Object.freeze({
+    providerVoice: `${code}_${sampleRate}`,
+    sampleRate,
+    gender,
+    group
+  })
+])
+
 const VOICES = new Map([
-  ['Che', { providerVoice: 'Che_48000', gender: 'female', group: 'assistant' }],
-  ['She', { providerVoice: 'She_48000', gender: 'male', group: 'assistant' }],
-  ['Erm', { providerVoice: 'Erm_48000', gender: 'female', group: 'assistant' }],
-  ['Ast', { providerVoice: 'Ast_48000', gender: 'male', group: 'library' }],
-  ['Gal', { providerVoice: 'Gal_48000', gender: 'male', group: 'library' }],
-  ['Bez', { providerVoice: 'Bez_48000', gender: 'male', group: 'library' }],
-  ['Ego', { providerVoice: 'Ego_48000', gender: 'male', group: 'library' }],
-  ['Izv', { providerVoice: 'Izv_48000', gender: 'male', group: 'library' }],
-  ['Ste', { providerVoice: 'Ste_48000', gender: 'female', group: 'library' }],
-  ['Tso', { providerVoice: 'Tso_48000', gender: 'female', group: 'library' }],
-  ['Chr', { providerVoice: 'Chr_48000', gender: 'female', group: 'library' }],
-  ['Ksa', { providerVoice: 'Ksa_48000', gender: 'male', group: 'child' }],
-  ['Saf', { providerVoice: 'Saf_48000', gender: 'female', group: 'child' }],
-  ['Bsa', { providerVoice: 'Bsa_48000', gender: 'female', group: 'child' }],
-  ['Mar', { providerVoice: 'Mar_48000', gender: 'male', group: 'manual' }],
-  ['Kas', { providerVoice: 'Kas_48000', gender: 'male', group: 'manual' }]
+  ...entries(['Che'], 48000, 'female', 'assistant'),
+  ...entries(['She'], 48000, 'male', 'assistant'),
+  ...entries(['Erm'], 48000, 'female', 'assistant'),
+
+  ...entries(['Ast', 'Gal', 'Bez', 'Ego', 'Izv'], 48000, 'male', 'library'),
+  ...entries(['Ste', 'Tso', 'Chr'], 48000, 'female', 'library'),
+  ...entries([
+    'Ana', 'Ann', 'Bek', 'Boc', 'Chp', 'Dsu', 'Klu', 'Min', 'Mir', 'Ovs',
+    'San', 'Sdo', 'Shc', 'Shl', 'Sid', 'Sto', 'Str', 'Tar', 'Tre', 'Uso',
+    'Vol'
+  ], 24000, 'male', 'library'),
+  ...entries([
+    'Aer', 'Bal', 'Buz', 'Dad', 'Dyu', 'Kab', 'Kud', 'Mak', 'Sko', 'Smi',
+    'Sne', 'Sta', 'Ved'
+  ], 24000, 'female', 'library'),
+
+  ...entries(['Ksa'], 48000, 'male', 'child'),
+  ...entries(['Saf', 'Bsa'], 48000, 'female', 'child'),
+  ...entries(['Kkr', 'Ktr'], 24000, 'male', 'child'),
+  ...entries(['Kbu', 'Koz'], 24000, 'female', 'child'),
+
+  ...entries(['Mar', 'Kas'], 48000, 'male', 'manual'),
+  ...entries([
+    'Aso', 'Bai', 'Bik', 'Bol', 'Gav', 'Gri', 'Gur', 'Igr', 'Kai', 'Kar',
+    'Ker', 'Kha', 'Kis', 'Kka', 'Kor', 'Kov', 'Lil', 'Mel', 'Nag', 'Ore',
+    'Peh', 'Pik', 'Pot', 'Pru', 'Rab', 'Res', 'Roz', 'Rum', 'Shi', 'Tob',
+    'Tya', 'Voy'
+  ], 24000, 'unspecified', 'manual')
 ])
 
 export function voiceConfig(voice) {
