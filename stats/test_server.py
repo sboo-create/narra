@@ -73,6 +73,13 @@ class NarraStatsTest(unittest.TestCase):
         create_index = deploy.index("sudo install -d -o root -g root -m 0755")
         rsync_index = deploy.index('rsync "${FLAGS[@]}"')
         self.assertLess(create_index, rsync_index)
+        version_write_index = deploy.index("printf '%s\\n' \"$VERSION\"")
+        version_mode_index = deploy.index('chmod 0644 "$TMP_VERSION"')
+        version_rsync_index = deploy.index(
+            'rsync -az --rsync-path="sudo rsync" "$TMP_VERSION"'
+        )
+        self.assertLess(version_write_index, version_mode_index)
+        self.assertLess(version_mode_index, version_rsync_index)
         self.assertIn("systemctl enable stats-narra", deploy)
         self.assertIn("systemctl restart stats-narra", deploy)
         self.assertNotIn("systemctl enable --now stats-narra", deploy)

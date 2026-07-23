@@ -18,6 +18,7 @@ rsync "${FLAGS[@]}" --rsync-path="sudo rsync" "$HERE/" "$REMOTE:$REMOTE_DIR/"
 TMP_VERSION="$(mktemp)"
 trap 'rm -f "$TMP_VERSION"' EXIT
 printf '%s\n' "$VERSION" > "$TMP_VERSION"
+chmod 0644 "$TMP_VERSION"
 rsync -az --rsync-path="sudo rsync" "$TMP_VERSION" "$REMOTE:$REMOTE_DIR/VERSION"
 ssh "$REMOTE" "cd '$REMOTE_DIR' \
   && { [ -x .venv/bin/python ] || sudo python3 -m venv .venv; } \
