@@ -12,7 +12,7 @@
 
 | Контур | Статус | Что это означает |
 |---|---|---|
-| Gateway staging | ✅ Live | Exact deploy `2fda2f7`: OpenRouter, SaluteSpeech, 86 голосов, Kandinsky, video и analytics outbox |
+| Gateway staging | ✅ Live | Exact source `e78dc8f`, Railway deploy `d128007d…`: no-invite, OpenRouter, SaluteSpeech, 86 голосов, Kandinsky, video и analytics outbox |
 | Stats staging | ✅ Live | Exact deploy `2fda2f7`; отдельные token, database и Volume, monitoring здесь выключен |
 | Traction production stats | ✅ Live | Narra stats-модуль активен, dashboard защищён, poller healthy |
 | Общая карточка Traction | ✅ Live v0.6 | Шесть постоянных слотов выкачены; при нулевом DAU ratios видны как `—` |
@@ -25,7 +25,7 @@
 | Video в public release | ⏳ Origin transport/capacity | `narra-video.multitool.works` уже имеет валидный TLS, но намеренно отвечает `503`; для public ещё нужен защищённый последний hop и durable queue |
 | Production hostname | ✅ TLS reserved | `narra.multitool.works` изолированно отвечает `503 not_ready`; staging/legacy не проксируются |
 | Production gateway | ⏳ One-time cutover | Новый v2-сервис ещё не подключён к production hostname |
-| No-invite registry | 🧪 Branch-ready | Код, tests и runbook готовы; staging всё ещё на `2fda2f7`, нужны deploy + restart/revoke proof |
+| No-invite registry | ✅ Staging verified | Auto-enroll, refresh, revoke и persistent daily cap прошли реальные restart-smoke на Railway Volume |
 
 ---
 
@@ -433,9 +433,21 @@ bearer, analytics HMAC или operator token, поэтому их можно р�
 refresh proof всех существующих установок. Перед изменением нужен backup
 registry и отдельный migration/reset plan. Bearer также хранится через
 `safeStorage`; при недоступном Keychain release-клиент держит его только в
-памяти. Клиент обновляет bearer незадолго до истечения. Staging-deploy
-`2fda2f7` пока использует предыдущую схему: новый контур нельзя считать live до
-отдельного deploy/restart/revoke smoke.
+памяти. Клиент обновляет bearer незадолго до истечения.
+
+Staging работает на source commit `e78dc8f` (финальный Railway redeploy
+`d128007d-cb62-4b18-a14e-306653824034`). Реальные smoke-проверки подтвердили:
+
+- `register=201`, `refresh=200`;
+- после restart действующая установка снова получает `refresh=200`;
+- revoke сохраняется через restart: старый bearer получает `401` с
+  `X-Narra-Auth-Error: installation_token`, повторная регистрация — `403`;
+- при временном `AI_LIMIT_PER_DAY=1` первый намеренно невалидный AI request
+  зарезервировал quota и вернул `400`, второй и post-restart запросы вернули
+  `429`; после удаления временного override штатный default `500` восстановлен,
+  тот же невалидный запрос снова возвращает `400`;
+- `/health=200`, `/ready=200`, registry сообщает
+  `storage_verified=true`.
 
 ### Как доступ устроен в подготовленной ветке
 
@@ -966,8 +978,8 @@ HTTP status, content type и фактический WAV sample rate уже вы�
 - [x] Fail-closed TLS hostname `narra-video.multitool.works` без proxy к HTTP origin
 - [ ] HTTPS video relay до передачи media внешних beta-пользователей
 - [x] Auto-enrolled revocable installation registry без приглашений
-- [x] 15-минутные bearer/refresh, server-side revoke и persistent per-install/global budgets
-- [ ] Staging deploy новой no-invite схемы и проверка
+- [x] 15-минутный bearer, device refresh proof, server-side revoke и persistent per-install/global budgets
+- [x] Staging deploy новой no-invite схемы и проверка
       `register → restart → refresh`, `revoke → restart → 401`,
       `daily cap → restart → still 429`
 
