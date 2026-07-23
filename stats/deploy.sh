@@ -10,6 +10,8 @@ FLAGS=(-az --exclude=.venv --exclude=__pycache__ --exclude='*.pyc' --exclude=dat
 [ "$DRY_RUN" = "1" ] && FLAGS+=(--dry-run -v)
 
 echo "[deploy] $HERE -> $REMOTE:$REMOTE_DIR (v$VERSION)"
+[ "$DRY_RUN" = "1" ] || ssh "$REMOTE" \
+  "sudo install -d -o root -g root -m 0755 '$REMOTE_DIR'"
 rsync "${FLAGS[@]}" --rsync-path="sudo rsync" "$HERE/" "$REMOTE:$REMOTE_DIR/"
 [ "$DRY_RUN" = "1" ] && exit 0
 

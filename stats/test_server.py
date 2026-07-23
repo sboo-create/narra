@@ -70,6 +70,9 @@ class NarraStatsTest(unittest.TestCase):
 
     def test_i167_deploy_restarts_an_existing_service_after_code_update(self):
         deploy = Path(__file__).with_name("deploy.sh").read_text()
+        create_index = deploy.index("sudo install -d -o root -g root -m 0755")
+        rsync_index = deploy.index('rsync "${FLAGS[@]}"')
+        self.assertLess(create_index, rsync_index)
         self.assertIn("systemctl enable stats-narra", deploy)
         self.assertIn("systemctl restart stats-narra", deploy)
         self.assertNotIn("systemctl enable --now stats-narra", deploy)
