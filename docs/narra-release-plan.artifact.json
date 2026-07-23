@@ -5,16 +5,16 @@
     "surface": "report",
     "title": "Narra: план безопасного релиза и аналитики",
     "description": "Фактический статус и технический план безопасного релиза Narra: gateway, OpenRouter + Giga, аналитика Traction и подписанные обновления.",
-    "generatedAt": "2026-07-23T12:00:00+03:00",
+    "generatedAt": "2026-07-23T13:25:00+03:00",
     "sources": [
       {
         "id": "narra_code",
-        "label": "Narra — текущий код приложения и proxy",
+        "label": "Narra — baseline, с которого начат аудит",
         "href": "https://github.com/sboo-create/narra/tree/e7c1e5f8a07117605653d5a361f0ce1a0b27f5d6",
         "query": {
           "engine": "artifact-snapshot",
           "sql": "SELECT priority, area, work, acceptance FROM security_work ORDER BY order",
-          "description": "Read-only аудит Electron-клиента, proxy, import pipeline, updater и локального хранилища.",
+          "description": "Immutable baseline до текущего release-foundation diff; не выдаётся за состояние рабочей feat-ветки.",
           "executed_at": "2026-07-23T12:00:00+03:00",
           "language": "TypeScript/JavaScript",
           "tables_used": [
@@ -28,14 +28,34 @@
         }
       },
       {
+        "id": "narra_release_foundation_worktree",
+        "label": "Narra — текущий release-foundation candidate",
+        "href": "https://github.com/sboo-create/narra/tree/90dd05f87111423276a23d566433039337ab8dfc",
+        "query": {
+          "engine": "git",
+          "description": "Reviewed и pushed ветка feat/narra-release-foundation; stats production deploy использует commit 90dd05f.",
+          "executed_at": "2026-07-23T13:20:00+03:00",
+          "language": "TypeScript/JavaScript/Python/HTML",
+          "tables_used": [
+            "server/index.mjs",
+            "server/event-store.mjs",
+            "src/main/telemetry.ts",
+            "src/main/pdf-worker.ts",
+            "stats/server.py",
+            "stats/index.html",
+            ".github/workflows/release-macos.yml"
+          ]
+        }
+      },
+      {
         "id": "traction_contract",
         "label": "Traction — canonical Overview и контракт модуля",
-        "href": "https://github.com/q121212/Traction/tree/6ab09733cb5935cff60edb44da77a39a44f10c1a",
+        "href": "https://github.com/q121212/Traction/tree/44f99efb55b721b08b4ebbdb6cc4df73b8523b91",
         "query": {
           "engine": "artifact-snapshot",
           "sql": "SELECT metric, narra_definition, window, guardrail FROM canonical_metrics ORDER BY order",
           "description": "Ревью SPEC, ONBOARDING, hub и контрактных тестов после унификации шести canonical-метрик.",
-          "executed_at": "2026-07-23T12:00:00+03:00",
+          "executed_at": "2026-07-23T13:20:00+03:00",
           "language": "Markdown/Python/JavaScript",
           "tables_used": [
             "SPEC.md",
@@ -76,7 +96,7 @@
         "label": "Инженерная оценка плана Narra от 23 июля 2026",
         "query": {
           "engine": "duckdb",
-          "sql": "SELECT * FROM (VALUES ('0 · Contract freeze', 0.75, '0.5–1 день', 'Нет'), ('1 · Security foundation', 3.0, '2–4 дня', 'Нет'), ('2 · Gateway v2', 2.5, '2–3 дня', 'Нет'), ('3 · OpenRouter + Giga', 1.5, '1–2 дня', 'OpenRouter live; Giga ждёт secure transport'), ('4 · Analytics/outbox', 2.0, '1.5–2.5 дня', 'Отдельный Traction staging endpoint'), ('5 · stats-narra', 2.0, '1.5–2.5 дня', 'AIWA tuning учтён'), ('6 · Updater/signing', 2.5, '2–3 дня', 'HTTPS update URL; Apple credentials найдены'), ('7 · Railway staging', 1.5, '1–2 дня', 'Core smoke готов; media/analytics E2E'), ('8 · Release', 1.5, '1–2 дня + наблюдение', 'Все release gates')) AS effort(phase, effort_mid, estimate, dependency)",
+          "sql": "SELECT * FROM (VALUES ('0 · Contract freeze', 0.75, '0.5–1 день', 'Нет'), ('1 · Security foundation', 3.0, '2–4 дня', 'Нет'), ('2 · Gateway v2', 2.5, '2–3 дня', 'Нет'), ('3 · OpenRouter + Giga', 1.5, '1–2 дня', 'OpenRouter live; Giga ждёт secure transport'), ('4 · Analytics/outbox', 2.0, '1.5–2.5 дня', 'Завершено: отдельный stats endpoint/Volume/token'), ('5 · stats-narra', 2.0, '1.5–2.5 дня', 'Завершено: production Traction live'), ('6 · Updater/signing', 2.5, '2–3 дня', 'HTTPS update URL; Apple credentials найдены'), ('7 · Railway staging', 1.5, '1–2 дня', 'Завершено; public transport gates отдельно'), ('8 · Release', 1.5, '1–2 дня + наблюдение', 'Все release gates')) AS effort(phase, effort_mid, estimate, dependency)",
           "description": "Диапазоны трудоёмкости по этапам, сформированные из объёма известных изменений и обязательных проверок; midpoint используется только для сравнительного графика.",
           "executed_at": "2026-07-23T12:00:00+03:00",
           "language": "sql",
@@ -112,7 +132,7 @@
       {
         "id": "decisions_table",
         "title": "Зафиксированные решения и границы",
-        "subtitle": "Что уже можно считать согласованным до получения Railway-доступа",
+        "subtitle": "Зафиксированные продуктовые решения и текущие release-границы",
         "dataset": "decisions",
         "source": {
           "label": "Зафиксированные решения текущего плана",
@@ -266,7 +286,7 @@
       {
         "id": "responsibilities_table",
         "title": "Что делаем сейчас и что ждёт внешнего доступа",
-        "subtitle": "Локальную разработку можно начать сразу; production-действия остаются заблокированы до Railway и Apple",
+        "subtitle": "Инфраструктура уже live; оставшиеся действия зависят от transport, entitlement и подписанного release",
         "dataset": "responsibilities",
         "source": {
           "label": "Матрица зависимостей и ответственности",
@@ -286,23 +306,23 @@
       {
         "id": "title",
         "type": "markdown",
-          "body": "# Narra: план безопасного релиза и аналитики\n\n**Обновлено:** 23 июля 2026 · **Статус:** gateway staging развёрнут и проходит auth/OpenRouter/SSE smoke; Sber CA fix и полный media/analytics E2E проходят повторный review gate"
+          "body": "# Narra: план безопасного релиза и аналитики\n\n**Обновлено:** 23 июля 2026 · **Статус:** gateway и отдельный stats staging прошли E2E; Narra активна в production Traction; публичный клиентский релиз по-прежнему заблокирован до защищённых LiteLLM/video transport, entitlement и signed update-feed"
       },
       {
         "id": "technical_summary",
         "type": "markdown",
-          "body": "## Техническое резюме\n\n- **Локальная часть уже собрана.** Gateway v2, server-side Giga/OpenRouter routing, bounded concurrency/quotas, SSRF-защита, Electron hardening, строгий IPC, актуальный PDF parser в resource-limited worker, analytics/outbox и stats-narra реализованы и покрыты тестами.\n- **Историю переносить не нужно.** Narra ещё не релизнута, поэтому аналитика стартует с чистой даты cutover; дни до неё не рисуются нулями и не участвуют в retention.\n- **Видео сохраняем с явным временным риском.** Живой video upstream отвечает только по HTTP: исключение требует staging environment, явный flag и точный host allowlist; production его отклоняет, а staging `/ready` помечен degraded. Это блокер публичного релиза до HTTPS/туннеля. Цензура включена; CENSOR не ретраится и не обходит защиту fallback-провайдером.\n- **Текущий LiteLLM тоже оказался публичным HTTP без TLS.** Narra не передаёт туда тексты книг, диалоги и bearer key. Все purpose routes в staging явно направлены в OpenRouter HTTPS, Giga fallbacks очищены; Giga возвращается только после HTTPS/private tunnel проверки. Это сохраняет адаптер и план Giga без скрытого TLS downgrade.\n- **OpenRouter маршрутизируется полностью серверно.** Клиент передаёт только purpose. OpenRouter получает `zdr=true` и `data_collection=deny`; Giga streaming уже умеет запрашивать usage, но сейчас транспортно заблокирован. Provider attempt становится успешным только после strict SSE/body parse: malformed, in-band error, content-filter и EOF без `[DONE]` являются failure и в gateway, и в desktop parser. Exact cost принимается только с provider source и USD currency; пропуск остаётся пропуском.\n- **SaluteSpeech не требует отключения TLS.** Root и текущий issuing CA Минцифры добавляются только к Sber-запросам после точной SHA-256 fingerprint-проверки; стандартные Node roots, hostname, expiry и signature verification сохраняются. Readiness fail-closed показывает целостность CA bundle.\n- **Минимальная аналитика включена всегда.** Opt-out относится только к расширенной детализации функций/чтения; тексты книг, промпты, ответы, URL, имена файлов и медиа запрещены в обоих режимах. Essential-события имеют приоритет в bounded queue, устаревшие poison events отделяются поштучно.\n- **Traction получает шесть canonical-метрик.** Для Tools явно показаны выбранная формула и пять альтернатив; отдельно добавлены 10 диагностик, request/attempt, fallback, input/output/total tokens, exact cost + coverage/source, provider/model разрезы, funnels и mature retention. Request success считает overdue pending после grace window, показывает outcome coverage и исключает orphan terminal events; attempts/request использует только matched cohort. Никаких legacy reconstruction и фальшивых нулей. Заглушка с логотипом уже выложена в Traction.\n- **Universal macOS проверен в unsigned QA, Developer ID найден.** Локальный keychain содержит Developer ID Application команды, а безопасно переиспользуемая конфигурация notarization найдена в MultiTool. Подписанный RC собирается после staging E2E и HTTPS update-feed.\n- **Railway staging изолирован от старого production.** Созданы отдельный environment/domain, Volume `/data`, gateway/activation/analytics secrets и staging marker. `/health` и degraded `/ready` = 200; auth, registration, event batch, OpenRouter complete и strict SSE smoke зелёные. Production остался старым и не изменялся.\n- **Updater пересобран безопасно.** Renderer не передаёт URL; electron-updater использует HTTPS metadata с SHA-512 и Developer-ID-signed app, universal ZIP + latest-mac.yml. Release workflow проверяет, что immutable version tag указывает ровно на собираемый HEAD; notarization `.p8` создаётся только после install/audit/tests и удаляется сразу после notarization. `update_verified` появляется только после успешного запуска установленной версии; фактический upgrade тестируется после подписи.\n- **Перед каждым push/merge/deploy действует агентный review gate:** security + analytics + integration review, исправления, повторное одобрение."
+          "body": "## Техническое резюме\n\n- **Release foundation реализован и проверен.** Gateway v2, server-side routing, квоты и bounded queues, SSRF/архив/IPC/Electron hardening, безопасный updater, priority telemetry queue и stats-narra покрыты тестами и повторными agent gates.\n- **Аналитика работает сквозным контуром.** Отдельные Railway staging gateway/stats service, токены, database и Volumes изолированы; gateway outbox доставляет события по HTTPS, после restart сохраняет очередь, а stats сохраняет SQLite и дедупликацию.\n- **Traction уже не заглушка.** Production-модуль слушает только `127.0.0.1:9905`, Caddy защищает dashboard общей Basic Auth, poller видит Narra как live; production база закономерно пуста, потому что продукт ещё не выпущен.\n- **Все шесть canonical-метрик проверены на изолированном staging синтетическим E2E.** `Ever used`, `DAU`, `WAU`, `MAU`, `Sessions / DAU`, `Tools / DAU` появились в staging после тестовых событий; retries не раздувают Tools, content/PII не принимаются schema allowlist. Production-проверка подтверждает только живой модуль и здоровый poller, а не пользовательские значения метрик.\n- **Essential telemetry всегда включена; opt-out отключает только extended.** Тексты книг, промпты, ответы, URL, имена файлов и media запрещены в обоих режимах; essential имеет приоритет в bounded queue.\n- **OpenRouter полностью серверный и live.** Staging purpose-routes идут по HTTPS с ZDR/data-deny; strict body/SSE parse, usage, request/attempt, provider/model и observed-only cost готовы.\n- **Sber media-путь проверен.** SaluteSpeech использует fingerprint-verified Sber-only CA bundle без глобального отключения TLS; Kandinsky image и video прошли синтетический E2E. Video остаётся staging-only degraded, потому что upstream доступен только по HTTP.\n- **Giga не отключён, а безопасно отложен.** Адаптер и маршрутизация сохранены, но текущий public HTTP LiteLLM не получает пользовательский контент или ключи до HTTPS/private tunnel.\n- **Universal unsigned QA и Apple inputs готовы.** Developer ID и notarization credentials найдены через MultiTool; подписанный RC ждёт HTTPS update-feed и закрытия публичных transport/entitlement gates.\n- **Исторического backfill нет.** Narra ещё не релизнута: аналитика начинается с чистой даты cutover, без reconstructed-слоя и искусственных нулей до старта сбора."
       },
       {
         "id": "decisions_heading",
         "type": "markdown",
-        "body": "## Базовые решения уже приняты\n\nПлан не ждёт ответов на всё сразу: ниже отделены решения, которые уже зафиксированы, от production-шагов, требующих доступа."
+        "body": "## Базовые решения уже приняты\n\nНиже отделены решения, которые уже реализованы, от оставшихся production release gates. Railway и Traction доступ больше не являются блокерами."
       },
       { "id": "decisions", "type": "table", "tableId": "decisions_table" },
       {
         "id": "brand",
         "type": "markdown",
-        "body": "## Логотип уже вынесен в оба репозитория\n\nГотовый знак **«ночное чтение»** — чёрный квадрат, белая книжка-крыша, лаймовые глаза и улыбка — сохранён как `assets/narra.svg` в Narra и `hub/logos/narra.svg` в отдельной Traction-ветке с Narra stub. Перерисовка и новый бренд-ассет не нужны."
+        "body": "## Логотип уже вынесен в оба репозитория\n\nГотовый знак **«ночное чтение»** сохранён как `assets/narra.svg` в Narra и `hub/logos/narra.svg` в Traction. Он уже используется активной production-карточкой Narra; перерисовка и новый бренд-ассет не нужны."
       },
       {
         "id": "architecture_heading",
@@ -313,7 +333,7 @@
       {
         "id": "providers_heading",
         "type": "markdown",
-        "body": "## OpenRouter не заменяет Giga — он делает маршрутизацию управляемой\n\nМаршрутизация полностью серверная: клиент передаёт только назначение запроса (`purpose`), но не провайдера и не модель. До staging конкретные модели остаются конфигурацией gateway. Один `request_id` соответствует намерению пользователя; retry, fallback и обращения к разным провайдерам получают отдельные `attempt_id`. Это позволяет отличить «пользователь получил ответ» от «одна из технических попыток упала»."
+        "body": "## OpenRouter не заменяет Giga — он делает маршрутизацию управляемой\n\nМаршрутизация полностью серверная: клиент передаёт только назначение запроса (`purpose`), но не провайдера и не модель. Конкретные модели уже задаются конфигурацией staging gateway и могут меняться без пересборки клиента. Один `request_id` соответствует намерению пользователя; retry, fallback и обращения к разным провайдерам получают отдельные `attempt_id`. Это позволяет отличить «пользователь получил ответ» от «одна из технических попыток упала»."
       },
       { "id": "providers", "type": "table", "tableId": "provider_matrix_table" },
       {
@@ -343,7 +363,7 @@
       {
         "id": "roadmap_heading",
         "type": "markdown",
-        "body": "## Реализация идёт вертикальными проверяемыми срезами\n\nКаждый этап заканчивается работающим артефактом и тестами. Production не используется как dev-среда; после Railway-доступа сначала создаётся staging по модели AIWA. На графике видна относительная трудоёмкость: больше всего времени требуют клиентский security foundation, gateway и безопасная цепочка подписания/обновления; это ориентир планирования, а не обещание календарной даты."
+        "body": "## Реализация идёт вертикальными проверяемыми срезами\n\nКаждый этап заканчивается работающим артефактом и тестами. Railway staging уже создан отдельно от production по модели AIWA; старый production gateway не используется как dev-среда и не изменялся. На графике видна относительная трудоёмкость: больше всего времени требуют клиентский security foundation, gateway и безопасная цепочка подписания/обновления; это ориентир планирования, а не обещание календарной даты."
       },
       { "id": "effort", "type": "chart", "chartId": "effort_chart" },
       { "id": "roadmap", "type": "table", "tableId": "roadmap_table" },
@@ -356,7 +376,7 @@
       {
         "id": "responsibilities_heading",
         "type": "markdown",
-        "body": "## Локальную работу можно начать до ответа Сони\n\nRailway нужен для проверки фактических переменных, volume и staging-деплоя, но архитектуру, тесты, event contract, gateway v2, Electron hardening и stats-модуль можно подготовить локально уже сейчас."
+        "body": "## Доступ Сони закрыл инфраструктурную часть, но не публичные release gates\n\nRailway staging, отдельный stats service и Traction production-модуль уже развёрнуты. Оставшаяся работа зависит не от доступа, а от защищённых upstream transport, публичного entitlement, HTTPS update-feed и проверки подписанного релиза."
       },
       { "id": "responsibilities", "type": "table", "tableId": "responsibilities_table" },
       {
@@ -367,23 +387,23 @@
       {
         "id": "limitations",
         "type": "markdown",
-          "body": "## Ограничения и неизвестные\n\n- Railway production снаружи жив: `/health` = 200; `/` и `/ready` = 404; он остаётся старым и не изменён. Изолированный staging уже создан с отдельным domain, secrets и Volume `/data`; Source по-прежнему не подключён, поэтому текущий reviewed commit загружен CLI-снимком.\n- Отдельных staging provider keys не будет. Копируются только конкретные действующие credentials, но не небезопасные URL. Public HTTP `LLM_BASE_URL` и неиспользуемый Giga fallback в staging отсутствуют; каждый `LLM_ROUTE_*` явно равен `openrouter`. Giga возвращается только после HTTPS/private tunnel проверки.\n- OpenRouter complete/SSE E2E зелёные; exact billing reconciliation и analytics delivery ждут отдельный stats-narra staging endpoint/token.\n- Video upstream `87.242.117.37:5051` проверен: HTTP health/OpenAPI работают, TLS negotiation не работает. Это осознанный временный staging-риск с exact-host allowlist и degraded readiness; production конфигурация с таким исключением fail-closed.\n- SaluteSpeech требует fingerprint-проверенную российскую CA chain; новый bundle добавляется только к Sber endpoints и readiness fail-closed проверяет его целостность.\n- Общий activation token внутри сборки подходит только для закрытого staging. Для публичного релиза нужен серверный entitlement: приглашения, лицензии или другой механизм, который можно отозвать и который нельзя извлечь из приложения.\n- Developer ID и notarization configuration найдены в MultiTool; всё ещё нужны HTTPS update-feed и проверка clean install/upgrade минимум на Apple Silicon, а Intel — отдельным владельцем/устройством.\n- Формулировка «закрыть все уязвимости» недоказуема; release gate покрывает известные находки, dependency audit, agent review и проверяемые abuse-сценарии."
+          "body": "## Ограничения и неизвестные\n\n- Старый Railway production gateway не изменялся; публичный cutover на v2 будет отдельной операцией после signed RC и entitlement gate.\n- Текущий LiteLLM доступен только по public HTTP. Staging поэтому честно all-OpenRouter; Giga возвращается только после HTTPS/private tunnel.\n- Video upstream `87.242.117.37:5051` также не поддерживает TLS. Exact-host HTTP разрешён только в staging и виден как degraded; production с таким transport fail-closed.\n- Production Traction live, но его база пуста до первого клиентского релиза. Staging events не переносились и не смешиваются с production.\n- Общий activation token подходит только закрытому staging. Для внешнего релиза нужен отзывной server-side entitlement.\n- Developer ID и notarization inputs найдены, но ещё нужны HTTPS update-feed, signed/notarized clean install и upgrade test на Apple Silicon и Intel.\n- Exact cost отражает только наблюдаемые provider usage/source; пропущенная стоимость остаётся missing и снижает coverage, а не превращается в ноль.\n- Формулировка «закрыть все уязвимости» недоказуема; release gate покрывает известные находки, audits, agent review и проверяемые abuse-сценарии."
       },
       {
         "id": "next_steps",
         "type": "markdown",
-          "body": "## Следующие шаги после уже сделанного foundation\n\n1. **Готово локально:** sessionization, essential/extended analytics, durable bounded Traction outbox, tuned stats-narra, request/attempt/usage/cost модель, gateway auth/quotas/concurrency, server-side Giga/OpenRouter routing с ZDR/data deny, безопасные import/Electron/updater и universal unsigned QA.\n2. **Готово в Traction:** Narra-заглушка с найденным логотипом выложена; canonical contract и подробный Narra dashboard готовы локально.\n3. **Gateway staging уже создан:** отдельные domain/secrets/Volume, безопасный all-OpenRouter routing, exact-host video exception; health/auth/events/complete/SSE smoke зелёные без production mutation.\n4. Завершить повторный review fingerprint-verified Sber CA patch, commit/push и только затем redeploy; проверить TTS/ASR без `ALLOW_INSECURE_TLS`.\n5. Развернуть отдельный stats-narra staging endpoint/database/token, включить Traction outbox и проверить environment mismatch, restart/replay/dedupe, canonical summary и cost coverage.\n6. Завершить Kandinsky/video synthetic E2E и failure tests. Giga/LiteLLM тестировать только после HTTPS/private tunnel, не через текущий public HTTP URL.\n7. Собрать через найденный MultiTool Developer ID подписанный/notarized universal RC с staging gateway и HTTPS update URL; проверить signature, stapling, Gatekeeper, clean install и upgrade.\n8. Заменить общий staging activation token на публичный entitlement и обеспечить HTTPS/туннель видео до внешнего распространения."
+          "body": "## Следующие шаги после уже завершённого foundation\n\n1. **Готово:** local security foundation, gateway v2, all-OpenRouter staging, fingerprint-verified SaluteSpeech, Kandinsky image/video E2E, essential/extended telemetry, durable outbox, отдельный stats staging и live production Traction.\n2. Получить HTTPS/private tunnel для LiteLLM и video; вернуть Giga в server-side routes только после transport smoke без TLS downgrade.\n3. Реализовать публичный отзывной entitlement вместо общего staging activation secret.\n4. Поднять HTTPS update-feed и собрать universal signed/notarized RC через найденный MultiTool Developer ID.\n5. Проверить codesign, notarization/stapling, Gatekeeper clean install и реальный upgrade с сохранением данных на Apple Silicon; Intel подтвердить на отдельном устройстве.\n6. После этих gates отдельно переключить старый Railway production gateway на reviewed v2 и подключить production gateway к уже развёрнутому production Traction token.\n7. Провести ограниченный внутренний rollout, сверить adoption/provider/error/token/cost coverage и отрепетировать rollback до внешнего релиза."
       },
       {
         "id": "further_questions",
         "type": "markdown",
-          "body": "## Оставшиеся внешние входы\n\nДля завершения нужны уже не provider keys, а эксплуатационные решения и проверки:\n\n- HTTPS или private tunnel для командного LiteLLM; текущий `http://104.168.54.196:4000` не используется Narra staging.\n- Отдельный Traction production ingest token для финального stats-narra; staging token/database создаются изолированно в текущем плане.\n- HTTPS update-feed для RC/production; Developer ID и notarization credentials уже найдены локально через MultiTool.\n- Решение Сони о публичном entitlement после закрытого staging: invite/license/account gate; общий секрет сборки публичным механизмом не является.\n- HTTPS или приватный шифрованный туннель к video upstream до публичного релиза.\n- Intel Mac или владелец такой проверки; локальный Apple Silicon можно проверить здесь."
+          "body": "## Оставшиеся внешние входы\n\n- HTTPS или private tunnel для командного LiteLLM; текущий `http://104.168.54.196:4000` намеренно не используется Narra staging.\n- HTTPS или приватный шифрованный туннель к video upstream до публичного релиза.\n- HTTPS update-feed для RC/production; Developer ID и notarization credentials уже найдены локально через MultiTool.\n- Выбор публичного entitlement: invite, license или account gate с revocation.\n- Intel Mac или владелец такой проверки; локальный Apple Silicon можно проверить здесь."
       }
     ]
   },
   "snapshot": {
     "version": 1,
-    "generatedAt": "2026-07-23T12:00:00+03:00",
+    "generatedAt": "2026-07-23T13:25:00+03:00",
     "status": "ready",
     "datasets": {
       "decisions": [
@@ -391,22 +411,22 @@
         { "order": 2, "area": "Видео", "decision": "Kandinsky video — проверенный сервис Сбера; текущий адрес только HTTP", "consequence": "Функцию сохраняем; staging требует явного risk flag, censor=true, auth/queue/timeout/telemetry; public release ждёт HTTPS/туннель" },
         { "order": 3, "area": "LLM", "decision": "Текущий LiteLLM — сервис команды, но доступен только по public HTTP", "consequence": "Адаптер сохраняем, но не передаём ключи/контент до HTTPS или private tunnel; staging явно all-OpenRouter" },
         { "order": 4, "area": "Провайдеры", "decision": "OpenRouter сейчас безопасный staging primary; Giga возвращается после защищённого транспорта", "consequence": "Provider abstraction и server-side routing сохраняются без скрытого TLS downgrade" },
-        { "order": 5, "area": "Railway", "decision": "Изолированный staging создан; production остаётся старым и не изменён", "consequence": "Отдельные domain, secrets и Volume `/data`; `/health` и degraded `/ready` работают, Source пока не подключён" },
+        { "order": 5, "area": "Railway", "decision": "Gateway и stats staging изолированы; production gateway остаётся старым", "consequence": "Отдельные domains, secrets, databases и Volumes; analytics delivery/restart/dedupe проверены, production cutover остаётся отдельным gate" },
         { "order": 6, "area": "Аналитика", "decision": "Минимальная всегда включена; расширенная default-on с opt-out", "consequence": "Выключение удаляет из очереди только расширенные события; canonical/service telemetry и строгий запрет контента сохраняются" },
         { "order": 7, "area": "Маршрутизация", "decision": "Полностью серверная", "consequence": "Клиент передаёт purpose, но не выбирает provider/model; переключение не требует пересборки" },
         { "order": 8, "area": "macOS", "decision": "Universal build", "consequence": "Один подписанный/notarized релиз для arm64 и x64, проверяемый на обеих архитектурах" },
         { "order": 9, "area": "API cutover", "decision": "Legacy endpoint не поддерживается", "consequence": "Клиент и gateway переходят на v2 синхронно до первого внешнего релиза" },
-        { "order": 10, "area": "Traction", "decision": "Narra stub с логотипом уже выложен", "consequence": "Слот виден в production hub; live stats включается только после Railway staging и отдельного review gate" },
+        { "order": 10, "area": "Traction", "decision": "Narra активна в production hub с найденным логотипом", "consequence": "Loopback stats service, Caddy Basic Auth, public health/tokened ingest и poller cache прошли live smoke" },
         { "order": 11, "area": "Staging credentials", "decision": "Отдельных upstream staging keys не будет", "consequence": "Копируются только конкретные credentials без раскрытия; unsafe public HTTP URLs и Giga fallbacks не копируются; Narra/Traction secrets, environment и данные отдельные" },
-        { "order": 12, "area": "Apple", "decision": "Использовать Developer ID из MultiTool", "consequence": "Локальные identity/notarization inputs найдены; signed universal RC ждёт staging URL и review gate" }
+        { "order": 12, "area": "Apple", "decision": "Использовать Developer ID из MultiTool", "consequence": "Локальные identity/notarization inputs найдены; signed universal RC ждёт HTTPS update-feed, signed/notarized install и upgrade tests, а также закрытия transport/entitlement gates" }
       ],
       "architecture": [
         { "order": 1, "layer": "Electron client", "owns": "UI, локальные книги/заметки/кэш, installation identity, always-on essential + default-on extended telemetry, bounded offline event queue", "never": "Не содержит provider keys/Traction token и не выбирает provider/model", "state": "Реализовано локально; unsigned universal QA пройден" },
         { "order": 2, "layer": "Narra Gateway", "owns": "Auth, schemas, quotas, routing, request/attempt/usage telemetry, content fetch, generic update feed", "never": "Не принимает анонимные дорогие запросы и не пишет сырой контент в аналитику", "state": "Gateway v2 в Railway staging; auth/events/OpenRouter complete/SSE smoke зелёные" },
         { "order": 3, "layer": "Provider adapters", "owns": "Giga/LiteLLM, OpenRouter ZDR/data-deny, SaluteSpeech, Kandinsky, video; единый error contract", "never": "Не определяют продуктовую активность, не получают клиентский analytics token и не обходят CENSOR retry/fallback", "state": "OpenRouter staging live; Giga blocked by public HTTP; Sber CA bundle fingerprint-verified и Sber-only; strict attempt/body/SSE semantics готовы" },
-        { "order": 4, "layer": "Railway state", "owns": "Rotated JSONL audit, bounded segmented Traction outbox и dead-letter; in-memory quotas", "never": "Не хранит книги, чаты, заметки, изображения или аудио; не заявляет revocation stateless-токенов", "state": "Отдельный staging Volume /data смонтирован; Traction endpoint/token ещё не подключены; публичный entitlement остаётся отдельным gate" },
-        { "order": 5, "layer": "stats-narra", "owns": "Traction contract, агрегаты, Narra dashboard, retention и data-quality", "never": "Не обращается к production-клиентам и не хранит provider secrets", "state": "Реализован и локально проверен; deploy ждёт ingest token" },
-        { "order": 6, "layer": "Traction hub", "owns": "Overview, health polling, общий доступ и сравнимость продуктов", "never": "Не угадывает продуктовые определения Narra", "state": "Заглушка с логотипом выложена; live-модуль ещё не активирован" }
+        { "order": 4, "layer": "Railway state", "owns": "Rotated JSONL audit, bounded segmented Traction outbox и dead-letter; in-memory quotas", "never": "Не хранит книги, чаты, заметки, изображения или аудио; не заявляет revocation stateless-токенов", "state": "Gateway Volume `/data` и matching stats endpoint/token live; backlog=0, restart/replay/dedupe проверены; entitlement остаётся отдельным gate" },
+        { "order": 5, "layer": "stats-narra", "owns": "Traction contract, агрегаты, Narra dashboard, retention и data-quality", "never": "Не обращается к production-клиентам и не хранит provider secrets", "state": "Отдельный Railway staging и loopback production service live; databases/tokens раздельны, read/ingest auth и persistence проверены" },
+        { "order": 6, "layer": "Traction hub", "owns": "Overview, health polling, общий доступ и сравнимость продуктов", "never": "Не угадывает продуктовые определения Narra", "state": "Production slot active с логотипом; poller healthy, dashboard за Basic Auth, health public, ingest token-protected" }
       ],
       "provider_matrix": [
         { "order": 1, "capability": "Персонажный чат", "primary": "OpenRouter HTTPS + ZDR/data-deny в staging", "fallback": "Нет Giga fallback до HTTPS/private tunnel LiteLLM", "measurement": "request success + outcome coverage/grace, p50/p95, input/output/total tokens, exact USD cost + source/coverage; answer feedback producer planned" },
@@ -430,7 +450,7 @@
         { "order": 3, "section": "Reading health", "metrics": "Qualified sessions, minutes, chapters progressed/completed, active reading days", "decision": "Narra — читаемый продукт или только AI-демо" },
         { "order": 4, "section": "Retention", "metrics": "D1/D7/D30 rolling retention только зрелых когорт", "decision": "Возвращаются ли после первой читающей сессии" },
         { "order": 5, "section": "Feature adoption", "metrics": "Bookmarks, notes, character cards, chat, TTS, ASR, images, video — users и share of active", "decision": "Какие immersive-функции дают глубину" },
-        { "order": 6, "section": "Imports", "metrics": "Started/succeeded/failed уже; exact format, latency и safe size buckets planned до staging", "decision": "Какие форматы и источники мешают активации" },
+        { "order": 6, "section": "Imports", "metrics": "Started/succeeded/failed уже инструментированы; exact format, latency и safe size buckets нужно добавить до public release", "decision": "Какие форматы и источники мешают активации" },
         { "order": 7, "section": "AI & reliability", "metrics": "Logical request success с grace/pending/outcome coverage, matched attempts/request, event-window provider attempts после strict body/SSE consume, boundary count, errors/fallback, p50/p95, input/output/total tokens, exact USD cost + source/coverage, provider/model tables", "decision": "Где деградируют качество, скорость и unit economics" },
         { "order": 8, "section": "Answer quality · planned", "metrics": "Helpful/unhelpful producer и response rate ещё нужно добавить в UI; схема без текста уже закрыта", "decision": "Подтверждает ли пользователь ценность, а не только proxy" },
         { "order": 9, "section": "Update funnel", "metrics": "Offered → downloaded → verified → installed → next launch confirmed", "decision": "Можно ли безопасно закрывать legacy client/API" },
@@ -444,7 +464,7 @@
         { "order": 4, "group": "Immersive features", "events": "bookmark_added, note_added, character_opened, chat_opened", "safe_properties": "feature, builtin/imported, success", "exclude": "Заметка, цитата, имя персонажа, контекст сцены" },
         { "order": 5, "group": "AI request", "events": "ai_request_started/completed/failed; answer_feedback_submitted schema ready, UI producer planned", "safe_properties": "request_id, purpose, route, status, latency, safe error_code, rating", "exclude": "Prompt, response, messages, memory, book excerpt" },
         { "order": 6, "group": "Provider attempt", "events": "provider_attempt_completed/failed/not_configured", "safe_properties": "attempt event_id, request_id, provider, model, retry_index, latency, status, safe error_code", "exclude": "Credentials, headers, provider response body" },
-        { "order": 7, "group": "Media · после staging", "events": "Пока не инструментированы; planned tts/asr/image/video completed/failed", "safe_properties": "Только purpose, provider/model, coarse chars/seconds/bytes buckets, queue wait, generation latency", "exclude": "Audio, image, video, transcript, generation prompt" }
+        { "order": 7, "group": "Media · до public release", "events": "Пока не инструментированы: tts/asr/image/video completed/failed нужно добавить до публичного релиза", "safe_properties": "Только purpose, provider/model, coarse chars/seconds/bytes buckets, queue wait, generation latency", "exclude": "Audio, image, video, transcript, generation prompt" }
       ],
       "security_work": [
         { "order": 1, "priority": "P0", "area": "Gateway auth", "work": "Закрытый staging: signed per-install token с TTL, registration/IP limits и per-install quotas. Public: отдельный entitlement + revocation", "acceptance": "Дорогой endpoint без token получает 401; общий секрет сборки не используется как публичная лицензия" },
@@ -464,9 +484,9 @@
         { "order": 2, "phase": "2 · Gateway v2", "scope": "Registration/auth, quotas, bounded queues, provider adapters, request/attempt logging, readiness, structured logs", "result": "Локальный gateway выдерживает abuse/failure tests", "estimate": "2–3 дня", "dependency": "Нет" },
         { "order": 3, "phase": "3 · OpenRouter + Giga routing", "scope": "Purpose routes, ZDR/data-deny, input/output tokens, exact cost + coverage, retry/fallback policy, staging evaluation set", "result": "OpenRouter E2E зелёный; Giga adapter готов, но fail-closed ждёт HTTPS/private tunnel LiteLLM", "estimate": "1–2 дня", "dependency": "Копировать credentials точечно; public HTTP LLM URL и Giga fallbacks исключить" },
         { "order": 4, "phase": "4 · Analytics client/outbox", "scope": "Installation ID, priority local queue, essential/extended event tiers, rotated JSONL audit, segmented Traction outbox, extended opt-out", "result": "Offline/restart не теряют и не дублируют essential события; poison events изолируются; opt-out не отключает canonical минимум", "estimate": "1.5–2.5 дня", "dependency": "Volume нужен только для staging проверки" },
-        { "order": 5, "phase": "5 · stats-narra + Traction", "scope": "Шесть canonical KPI, 6 Tools definitions, 10 diagnostics, provider/model/token/cost quality, contract tests, logo", "result": "Локальный hub показывает Narra live; Overview и detailed dashboard объяснимы и честно считаются", "estimate": "1.5–2.5 дня", "dependency": "AIWA late tuning учтён" },
+        { "order": 5, "phase": "5 · stats-narra + Traction", "scope": "Шесть canonical KPI, 6 Tools definitions, 10 diagnostics, provider/model/token/cost quality, contract tests, logo", "result": "Production hub показывает Narra live; staging/production databases раздельны, Overview и detailed dashboard честно считаются", "estimate": "1.5–2.5 дня", "dependency": "Завершено; AIWA late tuning и live cutover учтены" },
         { "order": 6, "phase": "6 · Safe updater and signing", "scope": "Universal arm64+x64 build, hardened runtime, найденный MultiTool Developer ID, SHA-512 metadata, app+DMG notarization/stapling, rollback", "result": "Clean install проходит Gatekeeper на Apple Silicon и Intel; данные сохраняются", "estimate": "2–3 дня", "dependency": "Staging gateway + HTTPS update URL; Apple credentials найдены" },
-        { "order": 7, "phase": "7 · Railway staging", "scope": "Read-only prod audit, staging + /data, selected safe provider credentials, separate app/analytics secrets, HTTP-video risk flag, smoke/load/failure tests", "result": "Infrastructure и gateway smoke зелёные без production mutation; media/analytics E2E продолжаются", "estimate": "1–2 дня", "dependency": "Traction staging endpoint/token и reviewed Sber CA patch" },
+        { "order": 7, "phase": "7 · Railway staging", "scope": "Read-only prod audit, staging + /data, selected safe provider credentials, separate app/analytics secrets, HTTP-video risk flag, smoke/load/failure tests", "result": "Gateway/stats infrastructure, auth, OpenRouter, Sber media, Kandinsky/video и analytics persistence E2E зелёные; старый production gateway не изменён", "estimate": "1–2 дня", "dependency": "Завершено; public release ждёт secure LiteLLM/video transports" },
         { "order": 8, "phase": "8 · Release and observation", "scope": "RC, update внутренних установок, version adoption, provider/cost reconciliation, rollback rehearsal", "result": "Подписанный релиз, наблюдаемый gateway и проверенный rollback", "estimate": "1–2 дня + наблюдение", "dependency": "Все release gates" }
       ],
       "effort": [
@@ -474,10 +494,10 @@
         { "phase": "1 · Security foundation", "effort_mid": 3.0, "estimate": "2–4 дня", "dependency": "Нет" },
         { "phase": "2 · Gateway v2", "effort_mid": 2.5, "estimate": "2–3 дня", "dependency": "Нет" },
         { "phase": "3 · OpenRouter + Giga", "effort_mid": 1.5, "estimate": "1–2 дня", "dependency": "OpenRouter live; Giga ждёт secure transport" },
-        { "phase": "4 · Analytics/outbox", "effort_mid": 2.0, "estimate": "1.5–2.5 дня", "dependency": "Отдельный Traction staging endpoint" },
-        { "phase": "5 · stats-narra", "effort_mid": 2.0, "estimate": "1.5–2.5 дня", "dependency": "AIWA tuning учтён" },
+        { "phase": "4 · Analytics/outbox", "effort_mid": 2.0, "estimate": "1.5–2.5 дня", "dependency": "Завершено: отдельный stats endpoint/Volume/token" },
+        { "phase": "5 · stats-narra", "effort_mid": 2.0, "estimate": "1.5–2.5 дня", "dependency": "Завершено: production Traction live" },
         { "phase": "6 · Updater/signing", "effort_mid": 2.5, "estimate": "2–3 дня", "dependency": "Staging/update URL; Apple credentials найдены" },
-        { "phase": "7 · Railway staging", "effort_mid": 1.5, "estimate": "1–2 дня", "dependency": "Core smoke готов; media/analytics E2E" },
+        { "phase": "7 · Railway staging", "effort_mid": 1.5, "estimate": "1–2 дня", "dependency": "Завершено; public transport gates отдельно" },
         { "phase": "8 · Release", "effort_mid": 1.5, "estimate": "1–2 дня + наблюдение", "dependency": "Все release gates" }
       ],
       "release_gates": [
@@ -493,10 +513,10 @@
       ],
       "responsibilities": [
         { "order": 1, "lane": "Репозиторий Narra", "now": "Schemas, tests, hardening, import/EPUB, provider abstraction, analytics queue, logo asset", "later": "Merge/release после ревью", "owner": "Мы" },
-        { "order": 2, "lane": "Gateway", "now": "Railway staging v2, /data, separate secrets, quotas, exact-host video HTTP policy, ZDR/data-deny, strict terminal attempts; core smoke зелёный", "later": "Media/analytics failure E2E и production gate", "owner": "Мы + Railway access" },
+        { "order": 2, "lane": "Gateway", "now": "Railway staging v2, /data, separate secrets, quotas, exact-host video HTTP policy, ZDR/data-deny, strict terminal attempts и Traction outbox live", "later": "Secure LiteLLM/video transport, entitlement и отдельный production gateway cutover", "owner": "Мы + Railway access" },
         { "order": 3, "lane": "OpenRouter/Giga", "now": "OpenRouter HTTPS purpose routes и E2E; Giga adapter/usage/cost harness готов, но current LiteLLM public HTTP исключён", "later": "HTTPS/private tunnel LiteLLM, затем Giga smoke и billing reconciliation", "owner": "Мы + владелец LiteLLM transport" },
-        { "order": 4, "lane": "Traction", "now": "Stub + logo выложены; stats-narra и canonical contract готовы локально", "later": "Review/commit contract, ingest token, systemd deploy и активация live slot", "owner": "Мы + доступ к Traction ingest" },
-        { "order": 5, "lane": "Railway", "now": "Production read-only audited; staging/domain/Volume/secrets созданы; `/health` и degraded `/ready`=200; Source не подключён", "later": "Traction staging service/token, budgets и reviewed source/autodeploy policy", "owner": "Мы; production mutation только по отдельному release gate" },
+        { "order": 4, "lane": "Traction", "now": "Production module active: loopback systemd service, separate token/database, logo, six canonical KPI, healthy poller and protected dashboard", "later": "Подключить production gateway token только во время reviewed v2 cutover", "owner": "Мы + доступ к Traction ingest" },
+        { "order": 5, "lane": "Railway", "now": "Production read-only audited; isolated gateway/stats staging domains, Volumes and secrets live; analytics/media E2E зелёные", "later": "Reviewed source/autodeploy policy и отдельный production cutover после release gates", "owner": "Мы; production gateway mutation только по отдельному release gate" },
         { "order": 6, "lane": "Apple release", "now": "Developer ID identity и notarization inputs найдены в MultiTool; entitlements/fuses/updater готовы", "later": "Signed/notarized RC, HTTPS update feed и двухархитектурный upgrade test", "owner": "Мы + владелец Intel-проверки" },
         { "order": 7, "lane": "Telemetry policy", "now": "Всегда включённый essential tier + default-on extended tier с opt-out, allowlist и selective queue cleanup", "later": "Финальный privacy text перед релизом", "owner": "Мы + утверждение текста от тебя/Сони" }
       ]
@@ -519,10 +539,11 @@
     {
       "id": "narra_release_foundation_worktree",
       "label": "Narra — текущий release-foundation candidate",
+      "href": "https://github.com/sboo-create/narra/tree/90dd05f87111423276a23d566433039337ab8dfc",
       "query": {
-        "engine": "local-worktree",
-        "description": "Ветка feat/narra-release-foundation; до финального agent gate и push источник намеренно не получает ложную immutable-ссылку.",
-        "executed_at": "2026-07-23T18:00:00+03:00",
+        "engine": "git",
+        "description": "Reviewed и pushed ветка feat/narra-release-foundation; stats production deploy использует commit 90dd05f.",
+        "executed_at": "2026-07-23T13:20:00+03:00",
         "language": "TypeScript/JavaScript/Python/HTML",
         "tables_used": ["server/index.mjs", "server/event-store.mjs", "src/main/telemetry.ts", "src/main/pdf-worker.ts", "stats/server.py", "stats/index.html", ".github/workflows/release-macos.yml"]
       }
@@ -530,12 +551,12 @@
     {
       "id": "traction_contract",
       "label": "Traction — canonical Overview и контракт модуля",
-      "href": "https://github.com/q121212/Traction/tree/6ab09733cb5935cff60edb44da77a39a44f10c1a",
+      "href": "https://github.com/q121212/Traction/tree/44f99efb55b721b08b4ebbdb6cc4df73b8523b91",
       "query": {
         "engine": "artifact-snapshot",
         "sql": "SELECT metric, narra_definition, window, guardrail FROM canonical_metrics ORDER BY order",
         "description": "Ревью SPEC, ONBOARDING, hub и контрактных тестов после унификации шести canonical-метрик.",
-        "executed_at": "2026-07-23T12:00:00+03:00",
+        "executed_at": "2026-07-23T13:20:00+03:00",
         "language": "Markdown/Python/JavaScript",
         "tables_used": ["SPEC.md", "ONBOARDING.md", "service/server.py", "hub/index.html", "tests/test_contract.py"]
       }
@@ -565,7 +586,7 @@
       "label": "Инженерная оценка плана Narra от 23 июля 2026",
       "query": {
         "engine": "duckdb",
-        "sql": "SELECT * FROM (VALUES ('0 · Contract freeze', 0.75, '0.5–1 день', 'Нет'), ('1 · Security foundation', 3.0, '2–4 дня', 'Нет'), ('2 · Gateway v2', 2.5, '2–3 дня', 'Нет'), ('3 · OpenRouter + Giga', 1.5, '1–2 дня', 'OpenRouter live; Giga ждёт secure transport'), ('4 · Analytics/outbox', 2.0, '1.5–2.5 дня', 'Отдельный Traction staging endpoint'), ('5 · stats-narra', 2.0, '1.5–2.5 дня', 'AIWA tuning учтён'), ('6 · Updater/signing', 2.5, '2–3 дня', 'HTTPS update URL; Apple credentials найдены'), ('7 · Railway staging', 1.5, '1–2 дня', 'Core smoke готов; media/analytics E2E'), ('8 · Release', 1.5, '1–2 дня + наблюдение', 'Все release gates')) AS effort(phase, effort_mid, estimate, dependency)",
+        "sql": "SELECT * FROM (VALUES ('0 · Contract freeze', 0.75, '0.5–1 день', 'Нет'), ('1 · Security foundation', 3.0, '2–4 дня', 'Нет'), ('2 · Gateway v2', 2.5, '2–3 дня', 'Нет'), ('3 · OpenRouter + Giga', 1.5, '1–2 дня', 'OpenRouter live; Giga ждёт secure transport'), ('4 · Analytics/outbox', 2.0, '1.5–2.5 дня', 'Завершено: отдельный stats endpoint/Volume/token'), ('5 · stats-narra', 2.0, '1.5–2.5 дня', 'Завершено: production Traction live'), ('6 · Updater/signing', 2.5, '2–3 дня', 'HTTPS update URL; Apple credentials найдены'), ('7 · Railway staging', 1.5, '1–2 дня', 'Завершено; public transport gates отдельно'), ('8 · Release', 1.5, '1–2 дня + наблюдение', 'Все release gates')) AS effort(phase, effort_mid, estimate, dependency)",
         "description": "Диапазоны трудоёмкости по этапам, сформированные из объёма известных изменений и обязательных проверок; midpoint используется только для сравнительного графика.",
         "executed_at": "2026-07-23T12:00:00+03:00",
         "language": "sql",
