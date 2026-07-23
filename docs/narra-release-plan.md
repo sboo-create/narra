@@ -926,11 +926,12 @@ HTTP status, content type и фактический WAV sample rate уже вы�
 - [x] Local release path + manual unsigned hosted preflight
 - [x] Local Developer ID identity для signed QA
 - [ ] Local matching Apple Team API key/profile для notarization
-- [ ] Выкатить общую карточку Traction, чтобы все шесть slots были видны постоянно
+- [x] Выкатить общую карточку Traction v0.6, чтобы все шесть slots были видны постоянно
 - [x] Server-side mixed 48/24 kHz registry из 86 голосов, allowlist и миграция старых голосов
 - [x] Versioned TTS cache keys с text/voice/sample-rate/prosody
 - [x] Fixed-target domain/endpoint monitoring в Narra stats
-- [ ] Reviewed deploy monitor в staging и production Traction
+- [x] Reviewed deploy monitor в production Traction; тот же код в staging,
+      но worker там намеренно выключен, чтобы не дублировать probes
 - [ ] Background-разметка первой главы после импорта
 - [ ] Bounded parallel/streaming chapter markup
 - [ ] Progressive TTS first-audio
