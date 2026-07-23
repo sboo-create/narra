@@ -21,6 +21,16 @@ if/when an image-to-image feature is added.
 TLS verification remains enabled. The sample clients set `ssl_verify=False`,
 but that diagnostic shortcut is not carried into Narra production.
 
+## SaluteSpeech TLS
+
+Sber OAuth/Speech endpoints use the Russian Trusted Root CA chain, which is
+not part of Node's bundled Mozilla roots. Narra adds the Минцифры root and
+current 2024 issuing certificate only for Sber requests, while preserving all
+standard Node roots. Both bundled certificates are accepted only when their
+SHA-256 fingerprints match the values already reviewed in MultiTool. TLS
+signature, expiry and hostname checks remain enabled; `ALLOW_INSECURE_TLS`
+stays forbidden in production.
+
 ## Kandinsky video
 
 - Current temporary Base URL: `http://87.242.117.37:5051`
@@ -69,10 +79,20 @@ are selected by the Narra gateway.
   accepted value is tagged with its source and `USD` currency. A number without
   an accepted source/currency is excluded from aggregates.
 
+The current team LiteLLM endpoint is public plaintext HTTP and has no working
+TLS listener. Narra does not send book text, chat content or bearer credentials
+to it from production/staging until HTTPS or a private encrypted tunnel is
+available. Staging therefore exercises the same purpose routing through
+OpenRouter over HTTPS; Giga remains a required follow-up rather than a hidden
+TLS downgrade.
+
 ## Staging policy
 
 Sony confirmed that separate provider staging keys will not be issued. Railway
-staging therefore copies the existing provider variables without exposing them,
-but uses distinct Narra gateway, activation, analytics-HMAC and Traction ingest
-secrets, a separate `ANALYTICS_ENV=staging`, and a separate persistent Volume.
-No production analytics database is reused.
+staging therefore copies only the required credential values without exposing
+them; it does not copy unsafe provider URLs or route flags wholesale. Until
+LiteLLM has HTTPS/private transport, staging must omit `LLM_BASE_URL`, set every
+purpose-specific `LLM_ROUTE_*` to `openrouter`, and clear every Giga fallback.
+It also uses distinct Narra gateway, activation, analytics-HMAC and Traction
+ingest secrets, a separate `ANALYTICS_ENV=staging`, and a separate persistent
+Volume. No production analytics database is reused.

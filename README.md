@@ -78,6 +78,10 @@ Canonical release запускается workflow `Signed macOS release`: immuta
   оба отказа terminal: сервер не ретраит и не меняет провайдера
 - GigaChat может отклонять «чувствительные» темы; moderation/shared-request 4xx
   terminal, fallback разрешён только для технических provider-local сбоев
+- Текущий LiteLLM доступен только по публичному HTTP: до HTTPS/private tunnel
+  staging маршрутизирует LLM через OpenRouter и не передаёт Giga ключ/контент открытым трафиком
+- SaluteSpeech использует российскую TLS-цепочку: gateway добавляет только
+  fingerprint-проверенные root/sub CA Минцифры, не отключая hostname/signature verification
 - `/gigachat/complete` — `max_tokens: 6000`: разметка озвучки дублирует текст главы в JSON
 - Видео-API: максимум 3 задачи на токен, 5 сек между запросами — на сервере очередь
 - Временный HTTP video upstream разрешается только в staging, только для точного

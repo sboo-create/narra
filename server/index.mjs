@@ -35,6 +35,7 @@ import {
   videoRetryDelay
 } from './retry-policy.mjs'
 import { imageUpstreamError, shouldFallbackAfterImageError } from './image-policy.mjs'
+import { sberCaBundle, verifiedSberCertificates } from './sber-tls.mjs'
 import {
   createFixedWindowLimiter,
   createFixedWindowByteBudget,
@@ -134,6 +135,7 @@ const SALUTE_OAUTH_URL = serviceUrl('SBER_SALUTE_OAUTH_URL', process.env.SBER_SA
 const SALUTE_SYNTH_URL = serviceUrl('SBER_SALUTE_SYNTH_URL', process.env.SBER_SALUTE_SYNTH_URL || 'https://smartspeech.sber.ru/rest/v1/text:synthesize')
 const SALUTE_RECOGNIZE_URL = serviceUrl('SBER_SALUTE_RECOGNIZE_URL', process.env.SBER_SALUTE_RECOGNIZE_URL || 'https://smartspeech.sber.ru/rest/v1/speech:recognize')
 const SALUTE_RECOGNITION_MODEL = (process.env.SBER_SALUTE_RECOGNITION_MODEL || 'voice_messaging').trim()
+const SBER_CA_VERIFIED = verifiedSberCertificates.length === 2
 const KANDINSKY_HOST = 'https://studio.kandinskylab.ai/api'
 // Видео/аватар API (GigaAvatar: image + audio → говорящее видео)
 const VIDEO_BASE_URL = serviceUrl('VIDEO_BASE_URL', process.env.VIDEO_BASE_URL, {
@@ -171,6 +173,7 @@ async function getToken(scope, basicKey, oauthUrl) {
   const res = await httpsRequest(oauthUrl, {
     method: 'POST',
     insecure: INSECURE,
+    ca: sberCaBundle,
     timeoutMs: 20000,
     headers: {
       Authorization: `Basic ${basicKey}`,
@@ -575,13 +578,14 @@ app.get('/health', (_req, res) => {
     ok: true,
     services: {
       gigachat: llm.ready,
-      salutespeech: !!SALUTE_KEY,
+      salutespeech: !!SALUTE_KEY && SBER_CA_VERIFIED,
       kandinsky: !!KANDINSKY_TOKEN,
       video: !!KANDINSKY_TOKEN && !!VIDEO_BASE_URL
     },
     media_transport: {
       video_https: VIDEO_TRANSPORT_SECURE,
-      video_insecure_http_allowed: Boolean(VIDEO_BASE_URL && !VIDEO_TRANSPORT_SECURE && ALLOW_INSECURE_VIDEO_HTTP)
+      video_insecure_http_allowed: Boolean(VIDEO_BASE_URL && !VIDEO_TRANSPORT_SECURE && ALLOW_INSECURE_VIDEO_HTTP),
+      sber_ca_verified: SBER_CA_VERIFIED
     },
     llm_routes: llm.purposes,
     analytics_delivery: eventStore.status(),
@@ -601,6 +605,7 @@ app.get('/ready', (_req, res) => {
   const ready =
     llm.ready &&
     !!SALUTE_KEY &&
+    SBER_CA_VERIFIED &&
     !!KANDINSKY_TOKEN &&
     videoConfigured &&
     videoTransportAccepted
@@ -611,7 +616,8 @@ app.get('/ready', (_req, res) => {
       video_https: VIDEO_TRANSPORT_SECURE,
       video_insecure_http_allowed: Boolean(
         videoConfigured && !VIDEO_TRANSPORT_SECURE && ALLOW_INSECURE_VIDEO_HTTP
-      )
+      ),
+      sber_ca_verified: SBER_CA_VERIFIED
     },
     llm_routes: llm.purposes
   })
@@ -859,6 +865,7 @@ app.post('/v2/speech/synthesize', speechLimit, speechDailyLimit, express.json({ 
     const r = await httpsRequest(url, {
       method: 'POST',
       insecure: INSECURE,
+      ca: sberCaBundle,
       timeoutMs: 60000,
       signal: clientSignal,
       binary: true,
@@ -928,6 +935,7 @@ app.post(
       const r = await httpsRequest(url, {
         method: 'POST',
         insecure: INSECURE,
+        ca: sberCaBundle,
         timeoutMs: 60000,
         signal: clientSignal,
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': ct },

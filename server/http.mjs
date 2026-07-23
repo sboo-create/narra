@@ -1,6 +1,13 @@
 import https from 'https'
 import { URL } from 'url'
 
+export function createHttpsAgent({ insecure = false, ca } = {}) {
+  return new https.Agent({
+    rejectUnauthorized: !insecure,
+    ...(Array.isArray(ca) && ca.length ? { ca } : {})
+  })
+}
+
 // Низкоуровневый HTTPS-запрос с настраиваемым TLS-агентом (сертификаты НУЦ Минцифры
 // у Сбера) и поддержкой потокового чтения (SSE).
 export function httpsRequest(urlStr, opts = {}) {
@@ -10,6 +17,7 @@ export function httpsRequest(urlStr, opts = {}) {
     body,
     timeoutMs = 60000,
     insecure = false,
+    ca,
     onChunk,
     binary = false,
     signal
@@ -24,7 +32,7 @@ export function httpsRequest(urlStr, opts = {}) {
       return
     }
 
-    const agent = new https.Agent({ rejectUnauthorized: !insecure })
+    const agent = createHttpsAgent({ insecure, ca })
     const req = https.request(
       {
         protocol: url.protocol,
