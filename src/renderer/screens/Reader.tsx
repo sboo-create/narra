@@ -10,6 +10,7 @@ import { visualMomentsRequest, summaryRequest } from '../lib/prompts'
 import { parseBlocks, proseOnly } from '../lib/blocks'
 import { sceneKey } from '../lib/imageStyle'
 import { TtsController, TtsStatus } from '../lib/ttsController'
+import { hasForeignLanguage } from '../lib/ttsLanguage'
 import type { ChapterScenario } from '@shared/types'
 
 interface NamePopover {
@@ -327,7 +328,11 @@ export function Reader() {
       mode: ttsReady ? 'salute' : 'browser',
       segments: sc.segments,
       voiceFor,
-      cacheKeyFor: (idx) => `tts-${fanfic.id}-c${chapterNo}-${idx}-${hash(sc.segments[idx].text)}`,
+      // Смешанные сегменты получают новый ключ (-ml1): старое «русское» произношение
+      // иноязычных вставок в кэше не должно перекрывать исправленную озвучку.
+      cacheKeyFor: (idx) =>
+        `tts-${fanfic.id}-c${chapterNo}-${idx}-${hash(sc.segments[idx].text)}` +
+        (hasForeignLanguage(sc.segments[idx].text) ? '-ml1' : ''),
       onIndex: setCurSeg,
       onStatus: setAudioStatus,
       onError: (m) => toast({ type: 'error', title: 'Озвучка', message: m })
