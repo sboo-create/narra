@@ -26,7 +26,8 @@ ssh "$REMOTE" "cd '$REMOTE_DIR' \
   && sudo find /srv/stats/narra/data -maxdepth 1 -type f -exec chmod 0600 {} + \
   && sudo install -m 0644 stats-narra.service /etc/systemd/system/stats-narra.service \
   && sudo systemctl daemon-reload \
-  && sudo systemctl enable --now stats-narra && sleep 2 \
+  && sudo systemctl enable stats-narra \
+  && sudo systemctl restart stats-narra && sleep 2 \
   && systemctl is-active stats-narra \
   && curl -sf http://127.0.0.1:9905/health \
   && curl -sf 'http://127.0.0.1:9905/summary?days=1' >/dev/null"

@@ -10,6 +10,7 @@ WorkingDirectory=/srv/stats/narra/app
 Environment=STATS_PORT=9905
 Environment=STATS_ENVIRONMENT=production
 Environment=STATS_DB=/srv/stats/narra/data/events.db
+Environment=STATS_TRUST_LOOPBACK_PROXY=1
 EnvironmentFile=-/etc/stats/narra.env
 ExecStart=/srv/stats/narra/app/.venv/bin/python server.py
 Restart=always

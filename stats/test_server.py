@@ -68,6 +68,12 @@ class NarraStatsTest(unittest.TestCase):
         self.assertIn("railway up stats --path-as-root", readme)
         self.assertIn("/stats/railway.json", readme)
 
+    def test_i167_deploy_restarts_an_existing_service_after_code_update(self):
+        deploy = Path(__file__).with_name("deploy.sh").read_text()
+        self.assertIn("systemctl enable stats-narra", deploy)
+        self.assertIn("systemctl restart stats-narra", deploy)
+        self.assertNotIn("systemctl enable --now stats-narra", deploy)
+
     def test_railway_port_takes_precedence_over_local_stats_port(self):
         with patch.dict(os.environ, {"PORT": "43123", "STATS_PORT": "9905"}):
             self.assertEqual(server._listen_port(), 43123)
@@ -85,6 +91,13 @@ class NarraStatsTest(unittest.TestCase):
             self.assertFalse(server._read_authorized("Basic malformed"))
             self.assertFalse(server._read_authorized(f"Basic {wrong}"))
             self.assertTrue(server._read_authorized(f"Basic {encoded}"))
+
+    def test_trusted_proxy_mode_is_explicit_and_loopback_only(self):
+        with patch.object(server, "TRUST_LOOPBACK_PROXY", True):
+            self.assertTrue(server._read_authorized(""))
+        self.assertTrue(server._trusted_proxy_host_allowed("127.0.0.1"))
+        self.assertTrue(server._trusted_proxy_host_allowed("::1"))
+        self.assertFalse(server._trusted_proxy_host_allowed("0.0.0.0"))
 
     def test_read_routes_enforce_basic_auth_while_health_stays_public(self):
         encoded = base64.b64encode(b"narra-staging:correct-password").decode()

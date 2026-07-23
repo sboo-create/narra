@@ -26,8 +26,7 @@ STATS_PORT=9905
 STATS_ENVIRONMENT=production
 STATS_DB=/srv/stats/narra/data/events.db
 STATS_INGEST_TOKEN=<write-only random token, at least 32 characters>
-STATS_READ_USERNAME=<dashboard operator>
-STATS_READ_PASSWORD=<random password, at least 32 characters>
+STATS_TRUST_LOOPBACK_PROXY=1
 STATS_COST_CURRENCY=USD
 ```
 
@@ -35,10 +34,12 @@ On i167 the token belongs in root-owned `/etc/stats/narra.env` (`0600`), not
 in the repository or the systemd unit. The deploy script installs/refreshes
 the unit but preserves that environment file.
 
-Traction's reverse proxy must preserve the authenticated `Authorization`
-header or set the same app-level Basic credentials on the upstream request.
-Terminating proxy auth while stripping the header makes the backend correctly
-return `401`.
+The canonical i167 service binds to `127.0.0.1` and may set
+`STATS_TRUST_LOOPBACK_PROXY=1`, because Caddy is the only network entry and
+already enforces Traction's shared Basic Auth. Startup rejects this mode on a
+non-loopback bind. Any directly reachable deployment, including Railway, must
+leave this flag off and set `STATS_READ_USERNAME` plus a random
+`STATS_READ_PASSWORD` of at least 32 characters.
 
 The Railway gateway receives matching `TRACTION_INGEST_URL` and
 `TRACTION_INGEST_TOKEN`. There is intentionally no legacy import: Narra was

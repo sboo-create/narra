@@ -37,11 +37,16 @@ def _listen_port() -> int:
     return int(os.environ.get("PORT", os.environ.get("STATS_PORT", "9905")))
 
 
+def _trusted_proxy_host_allowed(host: str) -> bool:
+    return host in {"127.0.0.1", "::1", "localhost"}
+
+
 PORT = _listen_port()
 DB_PATH = Path(os.environ.get("STATS_DB", HERE / "data" / "events.db"))
 INGEST_TOKEN = os.environ.get("STATS_INGEST_TOKEN", "")
 READ_USERNAME = os.environ.get("STATS_READ_USERNAME", "").strip()
 READ_PASSWORD = os.environ.get("STATS_READ_PASSWORD", "")
+TRUST_LOOPBACK_PROXY = os.environ.get("STATS_TRUST_LOOPBACK_PROXY", "0") == "1"
 ALLOW_OPEN = os.environ.get("STATS_ALLOW_UNAUTHENTICATED_INGEST", "0") == "1"
 CONTRACT_TEST_MODE = os.environ.get("STATS_CONTRACT_TEST_MODE", "0") == "1"
 ENVIRONMENT = os.environ.get("STATS_ENVIRONMENT", "production").strip()
@@ -70,7 +75,9 @@ if not ALLOW_OPEN and not CONTRACT_TEST_MODE and len(INGEST_TOKEN) < 32:
     raise RuntimeError("STATS_INGEST_TOKEN must contain at least 32 characters")
 if bool(READ_USERNAME) != bool(READ_PASSWORD):
     raise RuntimeError("STATS_READ_USERNAME and STATS_READ_PASSWORD must be configured together")
-if ENVIRONMENT in {"production", "staging"} and (
+if TRUST_LOOPBACK_PROXY and not _trusted_proxy_host_allowed(HOST):
+    raise RuntimeError("STATS_TRUST_LOOPBACK_PROXY requires a loopback-only STATS_HOST")
+if ENVIRONMENT in {"production", "staging"} and not TRUST_LOOPBACK_PROXY and (
     not READ_USERNAME or len(READ_PASSWORD) < 32
 ):
     raise RuntimeError("analytics reads require a username and a password of at least 32 characters")
@@ -204,6 +211,8 @@ def _response(value: object, status: int = 200) -> JSONResponse:
 
 
 def _read_authorized(header: str) -> bool:
+    if TRUST_LOOPBACK_PROXY:
+        return True
     if not READ_USERNAME and ENVIRONMENT in {"development", "test"}:
         return True
     if not READ_USERNAME or not header.startswith("Basic "):
@@ -908,9 +917,11 @@ def health() -> JSONResponse:
     with DB_LOCK:
         _db.execute("SELECT 1").fetchone()
     ingest_ready = bool(INGEST_TOKEN) or ALLOW_OPEN
-    reads_ready = bool(READ_USERNAME and READ_PASSWORD) or ENVIRONMENT in {
-        "development", "test"
-    }
+    reads_ready = (
+        TRUST_LOOPBACK_PROXY
+        or bool(READ_USERNAME and READ_PASSWORD)
+        or ENVIRONMENT in {"development", "test"}
+    )
     ready = ingest_ready and reads_ready
     return _response(
         {
