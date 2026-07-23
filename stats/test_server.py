@@ -6,6 +6,7 @@ import tempfile
 import time
 import unittest
 import uuid
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 os.environ["STATS_DB"] = os.path.join(tempfile.mkdtemp(prefix="narra-stats-"), "events.db")
@@ -174,7 +175,7 @@ class NarraStatsTest(unittest.TestCase):
         self.assertEqual(len(data["series"]), 1)
         self.assertTrue(data["quality"]["warnings"])
 
-    def test_canonical_ratios_are_trailing_24h_not_selected_dashboard_window(self):
+    def test_canonical_ratios_use_today_msk_not_selected_dashboard_window(self):
         recent_session = str(uuid.uuid4())
         recent_request = str(uuid.uuid4())
         add("book_opened", session=recent_session, properties={"book_kind": "builtin"})
@@ -189,6 +190,52 @@ class NarraStatsTest(unittest.TestCase):
         self.assertEqual(day["tools_per_dau"], 1.0)
         self.assertEqual(week["sessions_per_dau"], day["sessions_per_dau"])
         self.assertEqual(week["tools_per_dau"], day["tools_per_dau"])
+
+    def test_overview_uses_moscow_day_iso_week_and_calendar_month(self):
+        now = datetime(2026, 7, 8, 12, 0, tzinfo=timezone.utc).timestamp()
+        add(
+            "book_opened",
+            actor=ACTOR_A,
+            session=str(uuid.uuid4()),
+            properties={"book_kind": "builtin"},
+            ts=datetime(2026, 7, 7, 21, 1, tzinfo=timezone.utc).timestamp(),
+        )
+        add(
+            "ai_request_started",
+            actor=ACTOR_A,
+            properties={"request_id": str(uuid.uuid4()), "purpose": "summary"},
+            ts=datetime(2026, 7, 8, 8, 0, tzinfo=timezone.utc).timestamp(),
+        )
+        add(
+            "book_opened",
+            actor=ACTOR_B,
+            session=str(uuid.uuid4()),
+            properties={"book_kind": "builtin"},
+            ts=datetime(2026, 7, 6, 8, 0, tzinfo=timezone.utc).timestamp(),
+        )
+        add(
+            "book_opened",
+            actor="c" * 64,
+            session=str(uuid.uuid4()),
+            properties={"book_kind": "builtin"},
+            ts=datetime(2026, 7, 5, 8, 0, tzinfo=timezone.utc).timestamp(),
+        )
+        add(
+            "book_opened",
+            actor="d" * 64,
+            session=str(uuid.uuid4()),
+            properties={"book_kind": "builtin"},
+            ts=datetime(2026, 6, 30, 20, 59, tzinfo=timezone.utc).timestamp(),
+        )
+
+        with patch("server.time.time", return_value=now):
+            overview = server.compute_dashboard(1)["overview"]
+
+        self.assertEqual(overview["dau"], 1)
+        self.assertEqual(overview["wau"], 2)
+        self.assertEqual(overview["mau"], 3)
+        self.assertEqual(overview["sessions_per_dau"], 1)
+        self.assertEqual(overview["tools_per_dau"], 1)
 
     def test_privacy_schema_is_event_scoped(self):
         with self.assertRaises(ValueError):
@@ -309,10 +356,10 @@ class NarraStatsTest(unittest.TestCase):
         selected = [row for row in data["tool_definitions"] if row["selected_for_overview"]]
         self.assertEqual(len(data["tool_definitions"]), 6)
         self.assertEqual(len(selected), 1)
-        self.assertEqual(selected[0]["id"], "logical_ai_requests_24h_dau")
+        self.assertEqual(selected[0]["id"], "logical_ai_requests_calendar_day_dau")
         self.assertEqual(selected[0]["value"], data["overview"]["tools_per_dau"])
-        self.assertEqual(tools["provider_attempts_24h_dau"]["value"], 2.0)
-        self.assertEqual(tools["logical_ai_requests_24h_dau"]["value"], 1.0)
+        self.assertEqual(tools["provider_attempts_calendar_day_dau"]["value"], 2.0)
+        self.assertEqual(tools["logical_ai_requests_calendar_day_dau"]["value"], 1.0)
         self.assertEqual(len(data["diagnostics"]), 10)
         self.assertEqual(data["quality"]["token_coverage"], 100.0)
         feature_names = {row["name"] for row in data["features"]}

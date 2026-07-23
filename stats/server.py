@@ -22,6 +22,7 @@ from collections import Counter, defaultdict, deque
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import uvicorn
 from fastapi import FastAPI, Request
@@ -56,6 +57,7 @@ AI_OUTCOME_GRACE_SECONDS = max(
 )
 VERSION_FILE = HERE / "VERSION"
 VERSION = VERSION_FILE.read_text().strip() if VERSION_FILE.exists() else "dev"
+REPORTING_TZ = ZoneInfo("Europe/Moscow")
 MAX_BODY = 512 * 1024
 MAX_BATCH = 500
 INGEST_RATE_PER_MINUTE = max(1, min(int(os.environ.get("STATS_INGEST_RATE_PER_MINUTE", "600")), 100_000))
@@ -328,13 +330,35 @@ def _rows() -> list[dict[str, Any]]:
     return result
 
 
-def _active_ids(rows: list[dict[str, Any]], cutoff: float) -> set[str]:
-    return {row["device_id"] for row in rows if row["ts"] >= cutoff and row["name"] in ACTIVE_EVENTS}
+def _reporting_date(timestamp: float):
+    return datetime.fromtimestamp(timestamp, REPORTING_TZ).date()
+
+
+def _period_starts(now: float, days: float) -> tuple[float, dict[str, float]]:
+    selected_days = max(1, min(int(math.ceil(float(days))), 365))
+    current = datetime.fromtimestamp(now, REPORTING_TZ)
+    day_start = current.replace(hour=0, minute=0, second=0, microsecond=0)
+    return float(selected_days), {
+        "selected": (day_start - timedelta(days=selected_days - 1)).timestamp(),
+        "dau": day_start.timestamp(),
+        "wau": (day_start - timedelta(days=day_start.weekday())).timestamp(),
+        "mau": day_start.replace(day=1).timestamp(),
+    }
+
+
+def _active_ids(
+    rows: list[dict[str, Any]], cutoff: float, until: float
+) -> set[str]:
+    return {
+        row["device_id"]
+        for row in rows
+        if cutoff <= row["ts"] <= until and row["name"] in ACTIVE_EVENTS
+    }
 
 
 def _active_user_days(rows: list[dict[str, Any]]) -> int:
     return len({
-        (row["device_id"], datetime.fromtimestamp(row["ts"], timezone.utc).date())
+        (row["device_id"], _reporting_date(row["ts"]))
         for row in rows if row["name"] in ACTIVE_EVENTS
     })
 
@@ -369,10 +393,10 @@ def _retention(rows: list[dict[str, Any]], now: float) -> dict[str, Any]:
     active_days: dict[str, set] = defaultdict(set)
     for row in rows:
         if row["name"] in ACTIVE_EVENTS:
-            active_days[row["device_id"]].add(datetime.fromtimestamp(row["ts"], timezone.utc).date())
+            active_days[row["device_id"]].add(_reporting_date(row["ts"]))
         if row["name"] == "reading_session_qualified":
-            qualified_days[row["device_id"]].add(datetime.fromtimestamp(row["ts"], timezone.utc).date())
-    today = datetime.fromtimestamp(now, timezone.utc).date()
+            qualified_days[row["device_id"]].add(_reporting_date(row["ts"]))
+    today = _reporting_date(now)
     result = {}
     for horizon in (1, 7, 30):
         eligible = returned = 0
@@ -392,11 +416,11 @@ def _retention(rows: list[dict[str, Any]], now: float) -> dict[str, Any]:
 
 
 def compute_dashboard(days: float = 1.0) -> dict[str, Any]:
-    window_days = max(0.04, min(float(days), 365.0))
     now = time.time()
-    since = now - window_days * 86400
+    window_days, period_starts = _period_starts(now, days)
+    since = period_starts["selected"]
     rows = _rows()
-    selected = [row for row in rows if row["ts"] >= since]
+    selected = [row for row in rows if since <= row["ts"] <= now]
     active = [row for row in selected if row["name"] in ACTIVE_EVENTS]
     actors = {row["device_id"] for row in active}
     active_user_days = _active_user_days(selected)
@@ -531,8 +555,7 @@ def compute_dashboard(days: float = 1.0) -> dict[str, Any]:
     requested_days = max(1, math.ceil(window_days))
     available_days = 0 if available_start is None else min(
         requested_days,
-        (datetime.fromtimestamp(now, timezone.utc).date()
-         - datetime.fromtimestamp(available_start, timezone.utc).date()).days + 1,
+        (_reporting_date(now) - _reporting_date(available_start)).days + 1,
     )
     session_eligible = [row for row in active if row["name"] in SESSION_EVENTS]
     request_eligible = [row for row in selected if row["name"].startswith("ai_request_")]
@@ -577,21 +600,25 @@ def compute_dashboard(days: float = 1.0) -> dict[str, Any]:
         warnings.append(f"Input/output tokens are available for {token_coverage}% of completed requests.")
 
     ever_ids = {row["device_id"] for row in rows if row["name"] in EVER_USED_EVENTS}
-    last_24h = [row for row in rows if row["ts"] >= now - 86400]
-    dau_ids = {row["device_id"] for row in last_24h if row["name"] in ACTIVE_EVENTS}
+    calendar_day = [
+        row for row in rows if period_starts["dau"] <= row["ts"] <= now
+    ]
+    dau_ids = {
+        row["device_id"] for row in calendar_day if row["name"] in ACTIVE_EVENTS
+    }
     canonical_requests = {
         (row["device_id"], str(row["properties"].get("request_id")))
-        for row in last_24h
+        for row in calendar_day
         if row["name"] == "ai_request_started" and row["properties"].get("request_id")
     }
     overview = {
         "ever_used": len(ever_ids),
         "dau": len(dau_ids),
-        "wau": len(_active_ids(rows, now - 7 * 86400)),
-        "mau": len(_active_ids(rows, now - 30 * 86400)),
+        "wau": len(_active_ids(rows, period_starts["wau"], now)),
+        "mau": len(_active_ids(rows, period_starts["mau"], now)),
     }
     if dau_ids:
-        overview["sessions_per_dau"] = round(_sessions(last_24h) / len(dau_ids), 2)
+        overview["sessions_per_dau"] = round(_sessions(calendar_day) / len(dau_ids), 2)
         overview["tools_per_dau"] = round(len(canonical_requests) / len(dau_ids), 2)
 
     product_actions = sum(row["name"] in PRODUCT_ACTION_EVENTS for row in selected)
@@ -599,7 +626,7 @@ def compute_dashboard(days: float = 1.0) -> dict[str, Any]:
     feature_breadth = len({
         (
             row["device_id"],
-            datetime.fromtimestamp(row["ts"], timezone.utc).date(),
+            _reporting_date(row["ts"]),
             FEATURE_BY_EVENT.get(row["name"]) or row["properties"].get("feature"),
         )
         for row in active
@@ -636,9 +663,9 @@ def compute_dashboard(days: float = 1.0) -> dict[str, Any]:
             "help": help_text,
         }
 
-    trailing_attempts = [
+    calendar_day_attempts = [
         row for row in rows
-        if row["ts"] >= now - 86400
+        if period_starts["dau"] <= row["ts"] <= now
         and row["name"] in {
             "provider_attempt_completed",
             "provider_attempt_failed",
@@ -647,23 +674,23 @@ def compute_dashboard(days: float = 1.0) -> dict[str, Any]:
     ]
     tool_definitions = [
         tool_definition(
-            "logical_ai_requests_24h_dau",
+            "logical_ai_requests_calendar_day_dau",
             "Logical AI requests / DAU",
             len(canonical_requests),
-            "logical requests in trailing 24h",
+            "logical requests since 00:00 MSK",
             "The canonical Overview formula. Retry and provider fallback share one request_id and count once.",
             selected_for_overview=True,
             denominator=len(dau_ids),
-            denominator_label="rolling 24h DAU",
+            denominator_label="DAU of the same Moscow date",
         ),
         tool_definition(
-            "provider_attempts_24h_dau",
+            "provider_attempts_calendar_day_dau",
             "Provider attempts / DAU",
-            len(trailing_attempts),
-            "provider attempts in trailing 24h",
+            len(calendar_day_attempts),
+            "provider attempts since 00:00 MSK",
             "Technical load, including retry and fallback. Useful for reliability and cost, not as the product KPI.",
             denominator=len(dau_ids),
-            denominator_label="rolling 24h DAU",
+            denominator_label="DAU of the same Moscow date",
         ),
         tool_definition(
             "logical_ai_requests_user_day",
@@ -698,11 +725,13 @@ def compute_dashboard(days: float = 1.0) -> dict[str, Any]:
     series = []
     daily_active_counts: list[int] = []
     if available_start is not None:
-        day = datetime.fromtimestamp(available_start, timezone.utc).date()
-        last = datetime.fromtimestamp(now, timezone.utc).date()
+        day = _reporting_date(available_start)
+        last = _reporting_date(now)
         while day <= last:
-            lo = datetime.combine(day, datetime.min.time(), timezone.utc).timestamp()
-            hi = lo + 86400
+            lo = datetime.combine(day, datetime.min.time(), REPORTING_TZ).timestamp()
+            hi = datetime.combine(
+                day + timedelta(days=1), datetime.min.time(), REPORTING_TZ
+            ).timestamp()
             chunk = [row for row in rows if lo <= row["ts"] < hi]
             daily_active = len({row["device_id"] for row in chunk if row["name"] in ACTIVE_EVENTS})
             daily_active_counts.append(daily_active)
@@ -817,11 +846,11 @@ def compute_dashboard(days: float = 1.0) -> dict[str, Any]:
             {"label": label, "value": overview[key], "note": note}
             for label, key, note in (
                 ("Ever used", "ever_used", "opened a book at least once"),
-                ("DAU", "dau", "active in trailing 24 hours"),
-                ("WAU", "wau", "active in trailing 7 days"),
-                ("MAU", "mau", "active in trailing 30 days"),
-                ("Sessions / DAU", "sessions_per_dau", "trailing 24h / DAU"),
-                ("Tools / DAU", "tools_per_dau", "AI requests in trailing 24h, retries excluded"),
+                ("DAU", "dau", "active today in Moscow time"),
+                ("WAU", "wau", "active in the current Moscow ISO week"),
+                ("MAU", "mau", "active in the current Moscow month"),
+                ("Sessions / DAU", "sessions_per_dau", "today MSK / DAU today"),
+                ("Tools / DAU", "tools_per_dau", "AI requests today MSK, retries excluded"),
             ) if key in overview
         ],
         "tool_definitions": tool_definitions,

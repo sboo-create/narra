@@ -49,15 +49,17 @@ not released before this instrumentation.
 
 The Traction Overview keeps the canonical six-field contract:
 `ever_used`, `dau`, `wau`, `mau`, `sessions_per_dau` and `tools_per_dau`.
-Both ratios use a trailing 24-hour numerator and rolling DAU regardless of the
-period selected in the detailed dashboard.
+DAU uses the current `Europe/Moscow` calendar date, WAU the current Moscow ISO
+week and MAU the current Moscow calendar month. Both ratios use numerators from
+the same current Moscow date as the DAU denominator, regardless of the period
+selected in the detailed dashboard.
 
 For Narra, the selected `Tools / DAU` definition is **logical AI requests per
-rolling DAU**. Retry and cross-provider fallback share a `request_id` and count
+calendar-day DAU**. Retry and cross-provider fallback share a `request_id` and count
 once. The detailed dashboard deliberately shows five alternatives alongside
 the selected formula:
 
-- provider attempts per rolling DAU;
+- provider attempts per calendar-day DAU;
 - logical AI requests per active user-day;
 - explicit product actions per active user-day;
 - distinct feature breadth per active user-day;
