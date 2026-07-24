@@ -35,10 +35,17 @@ const api = {
 
   testProxy: (): Promise<ApiResult<ProxyHealth>> => ipcRenderer.invoke(IPC.testProxy),
 
-  llmJson: <T = unknown>(messages: LlmMessage[]): Promise<ApiResult<T>> =>
-    ipcRenderer.invoke(IPC.llmJson, messages),
-  llmText: (messages: LlmMessage[], temperature?: number): Promise<ApiResult<{ text: string }>> =>
-    ipcRenderer.invoke(IPC.llmText, messages, temperature),
+  llmJson: <T = unknown>(
+    messages: LlmMessage[],
+    origin: 'user' | 'background' = 'user'
+  ): Promise<ApiResult<T>> =>
+    ipcRenderer.invoke(IPC.llmJson, messages, origin),
+  llmText: (
+    messages: LlmMessage[],
+    temperature?: number,
+    origin: 'user' | 'background' = 'user'
+  ): Promise<ApiResult<{ text: string }>> =>
+    ipcRenderer.invoke(IPC.llmText, messages, temperature, origin),
 
   generateImage: (
     prompt: string,
@@ -46,35 +53,39 @@ const api = {
     width?: number,
     height?: number,
     force?: boolean,
-    engine?: 'kandinsky'
+    engine?: 'kandinsky',
+    origin?: 'user' | 'background'
   ): Promise<ApiResult<{ dataUrl: string; cached: boolean }>> =>
-    ipcRenderer.invoke(IPC.generateImage, prompt, cacheKey, width, height, force, engine),
+    ipcRenderer.invoke(IPC.generateImage, prompt, cacheKey, width, height, force, engine, origin),
   getCachedImage: (cacheKey: string): Promise<ApiResult<{ dataUrl: string }>> =>
     ipcRenderer.invoke(IPC.getCachedImage, cacheKey),
 
   synthesize: (
     payload: { text?: string; ssml?: string; voice: string },
-    cacheKey?: string
+    cacheKey?: string,
+    origin?: 'user' | 'background'
   ): Promise<ApiResult<{ dataUrl: string; cached: boolean }>> =>
-    ipcRenderer.invoke(IPC.synthesize, payload, cacheKey),
+    ipcRenderer.invoke(IPC.synthesize, payload, cacheKey, origin),
   getCachedAudio: (cacheKey: string): Promise<ApiResult<{ dataUrl: string }>> =>
     ipcRenderer.invoke(IPC.getCachedAudio, cacheKey),
 
   generateAvatar: (
     imageDataUrl: string,
     audioDataUrl: string,
-    cacheKey?: string
+    cacheKey?: string,
+    origin?: 'user' | 'background'
   ): Promise<ApiResult<{ dataUrl: string; cached: boolean }>> =>
-    ipcRenderer.invoke(IPC.generateAvatar, imageDataUrl, audioDataUrl, cacheKey),
+    ipcRenderer.invoke(IPC.generateAvatar, imageDataUrl, audioDataUrl, cacheKey, origin),
   getCachedVideo: (cacheKey: string): Promise<ApiResult<{ dataUrl: string }>> =>
     ipcRenderer.invoke(IPC.getCachedVideo, cacheKey),
   animatePortrait: (
     imageDataUrl: string,
     query: string,
     cacheKey?: string,
-    quality?: 'lite' | 'hd'
+    quality?: 'lite' | 'hd',
+    origin?: 'user' | 'background'
   ): Promise<ApiResult<{ dataUrl: string; cached: boolean }>> =>
-    ipcRenderer.invoke(IPC.animatePortrait, imageDataUrl, query, cacheKey, quality),
+    ipcRenderer.invoke(IPC.animatePortrait, imageDataUrl, query, cacheKey, quality, origin),
   deleteCachedImage: (cacheKey: string): Promise<ApiResult<{ ok: true }>> =>
     ipcRenderer.invoke(IPC.deleteCachedImage, cacheKey),
   deleteCachedVideo: (cacheKey: string): Promise<ApiResult<{ ok: true }>> =>
@@ -85,17 +96,35 @@ const api = {
     ipcRenderer.invoke(IPC.checkAppUpdate),
   installUpdate: (): Promise<ApiResult<{ started: true; version: string }>> =>
     ipcRenderer.invoke(IPC.installUpdate),
-  deleteBook: (bookId: string, nextState: Record<string, unknown>): Promise<ApiResult<{ builtin: boolean; cleanupPending?: boolean }>> =>
-    ipcRenderer.invoke(IPC.deleteBook, bookId, nextState),
+  deleteBook: (bookId: string): Promise<ApiResult<{ builtin: boolean; cleanupPending?: boolean }>> =>
+    ipcRenderer.invoke(IPC.deleteBook, bookId),
   bookExcerpt: (bookId: string): Promise<ApiResult<{ title: string; author: string; excerpt: string }>> =>
     ipcRenderer.invoke(IPC.bookExcerpt, bookId),
   importBookFromUrl: (
     url: string
-  ): Promise<ApiResult<{ id: string; title: string; author: string; chapters: number; words: number; excerpt: string }>> =>
+  ): Promise<ApiResult<{
+    id: string
+    title: string
+    author: string
+    chapters: number
+    words: number
+    excerpt: string
+    format: 'html'
+    sizeBucket: '<1mb' | '1-9mb' | '10-39mb'
+  }>> =>
     ipcRenderer.invoke(IPC.importBookFromUrl, url),
   recognize: (base64: string, mime: string): Promise<ApiResult<{ text: string }>> =>
     ipcRenderer.invoke(IPC.recognize, base64, mime),
-  importBook: (): Promise<ApiResult<{ id: string; title: string; author: string; chapters: number; words: number; excerpt: string }>> =>
+  importBook: (): Promise<ApiResult<{
+    id: string
+    title: string
+    author: string
+    chapters: number
+    words: number
+    excerpt: string
+    format: 'epub' | 'fb2' | 'txt' | 'pdf' | 'unknown'
+    sizeBucket: '<1mb' | '1-9mb' | '10-39mb'
+  }>> =>
     ipcRenderer.invoke(IPC.importBook),
   saveBookCharacters: (
     bookId: string,

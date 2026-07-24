@@ -425,6 +425,25 @@ class NarraStatsTest(unittest.TestCase):
         self.assertEqual(overview["ever_used"], 0)
         self.assertEqual(overview["tools_per_dau"], 1.0)
 
+    def test_background_ai_is_diagnostic_not_dau_session_or_tool(self):
+        add("ai_request_started", properties={
+            "request_id": str(uuid.uuid4()),
+            "purpose": "structured_task",
+            "origin": "background",
+        })
+        self.assertEqual(server.compute_dashboard(1)["overview"]["dau"], 0)
+        add(
+            "book_opened",
+            actor=ACTOR_B,
+            session=str(uuid.uuid4()),
+            properties={"book_kind": "imported"},
+        )
+        data = server.compute_dashboard(1)
+        self.assertEqual(data["overview"]["dau"], 1)
+        self.assertEqual(data["overview"]["sessions_per_dau"], 0.0)
+        self.assertEqual(data["overview"]["tools_per_dau"], 0.0)
+        self.assertEqual(data["ai"]["requests"], 1)
+
     def test_no_zero_fill_before_collection_start(self):
         add("book_opened", session=str(uuid.uuid4()), properties={"book_kind": "imported"})
         data = server.compute_dashboard(30)
@@ -510,6 +529,31 @@ class NarraStatsTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             server._safe_properties("ai_request_completed", {
                 "cost_currency": "RUB", "cost_source": "estimated",
+            })
+        self.assertEqual(server._safe_properties("media_job_completed", {
+            "job_type": "tts",
+            "job_latency_bucket": "1-4s",
+            "cache_hit": True,
+            "result_size_bucket": "256kb-1mb",
+            "origin": "user",
+        })["cache_hit"], True)
+        self.assertEqual(server._safe_properties("tts_first_audio_ready", {
+            "sample_rate": 48000,
+            "first_audio_latency_bucket": "1-4s",
+            "origin": "user",
+        })["sample_rate"], 48000)
+        with self.assertRaises(ValueError):
+            server._safe_properties("tts_first_audio_ready", {
+                "sample_rate": 44100,
+                "first_audio_latency_bucket": "1-4s",
+                "origin": "user",
+            })
+        with self.assertRaises(ValueError):
+            server._safe_properties("book_analysis_completed", {
+                "analysis_version": "v1",
+                "character_count_bucket": "4-8",
+                "origin": "background",
+                "title": "private book title",
             })
 
     def test_event_id_is_idempotent(self):

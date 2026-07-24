@@ -33,16 +33,31 @@ export async function ensureIdleAnimation(bookId: string, char: Character, auto 
   return run
 
   async function job() {
+    const origin = auto ? 'background' : 'user'
     try {
       // ждём портрет (или рисуем его сами)
       let img = await window.narra.getCachedImage(portraitKey(bookId, id))
       if (!img.ok) {
-        const gen = await window.narra.generateImage(portraitPrompt(char), portraitKey(bookId, id), 1024, 1024)
+        const gen = await window.narra.generateImage(
+          portraitPrompt(char),
+          portraitKey(bookId, id),
+          1024,
+          1024,
+          false,
+          undefined,
+          origin
+        )
         if (!gen.ok) return
         img = { ok: true, data: { dataUrl: gen.data!.dataUrl } }
       }
       const motion = `${char.idleAnimation || 'stays still'}, mouth closed, not speaking, no talking, locked camera on tripod, absolutely fixed framing and scale, no zoom, no pan`
-      await window.narra.animatePortrait(img.data!.dataUrl, motion, idleVideoKey(bookId, id))
+      await window.narra.animatePortrait(
+        img.data!.dataUrl,
+        motion,
+        idleVideoKey(bookId, id),
+        'lite',
+        origin
+      )
       // результат уже в кэше main-процесса
     } finally {
       inFlight.delete(id)

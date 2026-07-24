@@ -943,21 +943,35 @@ app.post('/v2/ai/chat/stream', aiLimit, aiDailyLimit, express.json({ limit: '1mb
   const clientSignal = requestAbortSignal(req, res)
   let requestId
   let release
+  let analyticsOrigin = 'user'
+  let recordActorAnalytics = true
+  let requestPurpose
   try {
     release = await llmGate.acquire(clientSignal)
     const input = parseChatBody(req.body, { stream: true })
+    analyticsOrigin = input.origin
+    recordActorAnalytics = input.analyticsTier !== 'none'
+    requestPurpose = input.purpose
     requestId = input.requestId || randomUUID()
-    await appendInternalEvent(req, 'ai_request_started', { request_id: requestId, purpose: input.purpose })
+    if (recordActorAnalytics) {
+      await appendInternalEvent(req, 'ai_request_started', {
+        request_id: requestId,
+        purpose: input.purpose,
+        origin: input.origin
+      })
+    }
     const { response: upstream, provider, model, responseCost, finalizeAttempt } = await requestChat({
       ...input,
       requestId,
       stream: true,
-      onAttempt: (attempt) => appendInternalEvent(
-        req,
-        `provider_attempt_${attempt.status}`,
-        providerAttemptProperties(requestId, input.purpose, attempt),
-        attempt.event_id
-      ),
+      onAttempt: recordActorAnalytics
+        ? (attempt) => appendInternalEvent(
+            req,
+            `provider_attempt_${attempt.status}`,
+            providerAttemptProperties(requestId, input.purpose, attempt),
+            attempt.event_id
+          )
+        : undefined,
       signal: clientSignal
     })
     res.setHeader('Content-Type', 'text/event-stream')
@@ -983,18 +997,23 @@ app.post('/v2/ai/chat/stream', aiLimit, aiDailyLimit, express.json({ limit: '1mb
       }
     })
     res.end()
-    await appendInternalEvent(req, 'ai_request_completed', completionProperties({
-      requestId,
-      purpose: input.purpose,
-      provider,
-      model,
-      latencyMs: Date.now() - startedAt,
-      usage,
-      responseCost
-    }))
+    if (recordActorAnalytics) {
+      await appendInternalEvent(req, 'ai_request_completed', completionProperties({
+        requestId,
+        purpose: input.purpose,
+        provider,
+        model,
+        latencyMs: Date.now() - startedAt,
+        usage,
+        responseCost,
+        origin: input.origin
+      }))
+    }
   } catch (e) {
-    if (requestId) await appendInternalEvent(req, 'ai_request_failed', {
+    if (requestId && recordActorAnalytics) await appendInternalEvent(req, 'ai_request_failed', {
       request_id: requestId,
+      ...(requestPurpose ? { purpose: requestPurpose } : {}),
+      origin: analyticsOrigin,
       latency_ms: Date.now() - startedAt,
       error_code: e.code || 'NETWORK',
       success: false
@@ -1027,21 +1046,35 @@ app.post('/v2/ai/chat/complete', aiLimit, aiDailyLimit, express.json({ limit: '1
   const clientSignal = requestAbortSignal(req, res)
   let requestId
   let release
+  let analyticsOrigin = 'user'
+  let recordActorAnalytics = true
+  let requestPurpose
   try {
     release = await llmGate.acquire(clientSignal)
     const input = parseChatBody(req.body)
+    analyticsOrigin = input.origin
+    recordActorAnalytics = input.analyticsTier !== 'none'
+    requestPurpose = input.purpose
     requestId = input.requestId || randomUUID()
-    await appendInternalEvent(req, 'ai_request_started', { request_id: requestId, purpose: input.purpose })
+    if (recordActorAnalytics) {
+      await appendInternalEvent(req, 'ai_request_started', {
+        request_id: requestId,
+        purpose: input.purpose,
+        origin: input.origin
+      })
+    }
     const { response: r, provider, model, attempts, responseCost, finalizeAttempt } = await requestChat({
       ...input,
       requestId,
       stream: false,
-      onAttempt: (attempt) => appendInternalEvent(
-        req,
-        `provider_attempt_${attempt.status}`,
-        providerAttemptProperties(requestId, input.purpose, attempt),
-        attempt.event_id
-      ),
+      onAttempt: recordActorAnalytics
+        ? (attempt) => appendInternalEvent(
+            req,
+            `provider_attempt_${attempt.status}`,
+            providerAttemptProperties(requestId, input.purpose, attempt),
+            attempt.event_id
+          )
+        : undefined,
       signal: clientSignal
     })
     const j = await settleProviderResponse({
@@ -1057,15 +1090,18 @@ app.post('/v2/ai/chat/complete', aiLimit, aiDailyLimit, express.json({ limit: '1
         return validateChatCompletionPayload(payload)
       }
     })
-    await appendInternalEvent(req, 'ai_request_completed', completionProperties({
-      requestId,
-      purpose: input.purpose,
-      provider,
-      model,
-      latencyMs: Date.now() - startedAt,
-      usage: j?.usage,
-      responseCost
-    }))
+    if (recordActorAnalytics) {
+      await appendInternalEvent(req, 'ai_request_completed', completionProperties({
+        requestId,
+        purpose: input.purpose,
+        provider,
+        model,
+        latencyMs: Date.now() - startedAt,
+        usage: j?.usage,
+        responseCost,
+        origin: input.origin
+      }))
+    }
     res.json({
       text: j?.choices?.[0]?.message?.content ?? '',
       request_id: requestId,
@@ -1074,8 +1110,10 @@ app.post('/v2/ai/chat/complete', aiLimit, aiDailyLimit, express.json({ limit: '1
       attempts: attempts.length
     })
   } catch (e) {
-    if (requestId) await appendInternalEvent(req, 'ai_request_failed', {
+    if (requestId && recordActorAnalytics) await appendInternalEvent(req, 'ai_request_failed', {
       request_id: requestId,
+      ...(requestPurpose ? { purpose: requestPurpose } : {}),
+      origin: analyticsOrigin,
       latency_ms: Date.now() - startedAt,
       error_code: e.code || 'NETWORK',
       success: false

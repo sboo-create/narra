@@ -116,10 +116,14 @@ if ENVIRONMENT in {"production", "staging"} and not TRUST_LOOPBACK_PROXY and (
 
 EVENT_NAMES = {
     "app_opened", "app_closed", "book_import_started", "book_import_completed",
-    "book_import_failed", "book_opened", "reading_session_started",
+    "book_import_failed", "book_analysis_started", "book_analysis_completed",
+    "book_analysis_failed", "book_opened", "reading_session_started",
     "reading_session_qualified", "reading_session_ended", "chapter_changed",
     "chapter_completed", "bookmark_added", "note_added", "character_opened",
     "chat_opened", "ai_request_started", "ai_request_completed", "ai_request_failed",
+    "media_job_enqueued", "media_job_started", "media_job_completed",
+    "media_job_failed", "media_job_cancelled", "tts_first_audio_ready",
+    "tts_playback_started", "tts_playback_abandoned",
     "answer_feedback_submitted", "update_offered", "update_downloaded",
     "update_verified", "update_installed", "app_version_seen",
     "provider_attempt_started", "provider_attempt_completed", "provider_attempt_failed",
@@ -133,14 +137,25 @@ SAFE_PROPERTIES = {
     "navigation_type", "feature", "success", "request_id", "purpose", "route",
     "latency_ms", "rating", "version", "provider", "model", "http_status",
     "input_tokens", "output_tokens", "total_tokens", "exact_cost", "retry_index",
-    "cost_currency", "cost_source",
+    "cost_currency", "cost_source", "analysis_version", "character_count_bucket",
+    "pov", "confidence_bucket", "origin", "stage", "safe_error_code",
+    "job_type", "quality", "queue_depth_bucket", "queue_wait_bucket",
+    "job_latency_bucket", "cache_hit", "result_size_bucket",
+    "retry_count_bucket", "queue_or_running", "sample_rate",
+    "first_audio_latency_bucket", "source", "listened_fraction_bucket",
 }
 EVENT_PROPERTIES = {
     "app_opened": {"app_version", "os_major", "arch", "channel"},
     "app_closed": {"duration_seconds"},
     "book_import_started": {"format", "source_class", "size_bucket"},
-    "book_import_completed": {"format", "source_class", "size_bucket", "chapter_count_bucket"},
+    "book_import_completed": {"format", "source_class", "size_bucket", "chapter_count_bucket", "duration_bucket"},
     "book_import_failed": {"format", "source_class", "size_bucket", "error_code"},
+    "book_analysis_started": {"analysis_version", "origin"},
+    "book_analysis_completed": {
+        "analysis_version", "character_count_bucket", "duration_bucket", "pov",
+        "confidence_bucket", "origin",
+    },
+    "book_analysis_failed": {"analysis_version", "stage", "safe_error_code", "origin"},
     "book_opened": {"book_kind"},
     "reading_session_started": {"book_kind"},
     "reading_session_qualified": {"book_kind", "duration_seconds", "duration_bucket"},
@@ -149,13 +164,25 @@ EVENT_PROPERTIES = {
     "chapter_completed": {"chapter_position_bucket"},
     "bookmark_added": {"feature"}, "note_added": {"feature"},
     "character_opened": {"feature"}, "chat_opened": {"feature"},
-    "ai_request_started": {"request_id", "purpose"},
+    "ai_request_started": {"request_id", "purpose", "origin"},
     "ai_request_completed": {
         "request_id", "purpose", "route", "latency_ms", "success",
         "input_tokens", "output_tokens", "total_tokens", "exact_cost",
-        "cost_currency", "cost_source",
+        "cost_currency", "cost_source", "origin",
     },
-    "ai_request_failed": {"request_id", "purpose", "route", "latency_ms", "success", "error_code"},
+    "ai_request_failed": {
+        "request_id", "purpose", "route", "latency_ms", "success", "error_code", "origin",
+    },
+    "media_job_enqueued": {"job_type", "provider", "model", "quality", "queue_depth_bucket", "origin"},
+    "media_job_started": {"job_type", "queue_wait_bucket", "origin"},
+    "media_job_completed": {
+        "job_type", "job_latency_bucket", "cache_hit", "result_size_bucket", "origin",
+    },
+    "media_job_failed": {"job_type", "stage", "safe_error_code", "retry_count_bucket", "origin"},
+    "media_job_cancelled": {"job_type", "queue_or_running", "origin"},
+    "tts_first_audio_ready": {"sample_rate", "first_audio_latency_bucket", "origin"},
+    "tts_playback_started": {"source", "cache_hit", "origin"},
+    "tts_playback_abandoned": {"source", "listened_fraction_bucket", "origin"},
     "answer_feedback_submitted": {"rating"},
     "update_offered": {"version"}, "update_downloaded": {"version"},
     "update_verified": {"version", "success", "error_code"}, "update_installed": {"version"},
@@ -167,18 +194,18 @@ EVENT_PROPERTIES = {
 }
 NUMERIC_PROPERTIES = {
     "duration_seconds", "latency_ms", "http_status", "input_tokens", "output_tokens",
-    "total_tokens", "exact_cost", "retry_index",
+    "total_tokens", "exact_cost", "retry_index", "sample_rate",
 }
 PROPERTY_ENUMS = {
     "book_kind": {"builtin", "imported"},
-    "format": {"epub", "fb2", "txt", "html", "unknown"},
+    "format": {"epub", "fb2", "txt", "pdf", "html", "unknown"},
     "source_class": {"file", "url", "builtin"},
     "rating": {"helpful", "unhelpful"},
     "channel": {"production", "development", "staging"},
     "purpose": {"character_chat", "structured_task", "summary", "scenario", "memory"},
     "feature": {"bookmark", "note", "character", "chat"},
     "navigation_type": {"reader", "toc", "next", "previous"},
-    "duration_bucket": {"<1m", "1-4m", "5-14m", "15m+"},
+    "duration_bucket": {"<1s", "1-4s", "5-14s", "15-59s", "<1m", "1-4m", "5-14m", "15m+", "5m+"},
     "size_bucket": {"<1mb", "1-9mb", "10-39mb"},
     "chapter_count_bucket": {"1-3", "4-10", "11-25", "26+"},
     "chapter_position_bucket": {"1-3", "4-10", "11-25", "26+"},
@@ -186,6 +213,24 @@ PROPERTY_ENUMS = {
     "error_code": {"UNKNOWN", "VALIDATION", "NETWORK", "AUTH", "TIMEOUT", "RATE", "NO_KEY", "NO_PROXY", "PARSE", "CENSOR", "CANCELLED"},
     "cost_currency": {"USD"},
     "cost_source": {"openrouter_usage", "litellm_usage", "litellm_response_header"},
+    "analysis_version": {"v1"},
+    "character_count_bucket": {"0", "1-3", "4-8", "9+"},
+    "pov": {"first_person", "third_person", "unknown"},
+    "confidence_bucket": {"low", "medium", "high", "unknown"},
+    "origin": {"user", "background"},
+    "stage": {"import", "character_markup", "chapter_markup", "character_or_chapter_markup", "provider", "cache", "playback"},
+    "safe_error_code": {"UNKNOWN", "VALIDATION", "NETWORK", "AUTH", "TIMEOUT", "RATE", "NO_KEY", "NO_PROXY", "PARSE", "CENSOR", "CANCELLED"},
+    "job_type": {"image", "tts", "avatar", "portrait_animation", "chapter_markup"},
+    "quality": {"standard", "lite", "hd", "24000", "48000", "unknown"},
+    "queue_depth_bucket": {"0", "1-4", "5-9", "10+"},
+    "queue_wait_bucket": {"<1s", "1-4s", "5-14s", "15s+"},
+    "job_latency_bucket": {"<1s", "1-4s", "5-14s", "15-59s", "1-4m", "5m+"},
+    "result_size_bucket": {"<256kb", "256kb-1mb", "1-9mb", "10mb+"},
+    "retry_count_bucket": {"0", "1", "2+"},
+    "queue_or_running": {"queue", "running"},
+    "first_audio_latency_bucket": {"<1s", "1-4s", "5-14s", "15s+"},
+    "source": {"reader", "character", "chat"},
+    "listened_fraction_bucket": {"<10%", "10-49%", "50-89%", "90%+"},
 }
 ACTIVE_EVENTS = {
     "book_import_started", "book_import_completed", "book_opened",
@@ -324,6 +369,8 @@ def _safe_properties(event_name: str, raw: Any) -> dict[str, Any]:
             maximum = 1_000_000_000
             if numeric < 0 or numeric > maximum:
                 raise ValueError(f"out-of-range property: {key}")
+            if key == "sample_rate" and value not in {24000, 48000}:
+                raise ValueError("invalid sample_rate")
             result[key] = value
             continue
         if not isinstance(value, (str, bool)):
@@ -334,7 +381,7 @@ def _safe_properties(event_name: str, raw: Any) -> dict[str, Any]:
             raise ValueError(f"invalid enum property: {key}")
         if key == "request_id" and not UUID_RE.fullmatch(value):
             raise ValueError("invalid request_id")
-        if key in {"route", "provider", "model", "error_code", "version", "app_version"} and not re.fullmatch(r"[A-Za-z0-9_./:+-]{1,80}", value):
+        if key in {"route", "provider", "model", "error_code", "safe_error_code", "version", "app_version"} and not re.fullmatch(r"[A-Za-z0-9_./:+-]{1,80}", value):
             raise ValueError(f"invalid identifier property: {key}")
         result[key] = value
     return result
@@ -393,26 +440,41 @@ def _active_ids(
     return {
         row["device_id"]
         for row in rows
-        if cutoff <= row["ts"] <= until and row["name"] in ACTIVE_EVENTS
+        if cutoff <= row["ts"] <= until and _is_active_event(row)
     }
+
+
+def _is_background_ai(row: dict[str, Any]) -> bool:
+    return (
+        row["name"].startswith("ai_request_")
+        and row["properties"].get("origin") == "background"
+    )
+
+
+def _is_active_event(row: dict[str, Any]) -> bool:
+    return row["name"] in ACTIVE_EVENTS and not _is_background_ai(row)
+
+
+def _is_session_event(row: dict[str, Any]) -> bool:
+    return row["name"] in SESSION_EVENTS and not _is_background_ai(row)
 
 
 def _active_user_days(rows: list[dict[str, Any]]) -> int:
     return len({
         (row["device_id"], _reporting_date(row["ts"]))
-        for row in rows if row["name"] in ACTIVE_EVENTS
+        for row in rows if _is_active_event(row)
     })
 
 
 def _sessions(rows: list[dict[str, Any]]) -> int:
     explicit = {
         (row["device_id"], row["session_id"])
-        for row in rows if row["name"] in SESSION_EVENTS and row["session_id"]
+        for row in rows if _is_session_event(row) and row["session_id"]
     }
     missing: dict[str, list[float]] = defaultdict(list)
     explicit_times: dict[str, list[float]] = defaultdict(list)
     for row in rows:
-        if row["name"] in SESSION_EVENTS:
+        if _is_session_event(row):
             if row["session_id"]:
                 explicit_times[row["device_id"]].append(row["ts"])
             else:
@@ -433,7 +495,7 @@ def _retention(rows: list[dict[str, Any]], now: float) -> dict[str, Any]:
     qualified_days: dict[str, set] = defaultdict(set)
     active_days: dict[str, set] = defaultdict(set)
     for row in rows:
-        if row["name"] in ACTIVE_EVENTS:
+        if _is_active_event(row):
             active_days[row["device_id"]].add(_reporting_date(row["ts"]))
         if row["name"] == "reading_session_qualified":
             qualified_days[row["device_id"]].add(_reporting_date(row["ts"]))
@@ -462,7 +524,7 @@ def compute_dashboard(days: float = 1.0) -> dict[str, Any]:
     since = period_starts["selected"]
     rows = _rows()
     selected = [row for row in rows if since <= row["ts"] <= now]
-    active = [row for row in selected if row["name"] in ACTIVE_EVENTS]
+    active = [row for row in selected if _is_active_event(row)]
     actors = {row["device_id"] for row in active}
     active_user_days = _active_user_days(selected)
     sessions = _sessions(selected)
@@ -598,7 +660,7 @@ def compute_dashboard(days: float = 1.0) -> dict[str, Any]:
         requested_days,
         (_reporting_date(now) - _reporting_date(available_start)).days + 1,
     )
-    session_eligible = [row for row in active if row["name"] in SESSION_EVENTS]
+    session_eligible = [row for row in active if _is_session_event(row)]
     request_eligible = [row for row in selected if row["name"].startswith("ai_request_")]
     warnings = []
     session_coverage = _percent(sum(bool(row["session_id"]) for row in session_eligible), len(session_eligible))
@@ -645,12 +707,14 @@ def compute_dashboard(days: float = 1.0) -> dict[str, Any]:
         row for row in rows if period_starts["dau"] <= row["ts"] <= now
     ]
     dau_ids = {
-        row["device_id"] for row in calendar_day if row["name"] in ACTIVE_EVENTS
+        row["device_id"] for row in calendar_day if _is_active_event(row)
     }
     canonical_requests = {
         (row["device_id"], str(row["properties"].get("request_id")))
         for row in calendar_day
-        if row["name"] == "ai_request_started" and row["properties"].get("request_id")
+        if row["name"] == "ai_request_started"
+        and not _is_background_ai(row)
+        and row["properties"].get("request_id")
     }
     overview = {
         "ever_used": len(ever_ids),
@@ -662,8 +726,14 @@ def compute_dashboard(days: float = 1.0) -> dict[str, Any]:
         overview["sessions_per_dau"] = round(_sessions(calendar_day) / len(dau_ids), 2)
         overview["tools_per_dau"] = round(len(canonical_requests) / len(dau_ids), 2)
 
-    product_actions = sum(row["name"] in PRODUCT_ACTION_EVENTS for row in selected)
-    value_actions = sum(row["name"] in VALUE_ACTION_EVENTS for row in selected)
+    product_actions = sum(
+        row["name"] in PRODUCT_ACTION_EVENTS and not _is_background_ai(row)
+        for row in selected
+    )
+    value_actions = sum(
+        row["name"] in VALUE_ACTION_EVENTS and not _is_background_ai(row)
+        for row in selected
+    )
     feature_breadth = len({
         (
             row["device_id"],
@@ -774,7 +844,7 @@ def compute_dashboard(days: float = 1.0) -> dict[str, Any]:
                 day + timedelta(days=1), datetime.min.time(), REPORTING_TZ
             ).timestamp()
             chunk = [row for row in rows if lo <= row["ts"] < hi]
-            daily_active = len({row["device_id"] for row in chunk if row["name"] in ACTIVE_EVENTS})
+            daily_active = len({row["device_id"] for row in chunk if _is_active_event(row)})
             daily_active_counts.append(daily_active)
             series.append({
                 "label": day.strftime("%d.%m"),
@@ -782,7 +852,10 @@ def compute_dashboard(days: float = 1.0) -> dict[str, Any]:
                 "sessions": _sessions(chunk),
                 "tools": len({
                     (row["device_id"], row["properties"].get("request_id"))
-                    for row in chunk if row["name"] == "ai_request_started" and row["properties"].get("request_id")
+                    for row in chunk
+                    if row["name"] == "ai_request_started"
+                    and not _is_background_ai(row)
+                    and row["properties"].get("request_id")
                 }),
             })
             day += timedelta(days=1)

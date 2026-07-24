@@ -106,12 +106,22 @@ async function loadJson(rel: string): Promise<unknown> {
 }
 
 export function installDevShim(): void {
-  const llmText = async (messages: unknown, temperature?: number) => {
+  const llmText = async (
+    messages: unknown,
+    temperature?: number,
+    origin: 'user' | 'background' = 'user'
+  ) => {
     try {
       const r = await devGatewayFetch('/v2/ai/chat/complete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages, temperature, purpose: 'structured_task' })
+        body: JSON.stringify({
+          messages,
+          temperature,
+          purpose: 'structured_task',
+          origin,
+          analytics_tier: origin === 'background' ? 'extended' : 'essential'
+        })
       })
       if (!r.ok) return { ok: false, error: `LLM ${r.status}`, code: 'NETWORK' }
       return { ok: true, data: await r.json() }
@@ -172,8 +182,8 @@ export function installDevShim(): void {
       }
     },
     llmText,
-    llmJson: async (messages: unknown) => {
-      const r = await llmText(messages, 0.5)
+    llmJson: async (messages: unknown, origin: 'user' | 'background' = 'user') => {
+      const r = await llmText(messages, 0.5, origin)
       if (!r.ok) return r
       const parsed = extractJson((r.data as { text: string }).text)
       return parsed === null
@@ -227,7 +237,13 @@ export function installDevShim(): void {
           const r = await devGatewayFetch('/v2/ai/chat/stream', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ messages, temperature, purpose: 'character_chat' }),
+            body: JSON.stringify({
+              messages,
+              temperature,
+              purpose: 'character_chat',
+              origin: 'user',
+              analytics_tier: 'essential'
+            }),
             signal: ctrl.signal
           })
           if (!r.ok || !r.body) {

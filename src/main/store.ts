@@ -4,6 +4,7 @@ import { app, safeStorage } from 'electron'
 import type { Settings } from '../shared/types'
 import { isEssentialAnalyticsEvent, type AnalyticsEvent } from '../shared/analytics'
 import { boundedTelemetryQueue } from './telemetry-queue'
+import { AppStateCoordinator } from './app-state-coordinator'
 
 interface Schema {
   settings: Settings
@@ -73,6 +74,12 @@ const store = new Store<Schema>({ defaults, name: 'narra' })
 let memoryGatewayToken = ''
 let memoryInstallationSecret = ''
 let privacyResetActive = false
+const appStateCoordinator = new AppStateCoordinator(
+  () => store.get('appState') as Record<string, unknown>,
+  (next) => {
+    if (!privacyResetActive) store.set('appState', next)
+  }
+)
 
 export function getSettings(): Settings {
   const merged = { ...defaults.settings, ...(store.get('settings') as Partial<Settings>) }
@@ -182,6 +189,7 @@ export function resetAllPersistentState(): void {
   const extendedTelemetryEnabled = getSettings().extendedTelemetryEnabled
   memoryGatewayToken = ''
   memoryInstallationSecret = ''
+  appStateCoordinator.clearBlocks()
   store.clear()
   store.set({
     ...defaults,
@@ -240,7 +248,10 @@ export function getAppState(): Record<string, unknown> {
   return store.get('appState') as Record<string, unknown>
 }
 
-export function setAppState(next: Record<string, unknown>): void {
-  if (privacyResetActive) return
-  store.set('appState', next)
+export function setAppState(next: Record<string, unknown>): Promise<void> {
+  return appStateCoordinator.replace(next)
 }
+
+export const runAppStateTransaction = appStateCoordinator.transaction.bind(appStateCoordinator)
+export const blockBookAppState = appStateCoordinator.blockBook.bind(appStateCoordinator)
+export const unblockBookAppState = appStateCoordinator.unblockBook.bind(appStateCoordinator)

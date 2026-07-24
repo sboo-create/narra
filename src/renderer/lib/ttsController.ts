@@ -1,4 +1,6 @@
 import type { Segment } from '@shared/types'
+import { CoalescedTaskMap } from '@shared/coalesced-task'
+import { listenedFraction } from '@shared/playback-progress'
 import { buildSsml } from './ttsEmotion'
 
 export type TtsStatus = 'idle' | 'preparing' | 'playing' | 'paused'
@@ -12,6 +14,10 @@ interface Opts {
   onIndex: (idx: number) => void
   onStatus: (s: TtsStatus) => void
   onError: (msg: string) => void
+  onFirstAudioReady?: (latencyMs: number, cached: boolean) => void
+  onPlaybackStarted?: (cached: boolean) => void
+  onPlaybackAbandoned?: (listenedFraction: number) => void
+  waitForMore?: (currentLength: number) => Promise<boolean>
 }
 
 function pickRuVoice(): SpeechSynthesisVoice | null {
@@ -26,7 +32,12 @@ export class TtsController {
   private speed = 1
   private status: TtsStatus = 'idle'
   private gen = 0 // отсекаем устаревшие асинхронные колбэки
-  private prefetch = new Map<number, string>()
+  private prefetch = new CoalescedTaskMap<number, { url: string; cached: boolean } | null>()
+  private requestedAt = 0
+  private playbackStarted = false
+  private playbackReported = false
+  private completedChars = 0
+  private currentCharIndex = 0
 
   constructor(opts: Opts) {
     this.opts = opts
@@ -61,6 +72,13 @@ export class TtsController {
     this.stop()
     this.gen++
     this.index = fromIndex
+    this.completedChars = this.opts.segments
+      .slice(0, fromIndex)
+      .reduce((sum, segment) => sum + segment.text.length, 0)
+    this.currentCharIndex = 0
+    this.requestedAt = performance.now()
+    this.playbackStarted = false
+    this.playbackReported = false
     this.setStatus(this.opts.mode === 'salute' ? 'preparing' : 'playing')
     this.playFrom(fromIndex)
   }
@@ -68,10 +86,16 @@ export class TtsController {
   private async playFrom(idx: number) {
     const myGen = this.gen
     if (idx >= this.opts.segments.length) {
+      if (this.opts.waitForMore && await this.opts.waitForMore(idx)) {
+        if (myGen === this.gen) this.playFrom(idx)
+        return
+      }
+      if (myGen !== this.gen) return
       this.finish()
       return
     }
     this.index = idx
+    this.currentCharIndex = 0
     this.opts.onIndex(idx)
 
     if (this.opts.mode === 'browser') {
@@ -79,16 +103,16 @@ export class TtsController {
       return
     }
     // salute
-    let url = this.prefetch.get(idx)
-    if (!url) {
-      const got = await this.synth(idx)
-      if (myGen !== this.gen) return
-      if (!got) {
-        // сегмент не синтезировался — озвучим браузером, чтобы не прерывать поток
-        this.playBrowser(idx, myGen)
-        return
-      }
-      url = got
+    const got = await this.audioFor(idx)
+    if (myGen !== this.gen) return
+    if (!got) {
+      // сегмент не синтезировался — озвучим браузером, чтобы не прерывать поток
+      this.playBrowser(idx, myGen)
+      return
+    }
+    const { url, cached } = got
+    if (idx === 0) {
+      this.opts.onFirstAudioReady?.(Math.max(0, performance.now() - this.requestedAt), cached)
     }
     if (myGen !== this.gen) return
     this.setStatus('playing')
@@ -97,6 +121,8 @@ export class TtsController {
     this.audio.playbackRate = this.speed
     this.audio.onended = () => {
       if (myGen !== this.gen) return
+      this.completedChars += this.opts.segments[idx]?.text.length || 0
+      this.currentCharIndex = 0
       this.playFrom(idx + 1)
     }
     this.audio.onerror = () => {
@@ -105,6 +131,11 @@ export class TtsController {
     }
     try {
       await this.audio.play()
+      if (myGen === this.gen && !this.playbackReported) {
+        this.playbackStarted = true
+        this.playbackReported = true
+        this.opts.onPlaybackStarted?.(cached)
+      }
     } catch {
       if (myGen === this.gen) this.playFrom(idx + 1)
     }
@@ -119,33 +150,49 @@ export class TtsController {
     u.rate = Math.min(2, Math.max(0.75, this.speed))
     u.onend = () => {
       if (myGen !== this.gen) return
+      this.completedChars += seg.text.length
+      this.currentCharIndex = 0
       this.playFrom(idx + 1)
     }
     u.onerror = () => {
       if (myGen !== this.gen) return
       this.playFrom(idx + 1)
     }
+    u.onboundary = (event) => {
+      if (myGen === this.gen) this.currentCharIndex = Math.max(0, event.charIndex || 0)
+    }
     this.setStatus('playing')
+    if (!this.playbackReported) {
+      this.playbackStarted = true
+      this.playbackReported = true
+      this.opts.onPlaybackStarted?.(false)
+    }
     window.speechSynthesis.speak(u)
   }
 
-  private async synth(idx: number): Promise<string | null> {
+  private async synth(idx: number): Promise<{ url: string; cached: boolean } | null> {
     const seg = this.opts.segments[idx]
     const voice = this.opts.voiceFor(seg.character)
     const res = await window.narra.synthesize(
       { ssml: buildSsml(seg.text, seg.emotion), voice },
       this.opts.cacheKeyFor(idx)
     )
-    if (res.ok) return res.data!.dataUrl
+    if (res.ok) return { url: res.data!.dataUrl, cached: Boolean(res.data!.cached) }
     return null
   }
 
-  private async prefetchNext(idx: number) {
+  private audioFor(idx: number): Promise<{ url: string; cached: boolean } | null> {
+    return this.prefetch.getOrCreate(idx, async () => {
+      const result = await this.synth(idx)
+      if (!result) this.prefetch.delete(idx)
+      return result
+    })
+  }
+
+  private prefetchNext(idx: number) {
     if (this.opts.mode !== 'salute') return
     if (idx >= this.opts.segments.length) return
-    if (this.prefetch.has(idx)) return
-    const url = await this.synth(idx)
-    if (url) this.prefetch.set(idx, url)
+    void this.audioFor(idx)
   }
 
   pause() {
@@ -169,9 +216,14 @@ export class TtsController {
 
   seek(idx: number) {
     const wasActive = this.status === 'playing' || this.status === 'preparing'
-    this.stop()
+    this.stop(false)
     this.gen++
     this.index = idx
+    this.completedChars = this.opts.segments
+      .slice(0, idx)
+      .reduce((sum, segment) => sum + segment.text.length, 0)
+    this.currentCharIndex = 0
+    this.playbackReported = false
     this.opts.onIndex(idx)
     if (wasActive) this.playFrom(idx)
   }
@@ -181,11 +233,40 @@ export class TtsController {
     this.audio.pause()
     window.speechSynthesis?.cancel()
     this.index = 0
+    this.playbackStarted = false
     this.setStatus('idle')
     this.opts.onIndex(-1)
   }
 
-  stop() {
+  stop(reportAbandonment = true) {
+    if (this.playbackStarted) {
+      const totalChars = Math.max(
+        1,
+        this.opts.segments.reduce((sum, segment) => sum + segment.text.length, 0)
+      )
+      let partialChars = this.currentCharIndex
+      if (
+        this.opts.mode === 'salute' &&
+        Number.isFinite(this.audio.duration) &&
+        this.audio.duration > 0
+      ) {
+        partialChars = Math.round(
+          (this.opts.segments[this.index]?.text.length || 0) *
+          Math.min(1, Math.max(0, this.audio.currentTime / this.audio.duration))
+        )
+      }
+      if (reportAbandonment) {
+        this.opts.onPlaybackAbandoned?.(listenedFraction(
+          this.completedChars,
+          this.opts.segments[this.index]?.text.length || 0,
+          (this.opts.segments[this.index]?.text.length || 0) > 0
+            ? partialChars / (this.opts.segments[this.index]?.text.length || 1)
+            : 0,
+          totalChars
+        ))
+      }
+    }
+    this.playbackStarted = false
     this.gen++
     try {
       this.audio.pause()

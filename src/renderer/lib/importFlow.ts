@@ -51,7 +51,10 @@ firstPersonNarratorCharacterId — тот же id, если повествова
 }
 
 /** Уточняет пол героев, у которых модель его не вернула. */
-async function askGenders(names: string[]): Promise<Record<string, Gender>> {
+async function askGenders(
+  names: string[],
+  origin: 'user' | 'background'
+): Promise<Record<string, Gender>> {
   if (names.length === 0) return {}
   const res = await window.narra.llmJson<Record<string, string>>([
     {
@@ -60,7 +63,7 @@ async function askGenders(names: string[]): Promise<Record<string, Gender>> {
         'Определи пол каждого персонажа. Верни СТРОГО JSON-объект вида {"Имя":"male"|"female"} без пояснений.'
     },
     { role: 'user', content: names.join(', ') }
-  ])
+  ], origin)
   const out: Record<string, Gender> = {}
   if (res.ok && res.data && typeof res.data === 'object') {
     for (const [k, v] of Object.entries(res.data)) {
@@ -73,7 +76,8 @@ async function askGenders(names: string[]): Promise<Record<string, Gender>> {
 /** Дозаполняет внешность тем героям, у кого модель её не вернула. */
 async function askAppearance(
   names: string[],
-  title: string
+  title: string,
+  origin: 'user' | 'background'
 ): Promise<Record<string, Character['passport']>> {
   if (names.length === 0) return {}
   const res = await window.narra.llmJson<Record<string, Record<string, unknown>>>([
@@ -84,7 +88,7 @@ async function askAppearance(
         'Для героев известных вселенных используй каноничную внешность. Без пояснений.'
     },
     { role: 'user', content: `Книга «${title}». Персонажи: ${names.join(', ')}` }
-  ])
+  ], origin)
   const out: Record<string, Character['passport']> = {}
   if (res.ok && res.data && typeof res.data === 'object') {
     for (const [k, v] of Object.entries(res.data)) {
@@ -108,9 +112,13 @@ export async function buildCharacters(
   title: string,
   author: string,
   excerpt: string,
-  narratorVoice: SaluteVoice = DEFAULT_NARRATOR_VOICE
+  narratorVoice: SaluteVoice = DEFAULT_NARRATOR_VOICE,
+  origin: 'user' | 'background' = 'user'
 ): Promise<{ ok: true; characters: Character[] } | { ok: false; error: string }> {
-  const res = await window.narra.llmJson<CharacterMarkupPayload>(markupPrompt(title, author, excerpt))
+  const res = await window.narra.llmJson<CharacterMarkupPayload>(
+    markupPrompt(title, author, excerpt),
+    origin
+  )
   if (
     !res.ok ||
     !res.data ||
@@ -131,12 +139,12 @@ export async function buildCharacters(
   const unknown = ordered
     .filter((r) => r?.name && !r.gender && !r.passport?.gender)
     .map((r) => String(r!.name).split(/\s+/)[0])
-  const genderHints = await askGenders(unknown)
+  const genderHints = await askGenders(unknown, origin)
   // внешность важнее всего (её рисуют на портретах) — дозапрашиваем, если модель пропустила
   const noLook = ordered
     .filter((r) => r?.name && (!r.passport || !r.passport.hair))
     .map((r) => String(r!.name).split(/\s+/)[0])
-  const lookHints = noLook.length ? await askAppearance(noLook, title) : {}
+  const lookHints = noLook.length ? await askAppearance(noLook, title, origin) : {}
 
   let m = 0
   let f = 0

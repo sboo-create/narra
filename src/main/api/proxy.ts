@@ -235,7 +235,9 @@ export async function chatStream(
   signal: { aborted: boolean },
   temperature = 0.8,
   purpose: LlmPurpose = 'character_chat',
-  requestId = randomRequestId()
+  requestId = randomRequestId(),
+  origin: 'user' | 'background' = 'user',
+  analyticsTier: 'essential' | 'extended' | 'none' = 'essential'
 ): Promise<ApiResult<{ text: string }>> {
   if (!base()) return noProxy()
   const ctrl = new AbortController()
@@ -246,7 +248,10 @@ export async function chatStream(
     const res = await gatewayFetch('/v2/ai/chat/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages, temperature, purpose, request_id: requestId }),
+      body: JSON.stringify({
+        messages, temperature, purpose, request_id: requestId,
+        origin, analytics_tier: analyticsTier
+      }),
       signal: ctrl.signal
     })
     if (!res.ok || !res.body) {
@@ -270,7 +275,9 @@ export async function chatComplete(
   messages: LlmMessage[],
   temperature = 0.7,
   purpose: LlmPurpose = 'structured_task',
-  requestId = randomRequestId()
+  requestId = randomRequestId(),
+  origin: 'user' | 'background' = 'user',
+  analyticsTier: 'essential' | 'extended' | 'none' = 'essential'
 ): Promise<ApiResult<{ text: string }>> {
   if (!base()) return noProxy()
   const { signal, done } = withTimeout(120000)
@@ -278,7 +285,10 @@ export async function chatComplete(
     const res = await gatewayFetch('/v2/ai/chat/complete', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages, temperature, purpose, request_id: requestId }),
+      body: JSON.stringify({
+        messages, temperature, purpose, request_id: requestId,
+        origin, analytics_tier: analyticsTier
+      }),
       signal
     })
     done()
@@ -292,11 +302,18 @@ export async function chatComplete(
 }
 
 // ================= GigaChat: JSON-задача =================
-export async function chatJson<T = unknown>(messages: LlmMessage[], attempts = 3): Promise<ApiResult<T>> {
+export async function chatJson<T = unknown>(
+  messages: LlmMessage[],
+  attempts = 3,
+  origin: 'user' | 'background' = 'user',
+  analyticsTier: 'essential' | 'extended' | 'none' = 'essential'
+): Promise<ApiResult<T>> {
   let lastErr = ''
   const requestId = randomRequestId()
   for (let i = 0; i < attempts; i++) {
-    const r = await chatComplete(messages, 0.5, 'structured_task', requestId)
+    const r = await chatComplete(
+      messages, 0.5, 'structured_task', requestId, origin, analyticsTier
+    )
     if (!r.ok) {
       if (r.code === 'NO_PROXY' || r.code === 'NO_KEY' || r.code === 'AUTH') return r as ApiResult<T>
       lastErr = r.error || 'ошибка'

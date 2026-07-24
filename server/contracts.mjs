@@ -31,7 +31,9 @@ function string(value, name, { min = 1, max }) {
 
 export function parseChatBody(input, { stream = false } = {}) {
   const body = object(input)
-  onlyKeys(body, new Set(['messages', 'temperature', 'purpose', 'request_id']))
+  onlyKeys(body, new Set([
+    'messages', 'temperature', 'purpose', 'request_id', 'origin', 'analytics_tier'
+  ]))
   if (!Array.isArray(body.messages) || body.messages.length < 1 || body.messages.length > 64) {
     fail('messages: нужен массив из 1–64 сообщений')
   }
@@ -54,7 +56,22 @@ export function parseChatBody(input, { stream = false } = {}) {
     ? undefined
     : string(body.request_id, 'request_id', { max: 80 })
   if (requestId !== undefined && !UUID_V4.test(requestId)) fail('request_id: нужен UUID v4')
-  return { messages, temperature, purpose, requestId }
+  const origin = body.origin === undefined ? 'user' : String(body.origin)
+  if (!['user', 'background'].includes(origin)) fail('origin: допустимы user или background')
+  const defaultTier = origin === 'background' ? 'none' : 'essential'
+  const analyticsTier = body.analytics_tier === undefined
+    ? defaultTier
+    : String(body.analytics_tier)
+  if (!['none', 'extended', 'essential'].includes(analyticsTier)) {
+    fail('analytics_tier: неизвестный уровень')
+  }
+  if (origin === 'user' && analyticsTier !== 'essential') {
+    fail('analytics_tier: user-запрос должен быть essential')
+  }
+  if (origin === 'background' && analyticsTier === 'essential') {
+    fail('analytics_tier: background-запрос не может быть essential')
+  }
+  return { messages, temperature, purpose, requestId, origin, analyticsTier }
 }
 
 export function parseImageBody(input) {

@@ -10,6 +10,7 @@ import type {
   Settings
 } from '@shared/types'
 import { DEFAULT_NARRATOR_VOICE, isSaluteVoice } from '@shared/types'
+import { cancelPreparedBook } from '../lib/scenario'
 
 export interface CharStat {
   asked: number
@@ -452,8 +453,23 @@ export const useStore = create<StoreState>((set, get) => ({
     persist(p)
   },
   deleteBook: async (bookId) => {
+    const cancelledPreparations = cancelPreparedBook(bookId)
+    for (const origin of cancelledPreparations) {
+      void window.narra.trackEvent('media_job_cancelled', {
+        job_type: 'chapter_markup',
+        queue_or_running: 'running',
+        origin
+      })
+    }
+    const res = await window.narra.deleteBook(bookId)
+    if (!res.ok) {
+      const message = res.error || 'Не удалось удалить локальные данные книги'
+      get().toast({ type: 'error', title: 'Книга не удалена', message })
+      throw new Error(message)
+    }
+    // Apply the cleanup to the latest renderer state after the async delete,
+    // preserving unrelated changes made while files/cache were being removed.
     const st = get().persisted
-    // подчищаем всё, что связано с книгой (прогресс, саммари, сценарии, закладки)
     const belongsToBook = (key: string) =>
       key === bookId ||
       key.startsWith(`${bookId}-`) ||
@@ -483,15 +499,8 @@ export const useStore = create<StoreState>((set, get) => ({
       sceneAnchors: dropBook(st.sceneAnchors),
       extraScenes: dropBook(st.extraScenes),
       anchorLists: dropBook(st.anchorLists),
-      // встроенную книгу удалить с диска нельзя — прячем её с полки
       hiddenBooks:
         !bookId.startsWith('u-') ? [...new Set([...st.hiddenBooks, bookId])] : st.hiddenBooks
-    }
-    const res = await window.narra.deleteBook(bookId, p as unknown as Record<string, unknown>)
-    if (!res.ok) {
-      const message = res.error || 'Не удалось удалить локальные данные книги'
-      get().toast({ type: 'error', title: 'Книга не удалена', message })
-      throw new Error(message)
     }
     set({ persisted: p })
     if (res.data?.cleanupPending) {

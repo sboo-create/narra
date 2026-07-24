@@ -40,13 +40,16 @@ export function providerAttemptProperties(requestId, purpose, attempt) {
   return Object.fromEntries(Object.entries(properties).filter(([, value]) => value !== undefined))
 }
 
-export function completionProperties({ requestId, purpose, provider, model, latencyMs, usage, responseCost }) {
+export function completionProperties({
+  requestId, purpose, provider, model, latencyMs, usage, responseCost, origin = 'user'
+}) {
   const properties = {
     request_id: requestId,
     purpose,
     route: analyticsRoute(provider, model),
     latency_ms: boundedNumber(latencyMs, { integer: true }),
-    success: true
+    success: true,
+    origin
   }
   const usageCost = boundedNumber(usage?.cost)
   const headerCost = boundedNumber(responseCost)

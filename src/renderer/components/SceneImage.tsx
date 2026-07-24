@@ -44,13 +44,13 @@ export function SceneImage({
         setStatus('done')
       } else {
         setStatus(fbReady ? 'empty' : 'locked')
-        if (fbReady && autoGenerate) generate()
+        if (fbReady && autoGenerate) generate(false, 'background')
       }
     })()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cacheKey, fbReady])
 
-  async function generate(force = false) {
+  async function generate(force = false, origin: 'user' | 'background' = 'user') {
     setErr('')
     // 1) LLM-разбор фрагмента: что происходит + кто РЕАЛЬНО в кадре, позы, одежда из текста
     let ctx = chapterSummary
@@ -58,7 +58,11 @@ export function SceneImage({
     if (gcReady) {
       setStatus('thinking')
       const roster = characters.map((c) => ({ id: c.id, name: c.name, fullName: c.fullName }))
-      const p = await window.narra.llmText(sceneAnalysisRequest(chapterText, roster), 0.3)
+      const p = await window.narra.llmText(
+        sceneAnalysisRequest(chapterText, roster),
+        0.3,
+        origin
+      )
       if (p.ok) {
         try {
           const m = p.data!.text.match(/\{[\s\S]*\}/)
@@ -83,7 +87,15 @@ export function SceneImage({
     setLastPrompt(prompt)
     // 2) генерация — сцены рисует Kandinsky: он точнее следует составу кадра и одежде
     setStatus('drawing')
-    const img = await window.narra.generateImage(prompt, cacheKey, 1280, 768, force, 'kandinsky')
+    const img = await window.narra.generateImage(
+      prompt,
+      cacheKey,
+      1280,
+      768,
+      force,
+      'kandinsky',
+      origin
+    )
     if (img.ok) {
       setSrc(img.data!.dataUrl)
       setStatus('done')

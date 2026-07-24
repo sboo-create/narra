@@ -4,7 +4,8 @@
 > Рабочая ветка: `feat/narra-monitoring-and-voices`
 > Статус: gateway/stats staging и production Traction обновлены; общая карточка
 > показывает шесть canonical-слотов, мониторинг собирает историю; публичный
-> macOS-релиз ещё не выпущен.
+> macOS-релиз ещё не выпущен. Ускоренный import/first-audio и расширенная
+> import/media-телеметрия готовы в рабочей ветке, но ещё не выкачены на staging.
 > Классификация: внутренний рабочий документ. Перед внешней публикацией удалить
 > имена владельцев, Apple Team ID, инфраструктурный IP и DNS verification data.
 
@@ -65,7 +66,7 @@ Production Narra пока не получала пользовательских
 
 ---
 
-## Как Narra сейчас обрабатывает книгу
+## Как Narra обрабатывала книгу до текущей рабочей ветки
 
 ```text
 Импорт файла / URL
@@ -120,43 +121,64 @@ upstream, расходует квоты и превращает импорт в 
 
 ## Как ускоряем разметку главы для озвучки
 
-### Почему сейчас медленно
+### Почему было медленно
 
-Текущая реализация режет главу примерно по 1 500 символов, отправляет каждый
-кусок в LLM строго последовательно и возвращает сценарий только после последнего
+Прежняя реализация резала главу примерно по 1 500 символов, отправляла каждый
+кусок в LLM строго последовательно и возвращала сценарий только после последнего
 куска. Например, глава на 30 000 символов создаёт около 20 последовательных
 LLM-запросов. TTS не может начать работу, пока не закончились все двадцать.
 
-### Целевой алгоритм
+### Реализованный в рабочей ветке алгоритм
 
-1. После импорта и закрепления voice plan первая глава размечается в фоне.
-2. Первый bootstrap-чанк намеренно маленький: 600–900 символов, но заканчивается
+1. Книга сразу появляется в библиотеке. Создаётся безопасный placeholder
+   characters-файла; полная character-разметка и подготовка первой главы
+   продолжаются в фоне. Файловые и whole-state мутации при удалении
+   сериализованы; main process очищает актуальное состояние сам и блокирует
+   book-owned ключи в поздних renderer snapshots. Поэтому запоздавшая
+   background-запись не может воскресить удалённую книгу, её сценарий или чат.
+2. Первый bootstrap-чанк ограничен 900 символами и по возможности заканчивается
    только на границе предложения или реплики.
-3. Из готового bootstrap-чанка первым синтезируется микро-сегмент на 150–300
-   символов — обычно 1–2 предложения. Он начинает играть немедленно.
-4. Остальная глава режется адаптивно по 3–5 тысяч символов с сохранением
-   абзацев и границ прямой речи.
-5. До трёх оставшихся чанков размечаются параллельно; результаты собираются в исходном
-   порядке. Лимит остаётся server-side и не может занять все LLM slots.
-6. Модель возвращает компактные метки по paragraph/sentence IDs:
-   `narration|speech`, character ID и emotion — без повторной отправки полного
-   текста главы в JSON-ответе.
-7. Пока первый микро-сегмент играет, TTS готовит следующий сегмент. Начинаем с
-   одного prefetch; достаточно ли его при реальной параллельной нагрузке,
-   проверяет end-to-end benchmark по underrun rate и p95 buffer headroom.
-8. При 70–80% чтения или прослушивания текущей главы в фоне размечается следующая.
-9. Одновременные запросы одной и той же главы coalesce в одну job; если
-   пользователь нажал «Слушать» во время background job, существующий
-   bootstrap-чанк получает интерактивный приоритет без второго LLM-запроса.
-10. Результат кэшируется по hash текста, markup version, model и voice-plan
-   version; аудио — дополнительно по voice, sample rate и prosody version.
+3. Из готового bootstrap-чанка первым синтезируется микро-сегмент не длиннее
+   300 символов; у длинного opening граница выбирается между 150 и 300, а
+   короткое первое предложение не дополняется искусственно. Он начинает играть
+   немедленно.
+4. Остальная глава режется на блоки не более 3 500 символов с сохранением
+   абзацев; даже один неразрывный длинный абзац принудительно остаётся в лимите.
+5. До трёх хвостовых чанков размечаются параллельно; первый результат отдан
+   плееру отдельным `firstReady`, остальные добавляются в тот же сценарий по
+   исходному порядку. На bootstrap-границе плеер ждёт новые сегменты, а не
+   преждевременно завершает главу.
+6. Ошибка отдельного хвостового чанка деградирует только его до narrator
+   fallback и отмечается как failed/fallback в диагностике, не теряя уже
+   готовый первый блок.
+7. Пока первый микро-сегмент играет, TTS готовит следующий сегмент. Одинаковые
+   in-flight synth-запросы coalesce и после ошибки могут быть повторены.
+8. Одновременные запросы одной и той же главы coalesce в одну job: нажатие
+   «Слушать» во время background job не создаёт второй LLM-запрос.
+9. Удаление книги отменяет ещё не начавшиеся блоки её подготовки. Уже
+   отправленный upstream HTTP-запрос может завершиться, но его результат не
+   сохранит удалённую книгу.
+10. Аудио кэшируется по hash rendered text, voice, реальному sample rate и
+    prosody version.
+
+Следующие оптимизации после baseline и quality benchmark, но не часть уже
+готового branch-пакета:
+
+- компактный LLM-ответ по paragraph/sentence IDs без повторения полного текста
+  в JSON;
+- интерактивный приоритет существующей background job;
+- подготовка следующей главы при 70–80% текущей;
+- versioned scenario cache по hash текста, markup/model и voice-plan version.
 
 Закрытый event-контракт получает enum `origin=user|background`. Только
 `origin=user` может создавать active day, reading session или Tools / DAU.
 `origin=background` не считается пользовательским tool action.
 Actor-linked диагностика фоновых jobs относится к Extended и исчезает при
-opt-out; всегда включёнными остаются только безакторные operational aggregates
-gateway — количество, длительность, ошибки и расход без installation ID.
+opt-out. Main process передаёт gateway доверенный tier: `extended` для
+разрешённого background-запроса и `none` после opt-out. При `none` gateway не
+создаёт actor-linked AI/provider events вообще. Всегда остаются только
+server-side квоты/rate limits и health/readiness; полноценные безакторные
+latency/error/cost histograms ещё входят в оставшуюся durable-queue работу.
 
 Для условной главы на 30 000 символов это уменьшает количество волн с примерно
 20 последовательных до 2–4 параллельных волн. Теоретически ожидание полной
@@ -634,11 +656,11 @@ signed артефакт.
 | Событие | Tier | Безопасные свойства |
 |---|---|---|
 | `book_import_started` | Extended | format, source_class, size_bucket |
-| `book_import_completed` | Extended | format, size_bucket, chapter_count_bucket, duration_bucket |
-| `book_import_failed` | Extended | format, stage, safe_error_code |
-| `book_analysis_started` | Extended | analysis_version, chapter_count_bucket, `origin` |
-| `book_analysis_completed` | Extended | duration_bucket, character_count_bucket, pov, confidence_bucket, `origin` |
-| `book_analysis_failed` | Extended | stage, safe_error_code, `origin` |
+| `book_import_completed` | Extended | format, source_class, size_bucket, chapter_count_bucket, duration_bucket |
+| `book_import_failed` | Extended | format, source_class, size_bucket, error_code |
+| `book_analysis_started` | Extended | analysis_version, `origin` |
+| `book_analysis_completed` | Extended | analysis_version, duration_bucket, character_count_bucket, pov, confidence_bucket, `origin` |
+| `book_analysis_failed` | Extended | analysis_version, stage, safe_error_code, `origin` |
 
 ### Media jobs
 
@@ -646,22 +668,45 @@ signed артефакт.
 |---|---|---|
 | `media_job_enqueued` | Extended | job_type, provider, model, quality, queue_depth_bucket, `origin` |
 | `media_job_started` | Extended | job_type, queue_wait_bucket, `origin` |
-| `media_job_completed` | Extended | job_type, generation_time_bucket, cache_hit, result_size_bucket, `origin` |
+| `media_job_completed` | Extended | job_type, job_latency_bucket, cache_hit, result_size_bucket, `origin` |
 | `media_job_failed` | Extended | job_type, stage, safe_error_code, retry_count_bucket, `origin` |
 | `media_job_cancelled` | Extended | job_type, queue_or_running, `origin` |
-| `tts_first_audio_ready` | Extended | voice_id, sample_rate, first_audio_latency_bucket, `origin` |
+| `tts_first_audio_ready` | Extended | sample_rate, first_audio_latency_bucket, `origin` |
 | `tts_playback_started` | Extended | source, cache_hit, `origin=user` |
 | `tts_playback_abandoned` | Extended | source, listened_fraction_bucket, `origin=user` |
 
-Все перечисленные import/media/playback события относятся к `Extended` и удаляются из локальной очереди при opt-out. Для incident response и защиты квот gateway независимо держит always-on агрегированные operational counters/logs без installation actor: общую глубину очереди, active jobs, provider error code, latency histogram и saturation. Они не отправляются как пользовательские Traction events.
+Таблица перечисляет разрешённые свойства, а не обещает, что каждое поле
+измерено уже сейчас. В частности, client-side chapter markup не заявляет
+`provider/model`: маршрутизация полностью server-side, а фактические route и
+fallback видны только в проверенных gateway `provider_attempt` events.
 
-Все строковые значения закрыты enum-списками, включая обязательный
-`origin=user|background`. Background AI/media события всегда Extended и не
-могут входить в actor activity, sessions или Tools; если Extended отключена,
-для эксплуатации остаются только безакторные агрегаты. Foreground AI request
-учитывается в Tools один раз по logical `request_id`, provider attempts — никогда.
+Все перечисленные import/media/playback события относятся к `Extended` и
+удаляются из локальной очереди при opt-out. Foreground AI request остаётся
+Essential. Background LLM получает `origin=background` и actor-linked
+диагностику только при включённой Extended; после opt-out gateway получает
+`analytics_tier=none` и не пишет ни start, ни provider attempt, ни terminal
+event. Rate limits, persistent budgets и health/readiness продолжают работать,
+но provider-аналитика за такие запросы намеренно становится неполной.
+
+Все строковые значения закрыты enum-списками. Реализованные emitters всегда
+заполняют `origin=user|background`; background AI/media events не входят в
+actor activity, sessions или Tools. Foreground AI request учитывается в Tools
+один раз по logical `request_id`, provider attempts — никогда.
 Все размеры, длительности, retry count и глубина очереди передаются заранее
 определёнными buckets, а не произвольными числами или строками.
+
+В рабочей ветке уже реализован закрытый client → main process → gateway →
+stats-контракт для import, book analysis, image/video job и TTS
+first-audio/playback. Main process отклоняет весь renderer event, если хотя бы
+одно свойство не входит в event-specific allowlist: произвольная строка не
+попадает ни в локальную очередь, ни на сервер. `job_latency_bucket` честно
+измеряет наблюдаемое клиентом end-to-end время, а не выдаётся за чистое время
+provider generation.
+
+Поля реальной глубины/ожидания durable media queue пока остаются схемой, но не
+готовым источником данных: нынешние in-memory gates не переживают restart.
+Поэтому пункт instrumentation в P1 закрыт только частично до реализации
+durable queue и server-owned operational histograms.
 
 Никогда не отправляются:
 
@@ -676,7 +721,24 @@ signed артефакт.
 
 Эти события нужны не для «слежки», а для capacity и UX решений: расширять GPU, чинить очередь, менять timeout, улучшать cache или сокращать подготовку главы.
 
-Essential остаётся всегда включённой. Extended opt-out отключает import/book-analysis/media/playback/voice диагностику и очищает ещё не отправленные extended events; остаётся только уже зафиксированный canonical/security минимум и безакторные operational counters gateway.
+Essential остаётся всегда включённой. Extended opt-out отключает
+import/book-analysis/media/playback/voice диагностику, очищает ещё не
+отправленные extended events и подавляет actor-linked события последующих
+background LLM-запросов. Остаются canonical/security минимум, квоты,
+rate limits и health/readiness.
+
+### Безопасный порядок rollout схемы событий
+
+Новые event/property поля выкатываются только в порядке:
+
+1. `stats` — сначала downstream начинает принимать старую и новую схему;
+2. `gateway` — затем начинает передавать `origin` и новые media events;
+3. desktop client — последним включает новые emitters.
+
+После каждой ступени выполняются contract smoke и проверка, что DLQ не вырос.
+Если появился schema `400`, rollout останавливается до client cutover; poison
+event не оставляется «на потом», потому что автоматического replay DLQ после
+обновления stats сейчас нет.
 
 ## Мониторинг доменов и критических ручек
 
@@ -783,7 +845,8 @@ Raw latency rows, мс: `24 kHz = [2095, 1922, 2199, 1939, 1960]`;
 voice ID: один герой не переключается между 24 и 48 kHz посреди книги. Плеер
 проигрывает каждый WAV-сегмент отдельно, поэтому соседние реплики разных героев
 могут иметь разные sample rate. Удвоенный first-audio payload основного
-48 kHz-голоса компенсируем микро-сегментом 150–300 символов; остальные сегменты
+48 kHz-голоса компенсируем микро-сегментом не длиннее 300 символов; у длинного
+opening граница split находится в диапазоне 150–300. Остальные сегменты
 синтезируются с одним prefetch.
 
 Реестр содержит:
@@ -970,9 +1033,12 @@ HTTP status, content type и фактический WAV sample rate уже вы�
 - [x] Fixed-target domain/endpoint monitoring в Narra stats
 - [x] Reviewed deploy monitor в production Traction; тот же код в staging,
       но worker там намеренно выключен, чтобы не дублировать probes
-- [ ] Background-разметка первой главы после импорта
-- [ ] Bounded parallel/streaming chapter markup
-- [ ] Progressive TTS first-audio
+- [x] Background-разметка первой главы после импорта
+- [x] Bounded parallel/streaming chapter markup: bootstrap ≤900,
+      хвост ≤3500, до 3 workers, сохранение исходного порядка
+- [x] Progressive TTS first-audio: первый audio segment ≤300 символов
+      (для длинного opening split выбирается граница 150–300),
+      coalesced prefetch и корректное ожидание ещё готовящихся сегментов
 - [ ] Durable media job API и queue UX
 - [x] Внутренний staging-only degraded HTTP video gate с тестовыми данными
 - [x] Fail-closed TLS hostname `narra-video.multitool.works` без proxy к HTTP origin
@@ -987,7 +1053,9 @@ HTTP status, content type и фактический WAV sample rate уже вы�
 
 - [ ] Production gateway cutover
 - [ ] Capacity benchmark `1 → 2 → 5 → 10`
-- [ ] Import/media instrumentation
+- [ ] Import/media instrumentation — client/gateway/stats closed event contract
+      реализован и протестирован; до полного закрытия нужны реальные
+      queue-depth/wait/provider-cancel показатели из durable media queue
 - [ ] Out-of-process uptime alerts для production gateway/stats
 - [ ] Signed/notarized universal RC
 - [ ] Clean install на Apple Silicon

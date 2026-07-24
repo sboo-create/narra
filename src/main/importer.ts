@@ -14,13 +14,20 @@ import {
   type Fanfic
 } from '../shared/types'
 import { cleanupStagedDeleteTombstones, stagedDeleteFiles } from './staged-delete'
-import { setAppState } from './store'
+import {
+  blockBookAppState,
+  runAppStateTransaction,
+  unblockBookAppState
+} from './store'
+import { removeBookFromAppState } from './app-state-coordinator'
 import { ArchiveByteQuota, validateArchiveEntry } from './archive-security'
 import { runLocalDataWrite } from './local-data-barrier'
+import { KeyedSerialQueue } from './keyed-serial'
 
 const MAX_ARCHIVE_FILES = 2_000
 const MAX_ARCHIVE_BYTES = 200 * 1024 * 1024
 const MAX_BOOK_FILE_BYTES = 40 * 1024 * 1024
+const bookMutations = new KeyedSerialQueue()
 
 export function userBooksDir(): string {
   return path.join(app.getPath('userData'), 'books')
@@ -570,9 +577,27 @@ async function importBookFromUrlInternal(url: string): Promise<ApiResult<Importe
     await runLocalDataWrite(async () => {
       await fs.mkdir(userBooksDir(), { recursive: true })
       await fs.writeFile(path.join(userBooksDir(), `${id}.json`), JSON.stringify(book), 'utf8')
+      await fs.writeFile(
+        path.join(userBooksDir(), `${id}-characters.json`),
+        JSON.stringify({ narratorVoice: normalizeNarratorVoice(undefined), characters: [] }),
+        'utf8'
+      )
     })
     const excerpt = buildExcerpt(parsed.chapters, book.description)
-    return { ok: true, data: { id, title: parsed.title, author: parsed.author, chapters: parsed.chapters.length, words, excerpt } }
+    const contentBytes = Buffer.byteLength(parsed.chapters.map((chapter) => chapter.text).join('\n'), 'utf8')
+    return {
+      ok: true,
+      data: {
+        id,
+        title: parsed.title,
+        author: parsed.author,
+        chapters: parsed.chapters.length,
+        words,
+        excerpt,
+        format: 'html',
+        sizeBucket: importSizeBucket(contentBytes)
+      }
+    }
   } catch (e) {
     return { ok: false, error: `Импорт по ссылке не удался: ${(e as Error).message}`, code: 'UNKNOWN' }
   }
@@ -586,6 +611,14 @@ export interface ImportedBookMeta {
   chapters: number
   words: number
   excerpt: string // первые главы для авторазметки персонажей
+  format: 'epub' | 'fb2' | 'txt' | 'pdf' | 'html' | 'unknown'
+  sizeBucket: '<1mb' | '1-9mb' | '10-39mb'
+}
+
+function importSizeBucket(bytes: number): ImportedBookMeta['sizeBucket'] {
+  if (bytes < 1024 * 1024) return '<1mb'
+  if (bytes < 10 * 1024 * 1024) return '1-9mb'
+  return '10-39mb'
 }
 
 async function importBookInternal(): Promise<ApiResult<ImportedBookMeta>> {
@@ -596,9 +629,11 @@ async function importBookInternal(): Promise<ApiResult<ImportedBookMeta>> {
   })
   if (pick.canceled || !pick.filePaths[0]) return { ok: false, error: 'Отменено', code: 'UNKNOWN' }
   let filePath = pick.filePaths[0]
+  let selectedBytes = 0
   let cleanupArchive: (() => Promise<void>) | undefined
 
   try {
+    selectedBytes = (await fs.stat(filePath)).size
     if (filePath.toLowerCase().endsWith('.zip')) {
       const extracted = await extractZipSafely(filePath, 'narra-import-')
       cleanupArchive = extracted.cleanup
@@ -639,10 +674,36 @@ async function importBookInternal(): Promise<ApiResult<ImportedBookMeta>> {
     await runLocalDataWrite(async () => {
       await fs.mkdir(userBooksDir(), { recursive: true })
       await fs.writeFile(path.join(userBooksDir(), `${id}.json`), JSON.stringify(book), 'utf8')
+      await fs.writeFile(
+        path.join(userBooksDir(), `${id}-characters.json`),
+        JSON.stringify({ narratorVoice: normalizeNarratorVoice(undefined), characters: [] }),
+        'utf8'
+      )
     })
 
     const excerpt = buildExcerpt(parsed.chapters)
-    return { ok: true, data: { id, title: parsed.title, author: parsed.author, chapters: parsed.chapters.length, words, excerpt } }
+    const format: ImportedBookMeta['format'] = low.endsWith('.epub')
+      ? 'epub'
+      : low.endsWith('.pdf')
+        ? 'pdf'
+        : low.endsWith('.fb2')
+          ? 'fb2'
+          : low.endsWith('.txt')
+            ? 'txt'
+            : 'unknown'
+    return {
+      ok: true,
+      data: {
+        id,
+        title: parsed.title,
+        author: parsed.author,
+        chapters: parsed.chapters.length,
+        words,
+        excerpt,
+        format,
+        sizeBucket: importSizeBucket(selectedBytes)
+      }
+    }
   } catch (e) {
     return { ok: false, error: `Импорт не удался: ${(e as Error).message}`, code: 'UNKNOWN' }
   } finally {
@@ -672,38 +733,53 @@ export async function bookExcerpt(bookId: string): Promise<ApiResult<{ title: st
 }
 
 /** Удалить книгу пользователя с диска. Встроенные книги удалить нельзя — их прячет renderer. */
-export async function deleteBook(
-  bookId: string,
-  nextState: Record<string, unknown>
+async function deleteBookInternal(
+  bookId: string
 ): Promise<ApiResult<{ builtin: boolean; cleanupPending?: boolean }>> {
   try {
     if (!/^[a-zA-Z0-9_-]{1,120}$/.test(bookId)) {
       return { ok: false, error: 'Некорректный идентификатор книги', code: 'UNKNOWN' }
     }
-    if (!validBookId(bookId)) {
-      await deleteBookCache(bookId)
-      setAppState(nextState)
-      return { ok: true, data: { builtin: true } }
-    }
-    const originals = [userBookPath(bookId), userBookPath(bookId, '-characters')]
-    // Stage files first. If cache cleanup fails, the helper restores them before
-    // the renderer receives an honest failure result and keeps its local state.
-    const deleted = await runLocalDataWrite(() => stagedDeleteFiles(
-      originals,
-      () => deleteBookCache(bookId),
-      { commit: () => setAppState(nextState) }
-    ))
-    return {
-      ok: true,
-      data: { builtin: !deleted.has(originals[0]), cleanupPending: deleted.cleanupPending }
-    }
+    return await runAppStateTransaction(async (currentState, commitState) => {
+      blockBookAppState(bookId)
+      try {
+        const nextState = removeBookFromAppState(currentState, bookId)
+        if (!validBookId(bookId)) {
+          await deleteBookCache(bookId)
+          await commitState(nextState)
+          return { ok: true, data: { builtin: true } }
+        }
+        const originals = [userBookPath(bookId), userBookPath(bookId, '-characters')]
+        // State writes are held behind the same transaction while files/cache
+        // are staged. A queued renderer snapshot is sanitized before it can
+        // run, so it cannot restore state belonging to this deleted book.
+        const deleted = await runLocalDataWrite(() => stagedDeleteFiles(
+          originals,
+          () => deleteBookCache(bookId),
+          { commit: () => commitState(nextState) }
+        ))
+        return {
+          ok: true,
+          data: { builtin: !deleted.has(originals[0]), cleanupPending: deleted.cleanupPending }
+        }
+      } catch (error) {
+        unblockBookAppState(bookId)
+        throw error
+      }
+    })
   } catch (e) {
     return { ok: false, error: (e as Error).message, code: 'UNKNOWN' }
   }
 }
 
+export function deleteBook(
+  bookId: string
+): Promise<ApiResult<{ builtin: boolean; cleanupPending?: boolean }>> {
+  return bookMutations.run(bookId, () => deleteBookInternal(bookId))
+}
+
 /** Сохранить персонажей импортированной книги; unlockChapter считается по тексту. */
-export async function saveBookCharacters(
+async function saveBookCharactersInternal(
   bookId: string,
   narratorVoice: unknown,
   characters: Character[]
@@ -752,4 +828,14 @@ export async function saveBookCharacters(
   } catch (e) {
     return { ok: false, error: (e as Error).message, code: 'UNKNOWN' }
   }
+}
+
+export function saveBookCharacters(
+  bookId: string,
+  narratorVoice: unknown,
+  characters: Character[]
+): Promise<ApiResult<{ ok: true }>> {
+  return bookMutations.run(bookId, () =>
+    saveBookCharactersInternal(bookId, narratorVoice, characters)
+  )
 }
