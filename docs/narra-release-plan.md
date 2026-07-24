@@ -4,8 +4,9 @@
 > Рабочая ветка: `feat/narra-monitoring-and-voices`
 > Статус: gateway/stats staging и production Traction обновлены; общая карточка
 > показывает шесть canonical-слотов, мониторинг собирает историю; публичный
-> macOS-релиз ещё не выпущен. Ускоренный import/first-audio и расширенная
-> import/media-телеметрия готовы в рабочей ветке, но ещё не выкачены на staging.
+> macOS-релиз ещё не выпущен. Gateway/stat-схемы ускоренного
+> import/first-audio и расширенной import/media-телеметрии уже выкачены на
+> staging; Electron-клиент с этими изменениями ещё не выпускался.
 > Классификация: внутренний рабочий документ. Перед внешней публикацией удалить
 > имена владельцев, Apple Team ID, инфраструктурный IP и DNS verification data.
 
@@ -13,12 +14,12 @@
 
 | Контур | Статус | Что это означает |
 |---|---|---|
-| Gateway staging | ✅ Live | Exact source `e78dc8f`, Railway deploy `d128007d…`: no-invite, OpenRouter, SaluteSpeech, 86 голосов, Kandinsky, video и analytics outbox |
-| Stats staging | ✅ Live | Exact deploy `2fda2f7`; отдельные token, database и Volume, monitoring здесь выключен |
-| Traction production stats | ✅ Live | Narra stats-модуль активен, dashboard защищён, poller healthy |
+| Gateway staging | ✅ Live | Exact source `97c4cf4`, Railway deploy `b466752f…`: no-invite, progressive contract, OpenRouter, SaluteSpeech, 86 голосов, Kandinsky, video и analytics outbox |
+| Stats staging | ✅ Live | Exact source `97c4cf4`, Railway deploy `078bd87c…`; отдельные token, database и Volume, monitoring здесь выключен |
+| Traction production stats | ✅ Live | Версия `97c4cf4df55f-202607240047`; dashboard защищён, service active, post-deploy probes и rollback gate прошли |
 | Общая карточка Traction | ✅ Live v0.6 | Шесть постоянных слотов выкачены; при нулевом DAU ratios видны как `—` |
 | Шесть canonical-метрик | ✅ Live | `Ever used`, `DAU`, `WAU`, `MAU`, `Sessions / DAU`, `Tools / DAU` |
-| Мониторинг доменов/ручек | ✅ Live | 4 fixed-target HTTPS probe, TLS/latency/availability/coverage и 30-дневная история |
+| Мониторинг доменов/ручек | ⚠️ Live, route issue visible | 4 fixed-target HTTPS probe, TLS/latency/availability/coverage и 30-дневная история; custom staging-domain сейчас недоступен именно с московского stats-host, а отдельный service-domain `narra-proxy-staging.up.railway.app` оттуда отвечает 200 |
 | Universal unsigned macOS | ✅ QA готов | arm64 + x64 упаковываются в один артефакт |
 | Signed macOS | ⏳ Local RC | Локальный release path готов; подписанный артефакт ещё не собран |
 | Notarized macOS | ⏳ Credentials | Для публичного DMG всё ещё нужен matching Team API key Жени |
@@ -457,8 +458,8 @@ registry и отдельный migration/reset plan. Bearer также хран�
 `safeStorage`; при недоступном Keychain release-клиент держит его только в
 памяти. Клиент обновляет bearer незадолго до истечения.
 
-Staging работает на source commit `e78dc8f` (финальный Railway redeploy
-`d128007d-cb62-4b18-a14e-306653824034`). Реальные smoke-проверки подтвердили:
+Staging работает на source commit `97c4cf4` (Railway deploy
+`b466752f-ee47-42a5-bada-4c4ff57750c5`). Реальные smoke-проверки подтвердили:
 
 - `register=201`, `refresh=200`;
 - после restart действующая установка снова получает `refresh=200`;
@@ -470,6 +471,10 @@ Staging работает на source commit `e78dc8f` (финальный Railwa
   тот же невалидный запрос снова возвращает `400`;
 - `/health=200`, `/ready=200`, registry сообщает
   `storage_verified=true`.
+- после обновления event-схем новый synthetic install повторно дал
+  `register=201`, `refresh=200`, batch с `book_analysis_started` и
+  `media_job_enqueued` получил `202`, принял `2/2`; outbox backlog и DLQ
+  остались нулевыми, `last_success_at` обновился.
 
 ### Как доступ устроен в подготовленной ветке
 
