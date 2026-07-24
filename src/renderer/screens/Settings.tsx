@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useStore } from '../store/useStore'
+import { suspendStatePersistence, useStore } from '../store/useStore'
 
 export function Settings() {
   const settings = useStore((s) => s.settings)
@@ -10,13 +10,21 @@ export function Settings() {
   const toast = useStore((s) => s.toast)
 
   const [proxyUrl, setProxyUrl] = useState(settings?.proxyUrl || '')
+  const [extendedTelemetryEnabled, setExtendedTelemetryEnabled] = useState(
+    settings?.extendedTelemetryEnabled ?? true
+  )
   const [saved, setSaved] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   async function save() {
-    await window.narra.setSettings({ proxyUrl: proxyUrl.trim() })
-    await reloadSettings()
-    setSaved(true)
-    setTimeout(() => setSaved(false), 1600)
+    try {
+      await window.narra.setSettings({ proxyUrl: proxyUrl.trim(), extendedTelemetryEnabled })
+      await reloadSettings()
+      setSaved(true)
+      setTimeout(() => setSaved(false), 1600)
+    } catch (error) {
+      toast({ type: 'error', title: 'Адрес gateway не сохранён', message: (error as Error).message })
+    }
   }
 
   async function test() {
@@ -27,10 +35,24 @@ export function Settings() {
     else toast({ type: 'error', title: 'Нет связи с сервером', message: 'Проверь URL и что прокси запущен.' })
   }
 
+  async function deleteLocalData() {
+    if (!window.confirm('Удалить все локальные книги, заметки, чаты, медиа-кэши и служебную очередь Narra? Это действие нельзя отменить.')) return
+    setDeleting(true)
+    await suspendStatePersistence()
+    const result = await window.narra.deleteAllLocalData()
+    if (!result.ok) {
+      setDeleting(false)
+      toast({ type: 'error', title: 'Данные не удалены', message: result.error })
+      return
+    }
+    window.location.reload()
+  }
+
   const services = [
-    { key: 'gigachat', label: 'GigaChat — чат и разметка', on: !!health?.gigachat },
+    { key: 'gigachat', label: 'AI — Giga / OpenRouter', on: !!health?.gigachat },
     { key: 'salutespeech', label: 'SaluteSpeech — эмоциональная озвучка', on: !!health?.salutespeech },
-    { key: 'kandinsky', label: 'Kandinsky — изображения', on: !!health?.kandinsky }
+    { key: 'kandinsky', label: 'Kandinsky — изображения', on: !!health?.kandinsky },
+    { key: 'video', label: 'Kandinsky video — аватары и анимация', on: !!health?.video }
   ]
 
   return (
@@ -78,9 +100,47 @@ export function Settings() {
         </div>
 
         <div className="settings-block__sub" style={{ marginTop: 14 }}>
-          Локально: запусти прокси <code>cd server &amp;&amp; npm run dev</code> и впиши ключи в{' '}
+          Локально: из корня репозитория запусти <code>npm run proxy</code> и впиши ключи в{' '}
           <code>server/.env</code>. Для раздачи приложения задеплой <code>server/</code> на Railway
           и укажи здесь его URL — тогда у всех получателей всё работает без ключей.
+        </div>
+      </div>
+
+      <div className="card settings-block">
+        <div className="settings-block__head">
+          <h3>Расширенная аналитика</h3>
+          <span className={`chip ${extendedTelemetryEnabled ? 'chip--accent' : ''}`}>
+            {extendedTelemetryEnabled ? 'включена' : 'выключена'}
+          </span>
+        </div>
+        <label className="service-row" style={{ cursor: 'pointer' }}>
+          <input
+            type="checkbox"
+            checked={extendedTelemetryEnabled}
+            onChange={(event) => setExtendedTelemetryEnabled(event.target.checked)}
+          />
+          <span>Отправлять детальную обезличенную статистику функций и чтения</span>
+        </label>
+        <div className="settings-block__sub" style={{ marginTop: 12 }}>
+          Даже при выключении остаётся минимальная служебная статистика: активная установка,
+          версия, квалифицированное чтение, AI-запросы без содержимого, ошибки и обновления.
+          Никогда не отправляются тексты книг, названия и файлы, заметки, переписка, промпты,
+          ответы, изображения, аудио или видео.
+        </div>
+      </div>
+
+      <div className="card settings-block">
+        <div className="settings-block__head">
+          <h3>Локальные данные</h3>
+        </div>
+        <div className="settings-block__sub">
+          Удаляет импортированные книги, прогресс, заметки, чаты и память персонажей,
+          изображения, аудио, видео, очередь статистики и локальный токен gateway.
+        </div>
+        <div className="settings-block__actions" style={{ marginTop: 14 }}>
+          <button className="btn btn--ghost btn--sm" onClick={deleteLocalData} disabled={deleting}>
+            {deleting ? 'Удаляем…' : 'Удалить все локальные данные'}
+          </button>
         </div>
       </div>
     </div>

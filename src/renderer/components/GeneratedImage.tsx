@@ -38,10 +38,18 @@ export function GeneratedImage({
 
   const keys = canImage(health)
 
-  async function generate(force = false) {
+  async function generate(force = false, origin: 'user' | 'background' = 'user') {
     setStatus('generating')
     setErr('')
-    const res = await window.narra.generateImage(prompt, cacheKey, width, height, force)
+    const res = await window.narra.generateImage(
+      prompt,
+      cacheKey,
+      width,
+      height,
+      force,
+      undefined,
+      origin
+    )
     if (res.ok) {
       setSrc(res.data!.dataUrl)
       setStatus('done')
@@ -69,7 +77,7 @@ export function GeneratedImage({
       }
       if (auto && !startedRef.current) {
         startedRef.current = true
-        generate()
+        generate(false, 'background')
       } else {
         setStatus('idle')
       }

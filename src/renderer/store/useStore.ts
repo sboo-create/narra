@@ -9,6 +9,8 @@ import type {
   SaluteVoice,
   Settings
 } from '@shared/types'
+import { DEFAULT_NARRATOR_VOICE, isSaluteVoice } from '@shared/types'
+import { cancelPreparedBook } from '../lib/scenario'
 
 export interface CharStat {
   asked: number
@@ -189,12 +191,15 @@ function migrateCharKeys(p: Persisted, books: BookContent[]): Persisted {
     }
     return out
   }
+  const migratedVoices = Object.fromEntries(
+    Object.entries(fix(p.voiceOverrides)).filter((entry): entry is [string, SaluteVoice] => isSaluteVoice(entry[1]))
+  )
   return {
     ...p,
     chats: fix(p.chats),
     memories: fix(p.memories),
     stats: fix(p.stats),
-    voiceOverrides: fix(p.voiceOverrides)
+    voiceOverrides: migratedVoices
   }
 }
 
@@ -203,12 +208,27 @@ function uid(): string {
 }
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null
+let pendingStateWrite: Promise<unknown> = Promise.resolve()
+let persistenceSuspended = false
 function persist(p: Persisted) {
+  if (persistenceSuspended) return
   if (saveTimer) clearTimeout(saveTimer)
   saveTimer = setTimeout(() => {
-    window.narra.setState(p as unknown as Record<string, unknown>)
+    saveTimer = null
+    if (persistenceSuspended) return
+    pendingStateWrite = window.narra
+      .setState(p as unknown as Record<string, unknown>)
+      .catch(() => undefined)
   }, 350)
 }
+
+export async function suspendStatePersistence(): Promise<void> {
+  persistenceSuspended = true
+  if (saveTimer) clearTimeout(saveTimer)
+  saveTimer = null
+  await pendingStateWrite.catch(() => undefined)
+}
+
 
 export const useStore = create<StoreState>((set, get) => ({
   ready: false,
@@ -216,7 +236,7 @@ export const useStore = create<StoreState>((set, get) => ({
   activeBookId: '',
   fanfic: null,
   characters: [],
-  narratorVoice: 'Pon',
+  narratorVoice: DEFAULT_NARRATOR_VOICE,
   chapter: 1,
   settings: null,
   health: null,
@@ -249,7 +269,7 @@ export const useStore = create<StoreState>((set, get) => ({
         activeBookId: active?.fanfic.id || '',
         fanfic: active?.fanfic || null,
         characters: active?.characters || [],
-        narratorVoice: active?.narratorVoice || 'Pon',
+        narratorVoice: active?.narratorVoice || DEFAULT_NARRATOR_VOICE,
         chapter: active ? persisted.chapters[active.fanfic.id] || 1 : 1,
         settings,
         persisted: migrated
@@ -262,7 +282,11 @@ export const useStore = create<StoreState>((set, get) => ({
     }
   },
 
-  navigate: (r) => set({ route: r }),
+  navigate: (r) => {
+    if (r.name === 'character') void window.narra.trackEvent('character_opened', { feature: 'character' })
+    if (r.name === 'chat') void window.narra.trackEvent('chat_opened', { feature: 'chat' })
+    set({ route: r })
+  },
 
   setActiveBook: (id) => {
     const book = get().books.find((b) => b.fanfic.id === id)
@@ -285,7 +309,18 @@ export const useStore = create<StoreState>((set, get) => ({
     const res = await window.narra.loadBooks()
     if (res.ok) {
       const hidden = new Set(get().persisted.hiddenBooks || [])
-      set({ books: res.data!.filter((b) => !hidden.has(b.fanfic.id)) })
+      const books = res.data!.filter((b) => !hidden.has(b.fanfic.id))
+      const active = books.find((book) => book.fanfic.id === get().activeBookId)
+      set({
+        books,
+        ...(active
+          ? {
+              fanfic: active.fanfic,
+              characters: active.characters,
+              narratorVoice: active.narratorVoice
+            }
+          : {})
+      })
     }
   },
 
@@ -300,6 +335,11 @@ export const useStore = create<StoreState>((set, get) => ({
     const p = { ...get().persisted, chapters: { ...get().persisted.chapters, [id]: n } }
     set({ persisted: p, chapter: n })
     persist(p)
+    const bucket = n <= 3 ? '1-3' : n <= 10 ? '4-10' : n <= 25 ? '11-25' : '26+'
+    void window.narra.trackEvent('chapter_changed', {
+      navigation_type: 'reader',
+      chapter_position_bucket: bucket
+    })
   },
   setChats: (charId, msgs) => {
     const k = charKey(get().activeBookId, charId)
@@ -379,6 +419,7 @@ export const useStore = create<StoreState>((set, get) => ({
     const p = { ...get().persisted, bookmarks: { ...get().persisted.bookmarks, [bookId]: next } }
     set({ persisted: p })
     persist(p)
+    if (!same) void window.narra.trackEvent('bookmark_added', { feature: 'bookmark' })
   },
   removeBookmark: (bookId, id) => {
     const next = (get().persisted.bookmarks[bookId] || []).filter((x) => x.id !== id)
@@ -391,6 +432,7 @@ export const useStore = create<StoreState>((set, get) => ({
     const p = { ...get().persisted, notes: { ...get().persisted.notes, [bookId]: next } }
     set({ persisted: p })
     persist(p)
+    void window.narra.trackEvent('note_added', { feature: 'note' })
   },
   removeNote: (bookId, id) => {
     const next = (get().persisted.notes[bookId] || []).filter((x) => x.id !== id)
@@ -411,11 +453,30 @@ export const useStore = create<StoreState>((set, get) => ({
     persist(p)
   },
   deleteBook: async (bookId) => {
+    const cancelledPreparations = cancelPreparedBook(bookId)
+    for (const origin of cancelledPreparations) {
+      void window.narra.trackEvent('media_job_cancelled', {
+        job_type: 'chapter_markup',
+        queue_or_running: 'running',
+        origin
+      })
+    }
     const res = await window.narra.deleteBook(bookId)
+    if (!res.ok) {
+      const message = res.error || 'Не удалось удалить локальные данные книги'
+      get().toast({ type: 'error', title: 'Книга не удалена', message })
+      throw new Error(message)
+    }
+    // Apply the cleanup to the latest renderer state after the async delete,
+    // preserving unrelated changes made while files/cache were being removed.
     const st = get().persisted
-    // подчищаем всё, что связано с книгой (прогресс, саммари, сценарии, закладки)
-    const dropByPrefix = <T,>(rec: Record<string, T>) =>
-      Object.fromEntries(Object.entries(rec).filter(([k]) => !k.startsWith(`${bookId}-`)))
+    const belongsToBook = (key: string) =>
+      key === bookId ||
+      key.startsWith(`${bookId}-`) ||
+      key.startsWith(`${bookId}:`) ||
+      key.includes(`-${bookId}-`)
+    const dropBook = <T,>(rec: Record<string, T>) =>
+      Object.fromEntries(Object.entries(rec).filter(([key]) => !belongsToBook(key)))
     const chapters = { ...st.chapters }
     delete chapters[bookId]
     const bookmarks = { ...st.bookmarks }
@@ -427,17 +488,28 @@ export const useStore = create<StoreState>((set, get) => ({
       chapters,
       bookmarks,
       notes,
-      summaries: dropByPrefix(st.summaries),
-      scenarios: dropByPrefix(st.scenarios),
-      sceneAnchors: dropByPrefix(st.sceneAnchors),
-      extraScenes: dropByPrefix(st.extraScenes),
-      anchorLists: dropByPrefix(st.anchorLists),
-      // встроенную книгу удалить с диска нельзя — прячем её с полки
+      chats: dropBook(st.chats),
+      stats: dropBook(st.stats),
+      versions: dropBook(st.versions),
+      covers: dropBook(st.covers),
+      summaries: dropBook(st.summaries),
+      scenarios: dropBook(st.scenarios),
+      voiceOverrides: dropBook(st.voiceOverrides),
+      memories: dropBook(st.memories),
+      sceneAnchors: dropBook(st.sceneAnchors),
+      extraScenes: dropBook(st.extraScenes),
+      anchorLists: dropBook(st.anchorLists),
       hiddenBooks:
-        res.ok && res.data!.builtin ? [...new Set([...st.hiddenBooks, bookId])] : st.hiddenBooks
+        !bookId.startsWith('u-') ? [...new Set([...st.hiddenBooks, bookId])] : st.hiddenBooks
     }
     set({ persisted: p })
-    persist(p)
+    if (res.data?.cleanupPending) {
+      get().toast({
+        type: 'info',
+        title: 'Книга скрыта',
+        message: 'Остаток файла будет повторно удалён при следующем запуске.'
+      })
+    }
     await get().reloadBooks()
   },
 

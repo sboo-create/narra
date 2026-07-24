@@ -5,13 +5,17 @@ import { SceneImage } from '../components/SceneImage'
 import { ReaderSettings, ReaderNav } from '../components/ReaderPanels'
 import { CharAvatar } from '../components/CharAvatar'
 import { portraitKey } from '../lib/imageStyle'
-import { markupChapter, fallbackScenario } from '../lib/scenario'
+import {
+  prepareChapterScenario,
+  fallbackScenario,
+  normalizeFirstAudioScenario
+} from '../lib/scenario'
 import { visualMomentsRequest, summaryRequest } from '../lib/prompts'
 import { parseBlocks, proseOnly } from '../lib/blocks'
 import { sceneKey } from '../lib/imageStyle'
 import { TtsController, TtsStatus } from '../lib/ttsController'
 import { hasForeignLanguage } from '../lib/ttsLanguage'
-import type { ChapterScenario } from '@shared/types'
+import { saluteVoiceSampleRate, type ChapterScenario } from '@shared/types'
 
 interface NamePopover {
   charId: string
@@ -23,6 +27,20 @@ function hash(s: string): string {
   let h = 0
   for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0
   return (h >>> 0).toString(36)
+}
+
+function firstAudioLatencyBucket(latencyMs: number): string {
+  if (latencyMs < 1_000) return '<1s'
+  if (latencyMs < 5_000) return '1-4s'
+  if (latencyMs < 15_000) return '5-14s'
+  return '15s+'
+}
+
+function listenedFractionBucket(fraction: number): string {
+  if (fraction < 0.1) return '<10%'
+  if (fraction < 0.5) return '10-49%'
+  if (fraction < 0.9) return '50-89%'
+  return '90%+'
 }
 
 // Находит абзац, наиболее совпадающий с цитатой (по общим словам).
@@ -109,6 +127,58 @@ export function Reader() {
   const ttsReady = canTts(health)
   const gcReady = canChat(health)
 
+  useEffect(() => {
+    const bookKind = fanfic.id.startsWith('u-') ? 'imported' : 'builtin'
+    void window.narra.trackEvent('book_opened', { book_kind: bookKind })
+    void window.narra.trackEvent('reading_session_started', { book_kind: bookKind })
+    let active = document.visibilityState === 'visible' && document.hasFocus()
+    let inactiveSince = active ? 0 : Date.now()
+    let activeSeconds = 0
+    let qualified = false
+    const emitEnded = () => {
+      const durationBucket = activeSeconds < 60 ? '<1m' : activeSeconds < 300 ? '1-4m' : activeSeconds < 900 ? '5-14m' : '15m+'
+      void window.narra.trackEvent('reading_session_ended', {
+        book_kind: bookKind,
+        duration_seconds: activeSeconds,
+        duration_bucket: durationBucket
+      })
+    }
+    const updateActive = () => {
+      const nextActive = document.visibilityState === 'visible' && document.hasFocus()
+      if (nextActive && !active && inactiveSince && Date.now() - inactiveSince > 30 * 60 * 1000) {
+        emitEnded()
+        activeSeconds = 0
+        qualified = false
+        void window.narra.trackEvent('reading_session_started', { book_kind: bookKind })
+      }
+      if (!nextActive && active) inactiveSince = Date.now()
+      active = nextActive
+    }
+    const timer = setInterval(() => {
+      if (!active) return
+      activeSeconds += 1
+      if (activeSeconds % 60 === 0) void window.narra.touchTelemetrySession()
+      if (!qualified && activeSeconds >= 60) {
+        qualified = true
+        void window.narra.trackEvent('reading_session_qualified', {
+          book_kind: bookKind,
+          duration_seconds: 60,
+          duration_bucket: '1-4m'
+        })
+      }
+    }, 1_000)
+    document.addEventListener('visibilitychange', updateActive)
+    window.addEventListener('focus', updateActive)
+    window.addEventListener('blur', updateActive)
+    return () => {
+      clearInterval(timer)
+      document.removeEventListener('visibilitychange', updateActive)
+      window.removeEventListener('focus', updateActive)
+      window.removeEventListener('blur', updateActive)
+      emitEnded()
+    }
+  }, [fanfic.id])
+
   const blocks = useMemo(() => parseBlocks(chapter?.text || ''), [chapter])
   const paragraphs = useMemo(
     () => blocks.map((b) => (b.type === 'p' ? b.text : '')),
@@ -162,7 +232,10 @@ export function Reader() {
     setAnchors(spreadCap([0.25, 0.5, 0.75].map((f) => Math.floor(n * f)), n))
     let alive = true
     ;(async () => {
-      const r = await window.narra.llmJson<string[]>(visualMomentsRequest(proseOnly(chapter.text)))
+      const r = await window.narra.llmJson<string[]>(
+        visualMomentsRequest(proseOnly(chapter.text)),
+        'background'
+      )
       if (!alive) return
       let list: number[] = []
       if (r.ok && Array.isArray(r.data)) {
@@ -305,25 +378,42 @@ export function Reader() {
     if (chapterNo < total) setChapter(chapterNo + 1)
   }
 
-  async function ensureScenario(): Promise<ChapterScenario> {
+  async function ensureScenario(generation: number): Promise<{
+    scenario: ChapterScenario
+    complete?: Promise<ChapterScenario>
+  }> {
     const cached = persisted.scenarios[bkey]
-    if (cached) return cached
+    if (cached) return { scenario: normalizeFirstAudioScenario(cached) }
     // офлайн-режим (без GigaChat) — простой сценарий без разметки
     if (!gcReady) {
       const fb = fallbackScenario(chapterNo, proseOnly(chapter.text))
       setScenario(bkey, fb)
-      return fb
+      return { scenario: fb }
     }
-    setPreparing({ done: 0, total: 1 })
-    const sc = await markupChapter(chapterNo, proseOnly(chapter.text), characters, (done, tot) =>
-      setPreparing({ done, total: tot })
-    )
-    setPreparing(null)
-    setScenario(bkey, sc)
-    return sc
+    const preparation = prepareChapterScenario(bkey, chapterNo, proseOnly(chapter.text), characters)
+    const unsubscribe = preparation.subscribeProgress((done, total) => {
+      if (generation === listenGenRef.current) setPreparing({ done, total })
+    })
+    try {
+      const bootstrap = await preparation.firstReady
+      if (generation === listenGenRef.current) setPreparing(null)
+      const complete = preparation.complete
+        .then((full) => {
+          bootstrap.segments.splice(0, bootstrap.segments.length, ...full.segments)
+          setScenario(bkey, full)
+          if (generation === listenGenRef.current) setScenarioState(full)
+          return full
+        })
+        .catch(() => bootstrap)
+      return { scenario: bootstrap, complete }
+    } finally {
+      unsubscribe()
+      if (generation === listenGenRef.current) setPreparing(null)
+    }
   }
 
-  function buildController(sc: ChapterScenario): TtsController {
+  function buildController(sc: ChapterScenario, complete?: Promise<ChapterScenario>): TtsController {
+    const firstVoice = voiceFor(sc.segments[0]?.character || null)
     return new TtsController({
       mode: ttsReady ? 'salute' : 'browser',
       segments: sc.segments,
@@ -335,7 +425,38 @@ export function Reader() {
         (hasForeignLanguage(sc.segments[idx].text) ? '-ml1' : ''),
       onIndex: setCurSeg,
       onStatus: setAudioStatus,
-      onError: (m) => toast({ type: 'error', title: 'Озвучка', message: m })
+      onError: (m) => toast({ type: 'error', title: 'Озвучка', message: m }),
+      onFirstAudioReady: (latencyMs) => {
+        void window.narra.trackEvent('tts_first_audio_ready', {
+          sample_rate: saluteVoiceSampleRate(firstVoice),
+          first_audio_latency_bucket: firstAudioLatencyBucket(latencyMs),
+          origin: 'user'
+        })
+      },
+      onPlaybackStarted: (cached) => {
+        void window.narra.trackEvent('tts_playback_started', {
+          source: 'reader',
+          cache_hit: cached,
+          origin: 'user'
+        })
+      },
+      onPlaybackAbandoned: (fraction) => {
+        void window.narra.trackEvent('tts_playback_abandoned', {
+          source: 'reader',
+          listened_fraction_bucket: listenedFractionBucket(fraction),
+          origin: 'user'
+        })
+      },
+      waitForMore: complete
+        ? async (currentLength) => {
+            try {
+              await complete
+              return sc.segments.length > currentLength
+            } catch {
+              return false
+            }
+          }
+        : undefined
     })
   }
 
@@ -358,10 +479,11 @@ export function Reader() {
     const myGen = ++listenGenRef.current
     ctrlRef.current?.stop()
     ctrlRef.current = null
-    const sc = await ensureScenario()
+    const prepared = await ensureScenario(myGen)
     if (myGen !== listenGenRef.current) return // отменили или перезапустили, пока готовили
+    const sc = prepared.scenario
     setScenarioState(sc)
-    const ctrl = buildController(sc)
+    const ctrl = buildController(sc, prepared.complete)
     ctrl.setSpeed(speed)
     ctrlRef.current = ctrl
     ctrl.start(0)

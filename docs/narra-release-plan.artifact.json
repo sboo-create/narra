@@ -1,0 +1,1135 @@
+{
+  "surface": "report",
+  "manifest": {
+    "version": 1,
+    "surface": "report",
+    "title": "Narra: план безопасного релиза и аналитики",
+    "description": "Фактический статус и технический план безопасного релиза Narra: gateway, OpenRouter + Giga, аналитика Traction и подписанные обновления.",
+    "generatedAt": "2026-07-23T20:15:00+03:00",
+    "sources": [
+      {
+        "id": "narra_code",
+        "label": "Narra — baseline, с которого начат аудит",
+        "href": "https://github.com/sboo-create/narra/tree/e7c1e5f8a07117605653d5a361f0ce1a0b27f5d6",
+        "query": {
+          "engine": "artifact-snapshot",
+          "sql": "SELECT priority, area, work, acceptance FROM security_work ORDER BY order",
+          "description": "Immutable baseline до текущего release-foundation diff; не выдаётся за состояние рабочей feat-ветки.",
+          "executed_at": "2026-07-23T12:00:00+03:00",
+          "language": "TypeScript/JavaScript",
+          "tables_used": [
+            "src/main/api/proxy.ts",
+            "src/main/store.ts",
+            "src/main/importer.ts",
+            "src/renderer/components/Logo.tsx",
+            "server/index.mjs",
+            "package.json"
+          ]
+        }
+      },
+      {
+        "id": "narra_release_candidate_worktree",
+        "label": "Narra — текущий monitoring/voices candidate",
+        "href": "https://github.com/sboo-create/narra/tree/feat/narra-monitoring-and-voices",
+        "query": {
+          "engine": "git",
+          "description": "Текущий candidate ветки feat/narra-monitoring-and-voices проходит финальные review gates; production gateway этой веткой ещё не переключался.",
+          "executed_at": "2026-07-23T20:15:00+03:00",
+          "language": "TypeScript/JavaScript/Python/HTML",
+          "tables_used": [
+            "server/index.mjs",
+            "server/event-store.mjs",
+            "src/main/telemetry.ts",
+            "src/main/pdf-worker.ts",
+            "src/renderer/lib/scenario.ts",
+            "src/renderer/screens/Reader.tsx",
+            "src/renderer/lib/ttsController.ts",
+            "stats/server.py",
+            "stats/index.html",
+            ".github/workflows/release-macos.yml"
+          ]
+        }
+      },
+      {
+        "id": "traction_contract",
+        "label": "Traction — canonical Overview и контракт модуля",
+        "href": "https://github.com/q121212/Traction/tree/144341a12c07c625d99c172eed62681e3f14ce2d",
+        "query": {
+          "engine": "artifact-snapshot",
+          "sql": "SELECT metric, narra_definition, window, guardrail FROM canonical_metrics ORDER BY order",
+          "description": "Ревью SPEC, ONBOARDING, hub и контрактных тестов после унификации шести canonical-метрик.",
+          "executed_at": "2026-07-23T14:29:41+03:00",
+          "language": "Markdown/Python/JavaScript",
+          "tables_used": [
+            "SPEC.md",
+            "ONBOARDING.md",
+            "service/server.py",
+            "hub/index.html",
+            "tests/test_contract.py"
+          ]
+        }
+      },
+      {
+        "id": "aiwa_tuning",
+        "label": "AIWA — analytics v2 и доработанный stats-модуль",
+        "href": "https://github.com/sboo-create/aiwa-bot/tree/74b90c0",
+        "query": {
+          "description": "Ревью dual-write, request/attempt модели, data-quality coverage, product health, feedback, push funnels и UX дашборда.",
+          "executed_at": "2026-07-23T12:00:00+03:00",
+          "language": "Python/HTML",
+          "tables_used": [
+            "ANALYTICS_V2.md",
+            "analytics_v2.py",
+            "stats/server.py",
+            "stats/index.html"
+          ]
+        }
+      },
+      {
+        "id": "owner_context",
+        "label": "Продуктовые вводные владельца Narra, переданные 23 июля 2026",
+        "query": {
+          "description": "Проект ещё не релизнут; историческую аналитику переносить не требуется; необходимо добавить OpenRouter и сохранить Giga; отдельные staging provider keys не выдаются; LLM и Kandinsky video являются доверенными сервисами команды.",
+          "executed_at": "2026-07-23T12:00:00+03:00",
+          "language": "conversation"
+        }
+      },
+      {
+        "id": "voice_registry_review",
+        "label": "SaluteSpeech voice picker screenshots + Narra Railway staging probe — 23 июля 2026",
+        "query": {
+          "engine": "evidence-join",
+          "sql": "SELECT r.priority, r.product_voice, r.base_code, r.assignment, r.picker_evidence_id, r.probe_evidence_id, r.supporting_probe_evidence_id, r.staging_result FROM voice_registry r LEFT JOIN voice_screenshot_evidence s ON s.evidence_id = r.picker_evidence_id LEFT JOIN voice_probe_results p ON p.evidence_id = r.probe_evidence_id LEFT JOIN voice_probe_results p2 ON p2.evidence_id = r.supporting_probe_evidence_id ORDER BY r.priority",
+          "description": "Одиннадцать новых picker screenshots и один ранее полученный скриншот Джой сохранены как filename + SHA-256 + observed mappings; все 188 raw probe rows содержат code/sample-rate/HTTP status/content type/actual WAV rate. Immutable CSV SHA-256: 30fee1f23901f5e8eda7790a8fdcee7e89d36da19d20a1e6e6a78732bad51bcc. Ключи не читались и не печатались.",
+          "executed_at": "2026-07-23T16:20:00+03:00",
+          "language": "image/JavaScript",
+          "tables_used": [
+            "voice_screenshot_evidence",
+            "voice_probe_results",
+            "voice_probe_raw",
+            "docs/evidence/salutespeech-voice-probe-2026-07-23.csv",
+            "voice_registry"
+          ]
+        }
+      },
+      {
+        "id": "salutespeech_staging_benchmark",
+        "label": "Narra SaluteSpeech staging benchmark — 23 июля 2026",
+        "query": {
+          "engine": "Railway staging console",
+          "description": "Пять последовательных синтезов одного текста длиной 708 символов для Erm_24000 и Erm_48000; затем exact-case probe присланных private voice codes. Credentials не извлекались из Railway и не печатались.",
+          "executed_at": "2026-07-23T18:30:00+03:00",
+          "language": "JavaScript",
+          "tables_used": [
+            "server/http.mjs",
+            "server/sber-tls.mjs",
+            "https://smartspeech.sber.ru/rest/v1/text:synthesize",
+            "voice_probe_raw",
+            "docs/evidence/salutespeech-voice-probe-2026-07-23.csv (SHA-256 30fee1f23901f5e8eda7790a8fdcee7e89d36da19d20a1e6e6a78732bad51bcc)"
+          ],
+          "metric_definitions": [
+            "latency_ms = wall-clock duration одного synchronous synthesis request",
+            "avg_bytes = средний размер полученного WAV",
+            "Один текст и пять последовательных запусков на качество; это направляющий тест, не полный load benchmark"
+          ]
+        }
+      },
+      {
+        "id": "provider_models_pricing",
+        "label": "Официальные страницы моделей и тарифов — проверено 23 июля 2026",
+        "href": "https://openrouter.ai/deepseek/deepseek-v4-flash/pricing",
+        "query": {
+          "engine": "official-web-docs",
+          "description": "Проверены текущая OpenRouter цена DeepSeek V4 Flash, corporate tariff SaluteSpeech и статус GigaChat 3 Ultra. Фактические staging model/route names зафиксированы в sanitized Railway evidence SHA-256 bc19e573bb77ea5e5fba3aff0462b2dbcc82af297efd89b9711f4535454b08ca. Для внутренних Kandinsky image/video endpoints публичной цены в переданных контрактах нет.",
+          "executed_at": "2026-07-23T17:50:00+03:00",
+          "language": "web",
+          "tables_used": [
+            "https://openrouter.ai/deepseek/deepseek-v4-flash/pricing",
+            "https://developers.sber.ru/docs/ru/salutespeech/tariffs/legal-tariffs",
+            "https://developers.sber.ru/docs/ru/gigachat/models/gigachat-3-ultra",
+            "docs/evidence/railway-staging-provider-config-2026-07-23.json"
+          ]
+        }
+      },
+      {
+        "id": "engineering_estimate",
+        "label": "Инженерная оценка плана Narra от 23 июля 2026",
+        "query": {
+          "engine": "duckdb",
+          "sql": "SELECT * FROM (VALUES ('0 · Contract freeze', 0.75, '0.5–1 день', 'Нет'), ('1 · Security foundation', 3.0, '2–4 дня', 'Нет'), ('2 · Gateway v2', 2.5, '2–3 дня', 'Нет'), ('3 · OpenRouter + Giga', 1.5, '1–2 дня', 'OpenRouter live; Giga ждёт secure transport'), ('4 · Analytics/outbox', 2.0, '1.5–2.5 дня', 'Завершено: отдельный stats endpoint/Volume/token'), ('5 · stats-narra', 2.0, '1.5–2.5 дня', 'Завершено: production Traction live'), ('6 · Updater/signing', 2.5, '2–3 дня', 'Local path готов; ждём notarization profile'), ('7 · Railway staging', 1.5, '1–2 дня', 'Завершено; public transport gates отдельно'), ('8 · Release', 1.5, '1–2 дня + наблюдение', 'Все release gates')) AS effort(phase, effort_mid, estimate, dependency)",
+          "description": "Диапазоны трудоёмкости по этапам, сформированные из объёма известных изменений и обязательных проверок; midpoint используется только для сравнительного графика.",
+          "executed_at": "2026-07-23T12:00:00+03:00",
+          "language": "sql",
+          "metric_definitions": [
+            "effort_mid = midpoint нижней и верхней оценки рабочих дней этапа",
+            "Внешнее ожидание Railway, Apple и review в effort_mid не включается"
+          ]
+        }
+      }
+    ],
+    "charts": [
+      {
+        "id": "effort_chart",
+        "title": "Оценочная трудоёмкость этапов",
+        "subtitle": "Midpoint инженерного диапазона, рабочие дни одного разработчика; внешнее ожидание исключено",
+        "type": "bar",
+        "dataset": "effort",
+        "sourceId": "engineering_estimate",
+        "valueFormat": "number",
+        "layout": "full",
+        "maxRows": 9,
+        "encodings": {
+          "x": { "field": "phase", "type": "nominal", "label": "Этап" },
+          "y": { "field": "effort_mid", "type": "quantitative", "label": "Рабочие дни" },
+          "tooltip": [
+            { "field": "estimate", "type": "text", "label": "Диапазон" },
+            { "field": "dependency", "type": "text", "label": "Зависимость" }
+          ]
+        }
+      }
+    ],
+    "tables": [
+      {
+        "id": "decisions_table",
+        "title": "Зафиксированные решения и границы",
+        "subtitle": "Зафиксированные продуктовые решения и текущие release-границы",
+        "dataset": "decisions",
+        "source": {
+          "label": "Зафиксированные решения текущего плана",
+          "query": { "engine": "artifact-snapshot", "sql": "SELECT area, decision, consequence FROM decisions ORDER BY order", "description": "Читает reviewed decisions, зафиксированные из аудита и вводных владельца." }
+        },
+        "defaultSort": { "field": "area", "direction": "asc" },
+        "density": "spacious",
+        "columns": [
+          { "field": "area", "label": "Область", "type": "text" },
+          { "field": "decision", "label": "Решение", "type": "text" },
+          { "field": "consequence", "label": "Следствие для плана", "type": "text" }
+        ]
+      },
+      {
+        "id": "architecture_table",
+        "title": "Целевые контуры Narra",
+        "subtitle": "Разделение ответственности между клиентом, gateway, провайдерами и Traction",
+        "dataset": "architecture",
+        "source": {
+          "label": "Целевая архитектура Narra",
+          "query": { "engine": "artifact-snapshot", "sql": "SELECT layer, owns, never, state FROM architecture ORDER BY order", "description": "Читает reviewed architecture rows этого технического плана." }
+        },
+        "defaultSort": { "field": "layer", "direction": "asc" },
+        "density": "spacious",
+        "columns": [
+          { "field": "layer", "label": "Контур", "type": "text" },
+          { "field": "owns", "label": "Что делает", "type": "text" },
+          { "field": "never", "label": "Чего не должен делать", "type": "text" },
+          { "field": "state", "label": "Состояние", "type": "text" }
+        ]
+      },
+      {
+        "id": "provider_matrix_table",
+        "title": "Матрица провайдеров",
+        "subtitle": "OpenRouter добавляется без удаления Giga; изображения, speech и video остаются отдельными контурами",
+        "dataset": "provider_matrix",
+        "sourceId": "provider_models_pricing",
+        "source": {
+          "id": "provider_models_pricing",
+          "label": "Официальные OpenRouter/Sber тарифы + sanitized Railway model config",
+          "href": "https://openrouter.ai/deepseek/deepseek-v4-flash/pricing",
+          "query": {
+            "engine": "artifact-snapshot",
+            "sql": "SELECT capability, primary, fallback, measurement FROM provider_matrix ORDER BY order",
+            "description": "Сводит проверенные staging model names с официальными страницами тарифов; внутренние Kandinsky endpoints помечены как не имеющие опубликованной цены.",
+            "tables_used": [
+              "provider_matrix",
+              "docs/evidence/railway-staging-provider-config-2026-07-23.json",
+              "https://openrouter.ai/deepseek/deepseek-v4-flash/pricing",
+              "https://developers.sber.ru/docs/ru/salutespeech/tariffs/legal-tariffs",
+              "https://developers.sber.ru/docs/ru/gigachat/models/gigachat-3-ultra"
+            ]
+          }
+        },
+        "defaultSort": { "field": "capability", "direction": "asc" },
+        "density": "spacious",
+        "columns": [
+          { "field": "capability", "label": "Функция", "type": "text" },
+          { "field": "primary", "label": "Основной маршрут", "type": "text" },
+          { "field": "fallback", "label": "Fallback / эксперимент", "type": "text" },
+          { "field": "measurement", "label": "Что измеряем", "type": "text" }
+        ]
+      },
+      {
+        "id": "canonical_metrics_table",
+        "title": "Шесть canonical-метрик Traction для Narra",
+        "subtitle": "Один actor-space, московские календарные окна и честные границы session/tool",
+        "dataset": "canonical_metrics",
+        "sourceId": "traction_contract",
+        "defaultSort": { "field": "metric", "direction": "asc" },
+        "density": "spacious",
+        "columns": [
+          { "field": "metric", "label": "Метрика", "type": "text" },
+          { "field": "narra_definition", "label": "Определение в Narra", "type": "text" },
+          { "field": "window", "label": "Окно", "type": "text" },
+          { "field": "guardrail", "label": "Защита от искажения", "type": "text" }
+        ]
+      },
+      {
+        "id": "narra_dashboard_table",
+        "title": "Содержимое вкладки Narra в Traction",
+        "subtitle": "Продуктовые метрики остаются внутри модуля и не смешиваются с cross-product Overview",
+        "dataset": "narra_dashboard",
+        "source": {
+          "label": "Проект KPI-системы Narra",
+          "query": { "engine": "artifact-snapshot", "sql": "SELECT section, metrics, decision FROM narra_dashboard ORDER BY order", "description": "Читает proposed Narra dashboard sections из reviewed plan snapshot." }
+        },
+        "defaultSort": { "field": "section", "direction": "asc" },
+        "density": "spacious",
+        "columns": [
+          { "field": "section", "label": "Раздел", "type": "text" },
+          { "field": "metrics", "label": "Метрики", "type": "text" },
+          { "field": "decision", "label": "Какое решение поддерживает", "type": "text" }
+        ]
+      },
+      {
+        "id": "events_table",
+        "title": "Событийный контракт первой версии",
+        "subtitle": "Минимальный безопасный словарь: без текстов книг, переписок, аудио, изображений и URL",
+        "dataset": "events",
+        "source": {
+          "label": "Проект privacy-safe event contract Narra",
+          "query": { "engine": "artifact-snapshot", "sql": "SELECT `group`, events, safe_properties, exclude FROM events ORDER BY order", "description": "Читает proposed event allowlist и запреты из reviewed plan snapshot." }
+        },
+        "defaultSort": { "field": "group", "direction": "asc" },
+        "density": "dense",
+        "columns": [
+          { "field": "group", "label": "Группа", "type": "text" },
+          { "field": "events", "label": "События", "type": "text" },
+          { "field": "safe_properties", "label": "Разрешённые свойства", "type": "text" },
+          { "field": "exclude", "label": "Никогда не отправлять", "type": "text" }
+        ]
+      },
+      {
+        "id": "security_work_table",
+        "title": "Пакет исправлений до релиза",
+        "subtitle": "Известные риски закрываются до production-кандидата; доверие к upstream не отменяет защиту транспорта и клиента",
+        "dataset": "security_work",
+        "sourceId": "narra_code",
+        "defaultSort": { "field": "priority", "direction": "asc" },
+        "density": "spacious",
+        "columns": [
+          { "field": "priority", "label": "Приоритет", "type": "text" },
+          { "field": "area", "label": "Область", "type": "text" },
+          { "field": "work", "label": "Что исправить", "type": "text" },
+          { "field": "acceptance", "label": "Критерий готовности", "type": "text" }
+        ]
+      },
+      {
+        "id": "roadmap_table",
+        "title": "Пошаговый план реализации",
+        "subtitle": "Оценки — инженерные диапазоны при последовательной работе одного разработчика; внешнее ожидание не включено",
+        "dataset": "roadmap",
+        "source": {
+          "label": "Инженерный roadmap Narra",
+          "query": { "engine": "artifact-snapshot", "sql": "SELECT phase, scope, result, estimate, dependency FROM roadmap ORDER BY order", "description": "Читает этапы, диапазоны и зависимости из reviewed plan snapshot." }
+        },
+        "defaultSort": { "field": "phase", "direction": "asc" },
+        "density": "spacious",
+        "columns": [
+          { "field": "phase", "label": "Этап", "type": "text" },
+          { "field": "scope", "label": "Работы", "type": "text" },
+          { "field": "result", "label": "Проверяемый результат", "type": "text" },
+          { "field": "estimate", "label": "Оценка", "type": "text" },
+          { "field": "dependency", "label": "Зависимость", "type": "text" }
+        ]
+      },
+      {
+        "id": "release_gates_table",
+        "title": "Release gates",
+        "subtitle": "Релиз допускается только после прохождения всех обязательных ворот",
+        "dataset": "release_gates",
+        "source": {
+          "label": "Release gate checklist Narra",
+          "query": { "engine": "artifact-snapshot", "sql": "SELECT gate, must_pass, evidence FROM release_gates ORDER BY order", "description": "Читает обязательные критерии выпуска из reviewed plan snapshot." }
+        },
+        "defaultSort": { "field": "gate", "direction": "asc" },
+        "density": "spacious",
+        "columns": [
+          { "field": "gate", "label": "Ворота", "type": "text" },
+          { "field": "must_pass", "label": "Что должно быть доказано", "type": "text" },
+          { "field": "evidence", "label": "Артефакт проверки", "type": "text" }
+        ]
+      },
+      {
+        "id": "responsibilities_table",
+        "title": "Что делаем сейчас и что ждёт внешнего доступа",
+        "subtitle": "Инфраструктура уже live; оставшиеся действия зависят от transport, installation registry и подписанного release",
+        "dataset": "responsibilities",
+        "source": {
+          "label": "Матрица зависимостей и ответственности",
+          "query": { "engine": "artifact-snapshot", "sql": "SELECT lane, now, later, owner FROM responsibilities ORDER BY order", "description": "Читает work lanes и owners из reviewed plan snapshot." }
+        },
+        "defaultSort": { "field": "lane", "direction": "asc" },
+        "density": "spacious",
+        "columns": [
+          { "field": "lane", "label": "Поток", "type": "text" },
+          { "field": "now", "label": "Можно сделать сейчас", "type": "text" },
+          { "field": "later", "label": "Что потребуется позже", "type": "text" },
+          { "field": "owner", "label": "Владелец решения", "type": "text" }
+        ]
+      },
+      {
+        "id": "tts_quality_benchmark_table",
+        "title": "SaluteSpeech: 24 kHz и 48 kHz на staging",
+        "subtitle": "Одинаковый текст, 708 символов, пять последовательных запусков на качество",
+        "dataset": "tts_quality_benchmark",
+        "sourceId": "salutespeech_staging_benchmark",
+        "source": {
+          "id": "salutespeech_staging_benchmark",
+          "label": "Narra SaluteSpeech staging benchmark — 23 июля 2026",
+          "query": {
+            "engine": "artifact-snapshot",
+            "sql": "SELECT sample_rate_hz, quality, provider_code, avg_ms, median_ms, avg_wav_mb, success FROM tts_quality_benchmark ORDER BY sample_rate_hz",
+            "description": "Читает reviewed результаты одинакового synchronous synthesis test из bounded snapshot."
+          }
+        },
+        "defaultSort": { "field": "sample_rate_hz", "direction": "asc" },
+        "density": "spacious",
+        "columns": [
+          { "field": "sample_rate_hz", "label": "Sample rate, Hz", "type": "number" },
+          { "field": "quality", "label": "Качество", "type": "text" },
+          { "field": "provider_code", "label": "Код", "type": "text" },
+          { "field": "avg_ms", "label": "Среднее, мс", "type": "number" },
+          { "field": "median_ms", "label": "Медиана, мс", "type": "number" },
+          { "field": "avg_wav_mb", "label": "Средний WAV, МБ", "type": "number" },
+          { "field": "success", "label": "Успех", "type": "text" }
+        ]
+      },
+      {
+        "id": "voice_registry_table",
+        "title": "Именованные 48 kHz голоса и исключения",
+        "subtitle": "Exact picker mapping для основных ролей; полный active registry суммирован следующей таблицей",
+        "dataset": "voice_registry",
+        "sourceId": "voice_registry_review",
+        "source": {
+          "id": "voice_registry_review",
+          "label": "SaluteSpeech voice picker screenshots + Narra Railway staging probe — 23 июля 2026",
+          "query": {
+            "engine": "evidence-join",
+            "sql": "SELECT r.product_voice, r.base_code, r.assignment, r.picker_evidence_id, r.probe_evidence_id, r.supporting_probe_evidence_id, r.staging_result FROM voice_registry r LEFT JOIN voice_screenshot_evidence s ON s.evidence_id = r.picker_evidence_id LEFT JOIN voice_probe_results p ON p.evidence_id = r.probe_evidence_id LEFT JOIN voice_probe_results p2 ON p2.evidence_id = r.supporting_probe_evidence_id ORDER BY r.priority",
+            "description": "Соединяет выбранный Narra mapping с screenshot SHA-256 evidence, основным 48 kHz probe и дополнительным 24 kHz probe там, где он выполнялся."
+          }
+        },
+        "defaultSort": { "field": "priority", "direction": "asc" },
+        "density": "spacious",
+        "columns": [
+          { "field": "priority", "label": "№", "type": "number" },
+          { "field": "product_voice", "label": "Голос", "type": "text" },
+          { "field": "base_code", "label": "Base code", "type": "text" },
+          { "field": "assignment", "label": "Назначение", "type": "text" },
+          { "field": "picker_evidence_id", "label": "Picker evidence", "type": "text" },
+          { "field": "probe_evidence_id", "label": "Probe evidence", "type": "text" },
+          { "field": "supporting_probe_evidence_id", "label": "Supporting probe", "type": "text" },
+          { "field": "staging_result", "label": "Staging key", "type": "text" }
+        ]
+      },
+      {
+        "id": "voice_pool_summary_table",
+        "title": "Active voice registry по назначению и качеству",
+        "subtitle": "86 server-allowlisted exact-case кодов: 48 kHz имеют приоритет, 24 kHz расширяют разнообразие",
+        "dataset": "voice_pool_summary",
+        "sourceId": "voice_registry_review",
+        "defaultSort": { "field": "order", "direction": "asc" },
+        "density": "spacious",
+        "columns": [
+          { "field": "order", "label": "№", "type": "number" },
+          { "field": "group", "label": "Группа", "type": "text" },
+          { "field": "rate_48k", "label": "48 kHz", "type": "number" },
+          { "field": "rate_24k", "label": "24 kHz", "type": "number" },
+          { "field": "male", "label": "Мужских", "type": "number" },
+          { "field": "female", "label": "Женских", "type": "number" },
+          { "field": "unspecified", "label": "Пол не подтверждён", "type": "number" },
+          { "field": "policy", "label": "Политика", "type": "text" }
+        ]
+      }
+    ],
+    "blocks": [
+      {
+        "id": "title",
+        "type": "markdown",
+        "body": "# Narra: план безопасного релиза и аналитики\n\n**Обновлено:** 23 июля 2026 · **Статус:** gateway и stats staging обновлены exact commit `2fda2f7`; Narra stats-модуль и monitoring активны в production Traction; общая карточка Traction v0.6 показывает шесть canonical-слотов; production hostname намеренно отвечает `503 not_ready`; server-side allowlist расширен до 86 проверенных голосов (16 × 48 kHz + 70 × 24 kHz), причём probe-only варианты исключены из автоназначения; публичный клиентский релиз ждёт installation registry, защищённый video transport, local notarization credentials и production cutover.\n\n**Внутренний рабочий документ:** перед внешней публикацией удалить имена владельцев, Apple Team ID, инфраструктурный IP и DNS verification data."
+      },
+      {
+        "id": "technical_summary",
+        "type": "markdown",
+          "body": "## Техническое резюме\n\n- **Release foundation реализован, проверен и staging gateway обновлён.** Gateway v2, server-side routing, hardening, telemetry/outbox и stats-narra покрыты тестами; Railway staging работает на exact deploy `2fda2f7`.\n- **Шесть canonical-слотов уже live в Traction v0.6.** Stats корректно возвращает `Ever used`, `DAU`, `WAU`, `MAU` и опускает неделимые ratios при `DAU = 0`; hub всё равно рисует `Sessions / DAU` и `Tools / DAU` как `—`.\n- **Monitoring доменов и критических ручек live.** Четыре fixed-target HTTPS probe дают state, status, latency, TLS expiry, availability/coverage/p95 за 1h/24h/7d и 30-дневную историю без сохранения response bodies. Post-deploy обнаружил отдельный timeout маршрута i167→Railway staging при нормальном ответе из пользовательской сети, поэтому нужен внешний multi-region check.\n- **Essential telemetry всегда включена; opt-out отключает только extended.** Целевой enum `origin=user|background` исключает фоновые jobs из activity/session/Tools; его реализация остаётся P0.\n- **No-invite beta — принятое целевое решение, ещё не готовый продукт.** До внешней раздачи нужны auto-enrollment/revocation, короткие bearer, quotas, cohort-token grace и global budget.\n- **Быстрый first-audio — целевой pipeline, ещё не реализованный.** План: bootstrap 600–900 символов, первый audio segment 150–300 символов и остальная разметка параллельно; один prefetch проверяется benchmark.\n- **Mixed voice registry и versioned TTS cache реализованы.** Gateway закрывает 86 проверенных base codes, сам выбирает `_24000/_48000`, а cache v3 включает voice и фактический sample rate. 48 kHz остаются первыми в auto-pool; probe-only 24 kHz голоса доступны только вручную до продуктового review.\n- **Plaintext video остаётся только внутренним staging.** Server-to-server скрывает ключи от клиента, но не даёт confidentiality; Caddy на `i46` без HTTPS/tunnel до origin не закрывает последний plaintext hop.\n- **Local release path соответствует политике credentials.** Hosted CI делает только manual unsigned preflight; подпись/notarization и draft upload выполняются локально. Signed артефакт ещё не собран.\n- **Исторического backfill нет.** Narra ещё не релизнута: аналитика начинается с чистой даты cutover."
+      },
+      {
+        "id": "decisions_heading",
+        "type": "markdown",
+        "body": "## Базовые решения уже приняты\n\nНиже отделены решения, которые уже реализованы, от оставшихся production release gates. Railway и Traction доступ больше не являются блокерами."
+      },
+      { "id": "decisions", "type": "table", "tableId": "decisions_table" },
+      {
+        "id": "brand",
+        "type": "markdown",
+        "body": "## Логотип уже вынесен в оба репозитория\n\nГотовый знак **«ночное чтение»** сохранён как `assets/narra.svg` в Narra и `hub/logos/narra.svg` в Traction. Он уже используется активной production-карточкой Narra; перерисовка и новый бренд-ассет не нужны."
+      },
+      {
+        "id": "architecture_heading",
+        "type": "markdown",
+      "body": "## Целевая архитектура: один защищённый вход, раздельные контуры\n\n```text\nElectron Narra\n  ├─ локальные книги, заметки и медиа-кэш остаются на устройстве\n  ├─ priority bounded event queue ────────────────┐\n  └─ AI-запросы + per-install token ──────────────┤\n                                                  ▼\n                                  Narra Gateway (Railway)\n                    ┌───────────────┼───────────────┬───────────────┐\n                    ▼               ▼               ▼               ▼\n             Giga / LiteLLM    OpenRouter      SaluteSpeech   Kandinsky / Video\n                    └───────────────┬───────────────┴───────────────┘\n                                    ▼\n                 Rotated JSONL audit + segmented outbox (/data)\n                                    ▼\n                     stats-narra /events → Traction hub\n```\n\nMixed 48/24 kHz registry из 86 голосов и миграция legacy voice IDs уже реализованы. Целевой post-import pipeline дополнительно должен подготовить book-level assistant/child voice plan, bootstrap первой главы, cover и 2–3 основных portraits; audio остаётся on-demand. Эти bootstrap/voice-plan изменения ещё не реализованы.\n\nTraction token уже хранится только на gateway. Auto-enrolled revocable installation record, короткий bearer и quota checks — обязательный P0 до внешней no-invite beta."
+      },
+      { "id": "architecture", "type": "table", "tableId": "architecture_table" },
+      {
+        "id": "providers_heading",
+        "type": "markdown",
+        "body": "## OpenRouter не заменяет Giga — он делает маршрутизацию управляемой\n\nМаршрутизация полностью серверная: клиент передаёт только назначение запроса (`purpose`), но не провайдера и не модель. Конкретные модели уже задаются конфигурацией staging gateway и могут меняться без пересборки клиента. Один `request_id` соответствует намерению пользователя; retry, fallback и обращения к разным провайдерам получают отдельные `attempt_id`. Это позволяет отличить «пользователь получил ответ» от «одна из технических попыток упала»."
+      },
+      { "id": "providers", "type": "table", "tableId": "provider_matrix_table" },
+      {
+        "id": "canonical_heading",
+        "type": "markdown",
+        "body": "## В Overview Traction попадают ровно шесть сравнимых метрик\n\nКанонический слой не принимает произвольные красивые KPI. Для Narra actor — одна псевдонимная установка, session — квалифицированная продуктовая сессия, tool — одно пользовательское AI-намерение. Provider retries в Tools / DAU не входят."
+      },
+      { "id": "canonical", "type": "table", "tableId": "canonical_metrics_table" },
+      {
+        "id": "dashboard_heading",
+        "type": "markdown",
+          "body": "## Вкладка Narra наследует сильные решения AIWA, но не её исторические костыли\n\nПереносим итоговый тюнинг AIWA: определения по hover/focus, человекочитаемые секунды, сворачиваемые диагностические блоки, отдельные logical requests и provider attempts, input/output/total tokens, exact cost только с source/currency/coverage, fallback/error guardrails, provider/model разрезы, зрелые когорты retention. Request success строится от started request: свежие pending ждут grace window, overdue входят в знаменатель, orphan terminal события исключаются, outcome coverage виден. Attempts/request использует только attempts, matched к request cohort; event-window provider/model таблицы отдельно показывают техническую нагрузку и boundary/unmatched attempts. Для спорной `Tools` явно показываем выбранную Overview-формулу и пять альтернатив, а 10 эксплуатационных диагностик держим отдельно от KPI. Не переносим `mixed/reconstructed`, legacy migration и dual-write: для нерелизнутой Narra они не нужны."
+      },
+      { "id": "narra_dashboard", "type": "table", "tableId": "narra_dashboard_table" },
+      {
+        "id": "events_heading",
+        "type": "markdown",
+        "body": "## События проектируются от решений, а не от каждого клика\n\nВ gateway уходит только allowlist. Любое новое поле считается запрещённым, пока явно не добавлено в схему и тест приватности. Тексты книг и общения нужны провайдерам для выполнения конкретной функции, но никогда не становятся аналитическими properties."
+      },
+      { "id": "events", "type": "table", "tableId": "events_table" },
+      {
+        "id": "instrumentation",
+        "type": "markdown",
+        "body": "## Что значит «инструментировать оставшиеся import/media события»\n\nЭто значит добавить безопасные события, по которым видно, где пользователь ждёт или получает ошибку: `book_import_started/completed/failed`, `book_analysis_started/completed/failed`, `media_job_enqueued/started/completed/failed/cancelled`, `tts_first_audio_ready`, `tts_playback_started/abandoned`. **Все эти события относятся к Extended** и перестают отправляться после opt-out. Их свойства — только закрытые enum и coarse buckets: тип job, стадия, безопасный error code, cache hit, диапазон размера/времени/очереди. Названия книг и героев, URL, имена файлов, текст, prompt/response, transcript и media запрещены.\n\nGateway независимо хранит always-on агрегаты без installation actor: queue depth, active jobs, latency histogram, saturation и provider error code. Это эксплуатационные счётчики, а не пользовательские Traction events."
+      },
+      {
+        "id": "operational_monitoring",
+        "type": "markdown",
+        "body": "## Traction отдельно наблюдает домены и критические ручки\n\nNarra stats раз в минуту параллельно проверяет четыре fixed-target HTTPS endpoint: production gateway `/health`, staging gateway `/ready`, production analytics `/p/narra/health` и staging analytics `/health`. Dashboard показывает `up/degraded/standby/down`, HTTP status, latency, TLS expiry, availability, scheduled-probe coverage и p95 за 1h/24h/7d. Пропущенные проверки уменьшают availability: свежий probe после простоя не маскирует неизвестный период как `100% uptime`. Reviewed production `503 not_ready` считается `standby`, а не outage.\n\nURL нельзя передать через request; redirects запрещены; response body ограничен 64 KiB, используется только для contract check и не сохраняется. DNS-ответы проверяются на public IP, TLS закрепляется за проверенным адресом с hostname/SNI verification, а каждый probe выполняется в disposable process с абсолютным deadline и terminate. SQLite хранит лишь coarse result 30 дней. Production deploy использует remote flock, повторный version/hash CAS, app+unit rollback и recovery-only online DB backup. Это не заменяет внешний UptimeRobot: при падении самого stats внутренний monitor тоже исчезнет."
+      },
+    {
+      "id": "capacity",
+      "type": "markdown",
+      "body": "## Оценка пропускной способности — расчёт, а не обещание\n\n**Факты из кода:** video выполняется одним глобальным последовательным worker; одновременно admitted максимум четыре задачи вместе с активной, поэтому при десяти запросах четыре принимаются, шесть сразу получают `429`. Одна server-side video попытка может длиться до **480 секунд**, возможно до трёх попыток плюс retry delays; клиент ждёт весь запрос не более **540 секунд** и может уйти раньше завершения server chain. Kandinsky image тоже сериализован. SaluteSpeech для `SALUTE_SPEECH_PERS` жёстко ограничен пятью streams.\n\n**Расчёт:** при одном video-слоте throughput приблизительно равен `60 минут / средняя длительность job`. Предыдущие 7–20 jobs/hour предполагали 3–8 минут и были оптимистичны. При описанных Соней 10–15 мин реальный ориентир — 4–6 jobs/hour; десятый пользователь в идеальной durable queue ждёт примерно 100–150 минут.\n\n**Как заменить оценку данными:** benchmark `1 → 2 → 5 → 10` измеряет queue wait, provider service time, end-to-end p50/p95, `429`, timeout/cancel, cache hit, jobs/hour, restart recovery и fairness. Durable queue делает ожидание управляемым, но не увеличивает GPU throughput."
+    },
+    {
+      "id": "tts_markup_speed",
+      "type": "markdown",
+      "sourceId": "narra_release_candidate_worktree",
+      "body": "## Разметку главы и первый звук можно заметно ускорить\n\nСейчас глава режется примерно по 1 500 символов, каждый фрагмент идёт в LLM строго последовательно, а TTS ждёт весь результат. Целевой, ещё не реализованный путь: 600–900-char bootstrap после импорта; 150–300-char first-audio по нажатию; остаток по 3–5 тысяч символов до трёх LLM jobs параллельно.\n\nОдинаковые jobs coalesce; background job получает интерактивный приоритет. Ответ возвращает sentence IDs/speaker/emotion, а cache key включает text hash, markup/model/voice-plan и для audio — voice/48 kHz/prosody. Начинаем с одного prefetch, но его достаточность является acceptance criterion: concurrent end-to-end benchmark должен подтвердить underrun rate и p95 buffer headroom.\n\nЗакрытый enum `origin=user|background` также ещё нужно добавить в allowlist. Только `user` может входить в activity/session/Tools; background actor diagnostics — Extended. Ориентир полной разметки **2–4×** остаётся оценкой до benchmark."
+    },
+      {
+        "id": "tts_quality_heading",
+        "type": "markdown",
+        "sourceId": "salutespeech_staging_benchmark",
+        "body": "## 48 kHz остаётся приоритетом, 24 kHz даёт нужное разнообразие\n\nProvider UI и API вместе подтвердили exact assistant mapping: `Che→Афина`, `She→Сбер`, `Erm→Джой`. Медианная задержка 48 kHz выросла примерно на 11%, средняя — примерно на 30% из-за run 4 = 3 877 мс, а WAV стал почти вдвое больше. Поэтому 48 kHz сохраняется для assistant и первых обычных ролей, а технически проверенные 24 kHz голоса расширяют последующие роли. Gateway сам добавляет `_24000/_48000` и принимает только закрытый base-code allowlist.\n\nActive registry содержит 86 голосов: 16 × 48 kHz и 70 × 24 kHz. По ролям: assistants 1 мужской + 2 женских; обычные второстепенные 26 + 16; детские 3 + 4; manual-only 2 мужских + 32 пока без подтверждённого пола. Все 70 добавленных 24 kHz codes есть в сохранённом staging probe и вернули реальный WAV 24 kHz. Cache v3 включает фактический sample rate; один voice ID не меняет качество посреди книги.\n\nВсе 188 первичных probe rows сохранены в bounded snapshot и immutable CSV SHA-256 `30fee1f...51bcc`. `Efo→Фокин` остаётся исключён. `Kov/Aso/Pik/Roz/Voy` и другие probe-only варианты доступны только вручную, пока пол/назначение не утверждены."
+    },
+    { "id": "tts_quality_benchmark", "type": "table", "tableId": "tts_quality_benchmark_table" },
+      {
+        "id": "voice_registry_heading",
+        "type": "markdown",
+        "sourceId": "voice_registry_review",
+        "body": "## Picker mapping и технический probe закрыты\n\nДля Стерлинга используется рабочий 48 kHz `Ast`, а не неработающий `Gst`. Детский pool расширен до 3 мужских и 4 женских вариантов; Сафронова остаётся приоритетом для девочек/сказочного жанра. Обычный auto-pool сначала использует 5 мужских + 3 женских 48 kHz голоса, затем 21 + 13 подтверждённых 24 kHz. Ещё 32 рабочих 24 kHz варианта остаются manual-only до прослушивания и подтверждения пола. Художественное прослушивание Сони остаётся beta gate, но произвольный или неизвестный по полу голос в автоматику не попадает."
+      },
+      { "id": "voice_registry", "type": "table", "tableId": "voice_registry_table" },
+      { "id": "voice_pool_summary", "type": "table", "tableId": "voice_pool_summary_table" },
+      {
+        "id": "transport_workaround",
+        "type": "markdown",
+        "body": "## Workaround без HTTPS-туннеля\n\n### LiteLLM\n\nДо защищённого транспорта все LLM purposes идут через OpenRouter по HTTPS. Staging использует `deepseek/deepseek-v4-flash`; Giga adapter `gigachat-3-ultra` остаётся server-side и возвращается без пересборки клиента после защищённого endpoint.\n\n### Video\n\n`клиент → HTTPS Railway → HTTP <video-origin>` скрывает master credential от клиента, но второй hop остаётся plaintext. HMAC/allowlist ограничивают replay/tampering, но не дают confidentiality. Поэтому HTTP разрешён только внутреннему staging с контролируемыми test data; внешняя no-invite beta ждёт HTTPS edge relay рядом с video host либо приватный tunnel.\n\n### Поддомены и `i46`\n\n`narra-staging.multitool.works` направлен в Railway staging и отвечает 200. `narra.multitool.works` смотрит на отдельный server `158.160.163.167` и намеренно отвечает JSON 503 без reverse proxy. Read-only аудит `i46` (`167.233.103.46`) показал: 80/443 уже заняты Docker Caddy `bizzy-radio-caddy-1`, который обслуживает Bizzy Radio и Gigagochi. Второй proxy ставить нельзя. Новый exact-host можно добавить только в существующий `/opt/bizzy-radio/Caddyfile` через backup → validate → reload → regression probes → rollback.\n\nCaddy на `i46`, проксирующий публичный HTTP `87.242.117.37:5051`, не делает последний hop шифрованным. Безопасный production-вариант требует HTTPS на video origin или WireGuard/SSH tunnel `origin → i46`; на `i46` пока ничего не менялось."
+    },
+    {
+      "id": "client_credentials_access",
+      "type": "markdown",
+      "body": "## Ключи и доступ к beta\n\nProvider credentials хранятся только как Railway secrets. Сейчас клиент содержит извлекаемый общий activation token, gateway выдаёт 30-дневный stateless bearer, а одну установку отозвать нельзя. Поэтому текущая сборка ещё не готова к внешней no-invite beta.\n\nЦелевой P0: автоматическая installation record без аккаунта; registration IP/velocity/global limits; bearer TTL в часах; status/token_version/per-install quota/global budget checks; revocation и circuit breaker. Cohort tokens хранятся hashed и версионируются: новая и предыдущая версии действуют в grace window не короче bearer TTL + update window; старая отключается после adoption gate либо emergency revoke.\n\nUX после реализации остаётся «скачал — запустил», без приглашений и PII. Provider keys в приложение не попадают."
+    },
+      {
+        "id": "release_preparation",
+        "type": "markdown",
+        "body": "## Installation registry, update-feed и Apple: что требуется\n\n### Открытая beta без приглашений\n\nПланируемый SQLite registry хранит `installation_id/status/quota/issued_at/last_seen_at/token_version`; он ещё не реализован и является P0. После реализации пользователь ничего не вводит, а revocation/quota/budget ограничивают abuse.\n\n### HTTPS update-feed\n\nПубличный feed — `latest-mac.yml`, universal ZIP и blockmap. Первый release проходит internal lower-version upgrade, затем краткую публикацию и immediate updater canary до внешней раздачи; со второго релиза нужен отдельный RC-feed.\n\n### Apple credentials\n\nHosted workflow теперь только manual unsigned preflight с `contents: read` и без Apple secrets. Локальный `npm run release:local -- vX.Y.Z` использует Keychain identity `Developer ID Application: Evgeny Tsapnikov (LTS79DWRGJ)`, локальный `APPLE_KEYCHAIN_PROFILE` либо Team API key, выполняет tests/sign/notarize/staple/Gatekeeper/checksums/SBOM и только затем загружает готовые assets в draft GitHub Release. Credential material не покидает Mac. Signed/notarized артефакт ещё не собран."
+      },
+      {
+        "id": "production_cutover",
+        "type": "markdown",
+        "body": "## Что такое отдельно проверяемое переключение production gateway\n\nNarra ещё не релизнута, поэтому это не миграция legacy-пользователей. Cutover — один контролируемый выпуск нового production service из reviewed commit: отдельные Volume/secrets, чистая analytics DB, production Traction token, `/health`/`/ready`/auth/quota/provider smoke, один synthetic installation, signed клиент с production HTTPS URL и сохранённый previous deployment для rollback. Только после этого публикуется GitHub Release.\n\nОтдельный gate нужен, чтобы не раздать клиент со staging URL, тестовыми токенами, plaintext-video флагом и смешанной тестовой аналитикой. Production gateway этой работой пока не переключается."
+      },
+      {
+        "id": "security_heading",
+        "type": "markdown",
+        "body": "## Безопасность закрывается до release candidate\n\nДоверенный upstream решает вопрос владельца сервиса, но не защищает незашифрованный канал, публичный endpoint или украденный клиентский токен. Поэтому функциональность сохраняется, а транспорт, доступ и лимиты исправляются вокруг неё."
+      },
+      { "id": "security_work", "type": "table", "tableId": "security_work_table" },
+      {
+        "id": "roadmap_heading",
+        "type": "markdown",
+        "body": "## Реализация идёт вертикальными проверяемыми срезами\n\nКаждый этап заканчивается работающим артефактом и тестами. Railway staging уже создан отдельно от production по модели AIWA; старый production gateway не используется как dev-среда и не изменялся. На графике видна относительная трудоёмкость: больше всего времени требуют клиентский security foundation, gateway и безопасная цепочка подписания/обновления; это ориентир планирования, а не обещание календарной даты."
+      },
+      { "id": "effort", "type": "chart", "chartId": "effort_chart" },
+      { "id": "roadmap", "type": "table", "tableId": "roadmap_table" },
+      {
+        "id": "release_heading",
+        "type": "markdown",
+        "body": "## Релиз не определяется фактом успешной сборки\n\nГотовность означает доказанный upgrade path, сохранность локальных данных, управляемый rollback, наблюдаемую стоимость и отсутствие чувствительного контента в аналитике."
+      },
+      { "id": "release_gates", "type": "table", "tableId": "release_gates_table" },
+      {
+        "id": "responsibilities_heading",
+        "type": "markdown",
+        "body": "## Доступ Сони закрыл Railway-часть, Apple и upstream transport ещё требуют владельцев\n\nRailway staging, отдельный stats service и Traction production-модуль уже развёрнуты. GitHub update-feed workflow подготовлен. Для signed RC владелец Apple Team должен добавить matching Developer ID/App Store Connect credentials; для public video владелец host должен дать HTTPS relay."
+      },
+      { "id": "responsibilities", "type": "table", "tableId": "responsibilities_table" },
+      {
+        "id": "methodology",
+        "type": "markdown",
+        "body": "## Как сформирован план\n\nПлан основан на read-only аудите Narra, canonical-контракте Traction и фактическом тюнинге AIWA. Метрики отбирались по четырём критериям: они отражают ценность продукта, меняют решение команды, доступны на нужной частоте и трудно улучшаются обманным способом. Для каждого rate зафиксированы actor, окно и знаменатель; для новых данных запрещён исторический zero-fill."
+      },
+      {
+        "id": "limitations",
+        "type": "markdown",
+        "body": "## Ограничения и неизвестные\n\n- Production hostname TLS готов, но gateway/cutover ещё не выполнен: 503 является ожидаемой безопасной заглушкой.\n- Plaintext video разрешён только внутреннему staging; Caddy на отдельном edge без HTTPS/tunnel до origin не устраняет риск.\n- Video 4–6 jobs/hour и ускорение полной LLM-разметки 2–4× — расчёт до load benchmark; один TTS prefetch — проверяемая гипотеза.\n- TTS 24/48 kHz измерен на одном 708-char тексте; capability probe — на одном 61-char тексте. Это техническая доступность, не оценка качества голоса.\n- Production Narra stats live и база пуста до первого клиента; live hub ещё не содержит merge, который постоянно показывает все шесть slots.\n- Assistant mapping закрыт: Che=Афина, She=Сбер, Erm=Джой. Server-side 86-voice allowlist и versioned text/voice/sample-rate/prosody cache key готовы; child assignment, narrator/manual UI и first-audio ещё P0.\n- 70 добавленных 24 kHz голосов технически работают; 38 входят в обычный/детский auto-pool по reviewed evidence, 32 оставлены manual-only до продуктового прослушивания.\n- Встроенный monitor не наблюдает падение самого stats извне; нужен отдельный UptimeRobot/аналог.\n- Intel Mac отсутствует; universal x64 packaging остаётся без install/launch smoke и фиксируется как принятый риск.\n- Matching local Apple notarization profile/API key пока не найден; signed artifact ещё не собран.\n- Формулировка «закрыть все уязвимости» недоказуема; gate покрывает известные находки и abuse-сценарии."
+      },
+      {
+        "id": "next_steps",
+        "type": "markdown",
+        "body": "## Следующие шаги после уже завершённого foundation\n\n1. **Уже выкачено:** gateway v2 staging, stats staging, 86-voice mixed registry, cache v3, production domain/endpoint monitor и Traction hub с шестью slots.\n2. Добавить обязательный `origin=user|background` allowlist/tiering и оставшиеся import/media producers; подключить внешний multi-region uptime alert, чтобы отделить service outage от маршрута i167→Railway.\n3. Доделать deterministic child assignment и UI выбора narrator/manual voice; дать Соне прослушать 24 kHz pool.\n4. Реализовать bootstrap/first-audio/parallel markup/prefetch/coalescing и подтвердить underrun/p95 benchmark.\n5. Реализовать auto-enrollment/revocation, short bearer, multi-version cohort grace и cost controls.\n6. Перед внешней beta обеспечить HTTPS на video origin либо tunnel до аккуратного edge; обычный HTTP reverse proxy на `i46` недостаточен.\n7. Получить local notarization profile/API key, собрать signed/notarized universal RC и проверить Apple Silicon; отсутствие Intel smoke зафиксировать как риск.\n8. Провести capacity benchmark, подключить новый v2 upstream к production hostname и только после gates загрузить/опубликовать release."
+      },
+      {
+        "id": "further_questions",
+        "type": "markdown",
+        "body": "## Оставшиеся внешние входы\n\n### От Макса\n- После создания нового Railway v2 production service дать его upstream для reviewed cutover; существующий `narra.multitool.works` не переносить на `i46`.\n- Дать доступ к UptimeRobot/аналогу или создать внешний monitor production analytics; production gateway monitor включить после cutover. Указать канал и задержку alert.\n- Если `i46` нужен как edge, сначала получить HTTPS на origin или разрешение WireGuard/SSH tunnel; затем выбрать отдельные DNS-имена и maintenance window для validate/reload/regression probes существующего Caddy.\n- Согласовать локальный Apple Team Жени notarization path; key material не получать и не передавать в чат/репозиторий.\n- Задать бюджет/окно benchmark `1 → 2 → 5 → 10`; подтвердить mixed 48/24 kHz policy; отсутствие Intel smoke уже принято как риск; уточнить отдельный Android scope.\n\n### От Сони\n- Утвердить fallback для `Sber narrator + male protagonist` и прослушать mixed registry: assistants 1+2, обычные второстепенные 26+16, детские 3+4. Отдельно классифицировать либо оставить manual-only 32 probe-only голоса.\n- Подтвердить portrait preload count и допустимость 24 kHz второстепенным героям при 48 kHz приоритете для первых ролей.\n\n### От владельца video host\n- Поставить HTTPS рядом с `<video-origin>:5051` либо разрешить tunnel до `i46`; самому записать отдельный Narra credential в Railway secret/secret manager и подтвердить concurrency, queue, runtime, rate-limit и cost.\n\n### От владельца LiteLLM/Giga\n- Дать управляемый HTTPS origin либо разрешить private tunnel, подтвердить модели/rate limits/timeouts/fallback. API key записать в Railway самостоятельно, не передавать в чат.\n\n### От владельца Apple Team\n- Разрешить `com.narra.app` под Team `LTS79DWRGJ`, самостоятельно сохранить credentials на release Mac через `notarytool store-credentials` и сообщить только имя `APPLE_KEYCHAIN_PROFILE`; key material не передаётся."
+      }
+    ]
+  },
+  "snapshot": {
+    "version": 1,
+    "generatedAt": "2026-07-23T20:15:00+03:00",
+    "status": "ready",
+    "datasets": {
+      "decisions": [
+        { "order": 1, "area": "Статус продукта", "decision": "Проект ещё не релизнут", "consequence": "Нет backfill, reconstructed-слоя и миграции старой продуктовой статистики" },
+        { "order": 2, "area": "Видео", "decision": "Kandinsky video — проверенный сервис Сбера; текущий адрес только HTTP", "consequence": "Функцию сохраняем; staging требует явного risk flag, censor=true, auth/queue/timeout/telemetry; public release ждёт HTTPS/туннель" },
+        { "order": 3, "area": "LLM", "decision": "Текущий LiteLLM — сервис команды, но доступен только по public HTTP", "consequence": "Адаптер сохраняем, но не передаём ключи/контент до HTTPS или private tunnel; staging явно all-OpenRouter" },
+        { "order": 4, "area": "Провайдеры", "decision": "OpenRouter сейчас безопасный staging primary; Giga возвращается после защищённого транспорта", "consequence": "Provider abstraction и server-side routing сохраняются без скрытого TLS downgrade" },
+        { "order": 5, "area": "Railway", "decision": "Gateway и stats staging изолированы; production gateway остаётся старым", "consequence": "Отдельные domains, secrets, databases и Volumes; analytics delivery/restart/dedupe проверены, production cutover остаётся отдельным gate" },
+        { "order": 6, "area": "Аналитика", "decision": "Минимальная всегда включена; расширенная default-on с opt-out", "consequence": "Выключение удаляет из очереди только расширенные события; canonical/service telemetry и строгий запрет контента сохраняются" },
+        { "order": 7, "area": "Маршрутизация", "decision": "Полностью серверная", "consequence": "Клиент передаёт purpose, но не выбирает provider/model; переключение не требует пересборки" },
+        { "order": 8, "area": "macOS", "decision": "Universal build", "consequence": "Один подписанный/notarized релиз для arm64 и x64, проверяемый на обеих архитектурах" },
+        { "order": 9, "area": "API cutover", "decision": "Legacy endpoint не поддерживается", "consequence": "Клиент и gateway переходят на v2 синхронно до первого внешнего релиза" },
+        { "order": 10, "area": "Traction", "decision": "Narra активна в production hub с найденным логотипом", "consequence": "Loopback stats service, Caddy Basic Auth, public health/tokened ingest и poller cache прошли live smoke" },
+        { "order": 11, "area": "Staging credentials", "decision": "Отдельных upstream staging keys не будет", "consequence": "Копируются только конкретные credentials без раскрытия; unsafe public HTTP URLs и Giga fallbacks не копируются; Narra/Traction secrets, environment и данные отдельные" },
+        { "order": 12, "area": "Apple", "decision": "Подписывать локально Developer ID Жени — Evgeny Tsapnikov (LTS79DWRGJ)", "consequence": "Credentials не выгружаются; для notarization нужен локальный matching Team API key/profile и разрешение на com.narra.app" },
+        { "order": 13, "area": "Beta-доступ", "decision": "Цель: без приглашений и аккаунтов", "consequence": "Auto-enrollment registry, short bearer, revocation, multi-token grace, quotas и global budget обязательны до внешней раздачи" },
+        { "order": 14, "area": "SaluteSpeech", "decision": "Закрытый registry из 16 проверенных 48 kHz голосов; Efo/Kov исключены", "consequence": "Che=Афина, She=Сбер, Erm=Джой; gateway сам выбирает suffix; versioned cache key готов; 84-code 24 kHz pool и first-audio ждут следующих этапов" },
+        { "order": 15, "area": "Production DNS/TLS", "decision": "Hostname зарезервирован fail-closed Caddy block", "consequence": "Валидный TLS и exact JSON 503 без reverse proxy; v2 upstream подключается только отдельным reviewed cutover" },
+        { "order": 16, "area": "Intel QA", "decision": "Intel Mac отсутствует", "consequence": "Universal x64 артефакт продолжаем собирать; отсутствие install/launch smoke принято как явный release risk" }
+      ],
+      "tts_quality_benchmark": [
+        { "sample_rate_hz": 24000, "quality": "24 kHz", "provider_code": "Erm_24000", "runs": 5, "chars": 708, "avg_ms": 2023, "median_ms": 1960, "avg_wav_bytes": 2250092, "avg_wav_mb": 2.25, "success": "5/5 HTTP 200" },
+        { "sample_rate_hz": 48000, "quality": "48 kHz", "provider_code": "Erm_48000", "runs": 5, "chars": 708, "avg_ms": 2625, "median_ms": 2179, "avg_wav_bytes": 4429484, "avg_wav_mb": 4.43, "success": "5/5 HTTP 200" }
+      ],
+      "tts_quality_runs": [
+        { "sample_rate_hz": 24000, "provider_code": "Erm_24000", "run": 1, "latency_ms": 2095 },
+        { "sample_rate_hz": 24000, "provider_code": "Erm_24000", "run": 2, "latency_ms": 1922 },
+        { "sample_rate_hz": 24000, "provider_code": "Erm_24000", "run": 3, "latency_ms": 2199 },
+        { "sample_rate_hz": 24000, "provider_code": "Erm_24000", "run": 4, "latency_ms": 1939 },
+        { "sample_rate_hz": 24000, "provider_code": "Erm_24000", "run": 5, "latency_ms": 1960 },
+        { "sample_rate_hz": 48000, "provider_code": "Erm_48000", "run": 1, "latency_ms": 2162 },
+        { "sample_rate_hz": 48000, "provider_code": "Erm_48000", "run": 2, "latency_ms": 2792 },
+        { "sample_rate_hz": 48000, "provider_code": "Erm_48000", "run": 3, "latency_ms": 2179 },
+        { "sample_rate_hz": 48000, "provider_code": "Erm_48000", "run": 4, "latency_ms": 3877 },
+        { "sample_rate_hz": 48000, "provider_code": "Erm_48000", "run": 5, "latency_ms": 2117 }
+      ],
+      "voice_screenshot_evidence": [
+        { "evidence_id": "picker-assistants", "filename": "codex-clipboard-230697c9-e53e-42f8-b769-00c05e1af0c9.png", "sha256": "49c336d8ac9baada299d424a6bf17f46b7dbe5cd9e0b3b59386defb4ddb3520f", "captured_at": "2026-07-23", "observed_mappings": "Che→Афина; She→Сбер; Erm→Джой" },
+        { "evidence_id": "picker-joy-prior", "filename": "codex-clipboard-89c4cbce-48ef-4700-b0f2-14f973e0f8d3.png", "sha256": "b575951438fcc61f9ea382d493129193af027a35cbb992e076b4baa4c141d44a", "captured_at": "2026-07-23", "observed_mappings": "Erm→Джой; Gal→Галустян; Saf→Сафронова; Ast→Стерлинг; Boc→Бочаров; Kha→Хачатрян; Kud→Кудряшова; Ste→Стемпаржевская" },
+        { "evidence_id": "picker-154536", "filename": "Снимок экрана 2026-07-23 в 15.45.36.png", "sha256": "8c3df36b7dc94bb0bb837e688f45d6e70a2e646040b025225b6626b975363000", "captured_at": "2026-07-23T15:45:36+03:00", "observed_mappings": "Pik→Голос для ПИК; Gal→Галустян; Saf→Сафронова; Ast→Стерлинг; Boc→Бочаров; Kha→Хачатрян; Kud→Кудряшова; Ste→Стемпаржевская; Tso→Цокаева" },
+        { "evidence_id": "picker-154545", "filename": "Снимок экрана 2026-07-23 в 15.45.45.png", "sha256": "f47065bee0eb48dd3194d19a85d5c1a499a162342bccdda51bfc9bc14ccc1d31", "captured_at": "2026-07-23T15:45:45+03:00", "observed_mappings": "Tso→Цокаева; Gst→Стерлинг; Bez→Безлепкин; Ego→Егоров; Mar→Марков; Efo→Фокин" },
+        { "evidence_id": "picker-154552", "filename": "Снимок экрана 2026-07-23 в 15.45.52.png", "sha256": "032d58d7b79ab540198e4c587cc37640a5b79981ec36b1fc81c8173e5fbf661e", "captured_at": "2026-07-23T15:45:52+03:00", "observed_mappings": "Izv→Изволов; Chr→Чернышова; Bsa→Сафронова сказки" },
+        { "evidence_id": "picker-154559", "filename": "Снимок экрана 2026-07-23 в 15.45.59.png", "sha256": "14157e7c5e64bda6cbaf4ac1b94461790dad464853d02fe39d2adb842cbb7596", "captured_at": "2026-07-23T15:45:59+03:00", "observed_mappings": "Buz→Бузинова; Evi→Стемпаржевская злая; Hek→Хачатрян герой; Kkr→kid Кравченко; Ksa→kid Сафронов; Kka→kid Кравченко А; Kbu→kid Бугаевская; Ktr→kid Трегубов; Koz→kid Озолина; Roz→Розен" },
+        { "evidence_id": "picker-154604", "filename": "Снимок экрана 2026-07-23 в 15.46.04.png", "sha256": "9b9024bb269d89a6d6924736c8ea7c60053b86c4fed337d35ae81f4bee4193d3", "captured_at": "2026-07-23T15:46:04+03:00", "observed_mappings": "Sdo→Сдобников; Smi→Смирнова; Str→Стрельцов; Uso→Усольцев; Ved→Веденина; Vol→Волчков; Dad→Дадаева; Dsu→Сухоручкин; Dyu→Дюрягина" },
+        { "evidence_id": "picker-154610", "filename": "Снимок экрана 2026-07-23 в 15.46.10.png", "sha256": "c471840ef9165d2cc40cc95131dc9967bc49bd14eb276bd28c06ed092246ec5b", "captured_at": "2026-07-23T15:46:10+03:00", "observed_mappings": "Kov→Ковалев" },
+        { "evidence_id": "picker-154617", "filename": "Снимок экрана 2026-07-23 в 15.46.17.png", "sha256": "9505d9254327484cf9c3174645b464723bd9c67de71517beaee0bca449139795", "captured_at": "2026-07-23T15:46:17+03:00", "observed_mappings": "Sko→Скоробогатова; Sto→Стромецкий; Tar→Тараскин; Tya→Тян; Voy→Войтко; Vsh→Шибаева В; Aer→Ермакова; Ana→Анашкин; Chp→Чернопятов" },
+        { "evidence_id": "picker-154623", "filename": "Снимок экрана 2026-07-23 в 15.46.23.png", "sha256": "883aff2f0fe40d087c986d5084db5ce78f18c3bd5e5ac8cc6c69de4dee47c270", "captured_at": "2026-07-23T15:46:23+03:00", "observed_mappings": "Klu→Клюев; Min→Минин; Mir→Миронов; Shc→Щеголев; Sid→Сидоров; Sne→Снегирева; Sta→Старикова; Tre→Трегубов; Bal→Балутина; Bek→Бекланов" },
+        { "evidence_id": "picker-154633", "filename": "Снимок экрана 2026-07-23 в 15.46.33.png", "sha256": "4d71417e87c59e42cb16c5f0d4ea8c29b33d46a8da973ef78541c6cbda9152a1", "captured_at": "2026-07-23T15:46:33+03:00", "observed_mappings": "Kab→Кабулова; Lli→Лектор Лилипутина; Lpe→Лектор Пехшвелашвили; Mak→Макарова; Ovs→Овсянников; San→Сансараймаев; Shl→Шилин; Ann→Анненков; Aso→Сорока" },
+        { "evidence_id": "picker-154639", "filename": "Снимок экрана 2026-07-23 в 15.46.39.png", "sha256": "77b99f759ec67c847d27b729c15c6079056dec07627168a7945351c6dd95a2d3", "captured_at": "2026-07-23T15:46:39+03:00", "observed_mappings": "Kas→Пират Касперович" }
+      ],
+      "voice_probe_results": [
+        { "evidence_id": "probe-Che-48000", "batch": "initial-48k", "provider_code": "Che_48000", "sample_rate_hz": 48000, "http_status": 200, "content_type": "audio/wav", "observed_at": "2026-07-23" },
+        { "evidence_id": "probe-She-48000", "batch": "initial-48k", "provider_code": "She_48000", "sample_rate_hz": 48000, "http_status": 200, "content_type": "audio/wav", "observed_at": "2026-07-23" },
+        { "evidence_id": "probe-Erm-48000", "batch": "initial-48k", "provider_code": "Erm_48000", "sample_rate_hz": 48000, "http_status": 200, "content_type": "audio/wav", "observed_at": "2026-07-23" },
+        { "evidence_id": "probe-Gal-48000", "batch": "initial-48k", "provider_code": "Gal_48000", "sample_rate_hz": 48000, "http_status": 200, "content_type": "audio/wav", "observed_at": "2026-07-23" },
+        { "evidence_id": "probe-Ast-48000", "batch": "initial-48k", "provider_code": "Ast_48000", "sample_rate_hz": 48000, "http_status": 200, "content_type": "audio/wav", "observed_at": "2026-07-23" },
+        { "evidence_id": "probe-Ste-48000", "batch": "initial-48k", "provider_code": "Ste_48000", "sample_rate_hz": 48000, "http_status": 200, "content_type": "audio/wav", "observed_at": "2026-07-23" },
+        { "evidence_id": "probe-Tso-48000", "batch": "initial-48k", "provider_code": "Tso_48000", "sample_rate_hz": 48000, "http_status": 200, "content_type": "audio/wav", "observed_at": "2026-07-23" },
+        { "evidence_id": "probe-Bez-48000", "batch": "initial-48k", "provider_code": "Bez_48000", "sample_rate_hz": 48000, "http_status": 200, "content_type": "audio/wav", "observed_at": "2026-07-23" },
+        { "evidence_id": "probe-Ego-48000", "batch": "initial-48k", "provider_code": "Ego_48000", "sample_rate_hz": 48000, "http_status": 200, "content_type": "audio/wav", "observed_at": "2026-07-23" },
+        { "evidence_id": "probe-Izv-48000", "batch": "initial-48k", "provider_code": "Izv_48000", "sample_rate_hz": 48000, "http_status": 200, "content_type": "audio/wav", "observed_at": "2026-07-23" },
+        { "evidence_id": "probe-Chr-48000", "batch": "initial-48k", "provider_code": "Chr_48000", "sample_rate_hz": 48000, "http_status": 200, "content_type": "audio/wav", "observed_at": "2026-07-23" },
+        { "evidence_id": "probe-Saf-48000", "batch": "initial-48k", "provider_code": "Saf_48000", "sample_rate_hz": 48000, "http_status": 200, "content_type": "audio/wav", "observed_at": "2026-07-23" },
+        { "evidence_id": "probe-Ksa-48000", "batch": "initial-48k", "provider_code": "Ksa_48000", "sample_rate_hz": 48000, "http_status": 200, "content_type": "audio/wav", "observed_at": "2026-07-23" },
+        { "evidence_id": "probe-Bsa-48000", "batch": "initial-48k", "provider_code": "Bsa_48000", "sample_rate_hz": 48000, "http_status": 200, "content_type": "audio/wav", "observed_at": "2026-07-23" },
+        { "evidence_id": "probe-Mar-48000", "batch": "initial-48k", "provider_code": "Mar_48000", "sample_rate_hz": 48000, "http_status": 200, "content_type": "audio/wav", "observed_at": "2026-07-23" },
+        { "evidence_id": "probe-Kas-48000", "batch": "initial-48k", "provider_code": "Kas_48000", "sample_rate_hz": 48000, "http_status": 200, "content_type": "audio/wav", "observed_at": "2026-07-23" },
+        { "evidence_id": "probe-Efo-48000", "batch": "picker-followup-48k", "provider_code": "Efo_48000", "sample_rate_hz": 48000, "http_status": 400, "content_type": "application/json", "observed_at": "2026-07-23T16:25:00+03:00" },
+        { "evidence_id": "probe-Kov-48000", "batch": "picker-followup-48k", "provider_code": "Kov_48000", "sample_rate_hz": 48000, "http_status": 400, "content_type": "application/json", "observed_at": "2026-07-23T16:25:00+03:00" },
+        { "evidence_id": "probe-Gst-48000", "batch": "picker-followup-48k", "provider_code": "Gst_48000", "sample_rate_hz": 48000, "http_status": 400, "content_type": "application/json", "observed_at": "2026-07-23T16:25:00+03:00" },
+        { "evidence_id": "probe-Pik-48000", "batch": "picker-followup-48k", "provider_code": "Pik_48000", "sample_rate_hz": 48000, "http_status": 400, "content_type": "application/json", "observed_at": "2026-07-23T16:25:00+03:00" },
+        { "evidence_id": "probe-Boc-48000", "batch": "picker-followup-48k", "provider_code": "Boc_48000", "sample_rate_hz": 48000, "http_status": 400, "content_type": "application/json", "observed_at": "2026-07-23T16:25:00+03:00" },
+        { "evidence_id": "probe-Kha-48000", "batch": "picker-followup-48k", "provider_code": "Kha_48000", "sample_rate_hz": 48000, "http_status": 400, "content_type": "application/json", "observed_at": "2026-07-23T16:25:00+03:00" },
+        { "evidence_id": "probe-Kud-48000", "batch": "picker-followup-48k", "provider_code": "Kud_48000", "sample_rate_hz": 48000, "http_status": 400, "content_type": "application/json", "observed_at": "2026-07-23T16:25:00+03:00" },
+        { "evidence_id": "probe-Efo-24000", "batch": "gateway-followup-24k", "provider_code": "Efo_24000", "sample_rate_hz": 24000, "http_status": 502, "content_type": "application/json", "observed_at": "2026-07-23T16:29:00+03:00" },
+        { "evidence_id": "probe-Kov-24000", "batch": "gateway-followup-24k", "provider_code": "Kov_24000", "sample_rate_hz": 24000, "http_status": 200, "content_type": "audio/wav", "observed_at": "2026-07-23T16:29:00+03:00" },
+        { "evidence_id": "probe-all-48k-summary", "batch": "all-screenshot-codes", "provider_code": "94 exact-case base codes", "sample_rate_hz": 48000, "http_status": 200, "content_type": "16 audio/wav; 78 application/json", "observed_at": "2026-07-23T17:30:00+03:00", "result": "16/94 success; actual WAV sample rate verified 48000" },
+        { "evidence_id": "probe-all-24k-summary", "batch": "all-screenshot-codes", "provider_code": "94 exact-case base codes", "sample_rate_hz": 24000, "http_status": 200, "content_type": "84 audio/wav; 10 application/json", "observed_at": "2026-07-23T17:45:00+03:00", "result": "84/94 success; actual WAV sample rate verified 24000; failures Ast/Bsa/Efo/Evi/Gst/Hek/Lli/Lpe/Man/Vsh" }
+      ],
+      "voice_probe_raw": [
+        {"base_code":"Aer","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Aer","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Ana","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Ana","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Ann","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Ann","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Aso","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Aso","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Ast","sample_rate_hz":24000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Ast","sample_rate_hz":48000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":48000,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Bai","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Bai","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Bal","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Bal","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Bek","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Bek","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Bez","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Bez","sample_rate_hz":48000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":48000,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Bik","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Bik","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Boc","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Boc","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Bol","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Bol","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Bsa","sample_rate_hz":24000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Bsa","sample_rate_hz":48000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":48000,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Buz","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Buz","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Che","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Che","sample_rate_hz":48000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":48000,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Chp","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Chp","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Chr","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Chr","sample_rate_hz":48000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":48000,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Dad","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Dad","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Dsu","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Dsu","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Dyu","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Dyu","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Efo","sample_rate_hz":24000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Efo","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Ego","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Ego","sample_rate_hz":48000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":48000,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Erm","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Erm","sample_rate_hz":48000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":48000,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Evi","sample_rate_hz":24000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Evi","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Gal","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Gal","sample_rate_hz":48000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":48000,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Gav","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Gav","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Gri","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Gri","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Gst","sample_rate_hz":24000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Gst","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Gur","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Gur","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Hek","sample_rate_hz":24000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Hek","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Igr","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Igr","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Izv","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Izv","sample_rate_hz":48000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":48000,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Kab","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Kab","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Kai","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Kai","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Kar","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Kar","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Kas","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Kas","sample_rate_hz":48000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":48000,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Kbu","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Kbu","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Ker","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Ker","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Kha","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Kha","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Kis","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Kis","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Kka","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Kka","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Kkr","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Kkr","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Klu","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Klu","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Kor","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Kor","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Kov","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Kov","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Koz","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Koz","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Ksa","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Ksa","sample_rate_hz":48000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":48000,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Ktr","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Ktr","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Kud","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Kud","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Lil","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Lil","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Lli","sample_rate_hz":24000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Lli","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Lpe","sample_rate_hz":24000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Lpe","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Mak","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Mak","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Man","sample_rate_hz":24000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Man","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Mar","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Mar","sample_rate_hz":48000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":48000,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Mel","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Mel","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Min","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Min","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Mir","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Mir","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Nag","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Nag","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Ore","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Ore","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Ovs","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Ovs","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Peh","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Peh","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Pik","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Pik","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Pot","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Pot","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Pru","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Pru","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Rab","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Rab","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Res","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Res","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Roz","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Roz","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Rum","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Rum","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Saf","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Saf","sample_rate_hz":48000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":48000,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"San","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"San","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Sdo","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Sdo","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Shc","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Shc","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"She","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"She","sample_rate_hz":48000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":48000,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Shi","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Shi","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Shl","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Shl","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Sid","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Sid","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Sko","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Sko","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Smi","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Smi","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Sne","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Sne","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Sta","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Sta","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Ste","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Ste","sample_rate_hz":48000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":48000,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Sto","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Sto","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Str","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Str","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Tar","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Tar","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Tob","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Tob","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Tre","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Tre","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Tso","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Tso","sample_rate_hz":48000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":48000,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Tya","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Tya","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Uso","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Uso","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Ved","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Ved","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Vol","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Vol","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Voy","sample_rate_hz":24000,"http_status":200,"content_type":"audio/wav","actual_wav_rate_hz":24000,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Voy","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"},
+        {"base_code":"Vsh","sample_rate_hz":24000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-24k","observed_at":"2026-07-23"},
+        {"base_code":"Vsh","sample_rate_hz":48000,"http_status":400,"content_type":"application/json","actual_wav_rate_hz":null,"batch":"all-screenshot-codes-48k","observed_at":"2026-07-23"}
+      ],
+      "voice_registry": [
+        { "priority": 1, "product_voice": "Афина", "base_code": "Che", "assignment": "female assistant / narrator / protagonist", "picker_evidence_id": "picker-assistants", "probe_evidence_id": "probe-Che-48000", "staging_result": "48000 HTTP 200" },
+        { "priority": 2, "product_voice": "Сбер", "base_code": "She", "assignment": "male assistant / narrator / protagonist", "picker_evidence_id": "picker-assistants", "probe_evidence_id": "probe-She-48000", "staging_result": "48000 HTTP 200" },
+        { "priority": 3, "product_voice": "Джой", "base_code": "Erm", "assignment": "female assistant / narrator / protagonist", "picker_evidence_id": "picker-assistants", "probe_evidence_id": "probe-Erm-48000", "staging_result": "48000 HTTP 200" },
+        { "priority": 4, "product_voice": "Стерлинг", "base_code": "Ast", "assignment": "male library auto; Gst excluded", "picker_evidence_id": "picker-154536", "probe_evidence_id": "probe-Ast-48000", "staging_result": "48000 HTTP 200" },
+        { "priority": 5, "product_voice": "Галустян", "base_code": "Gal", "assignment": "male library auto", "picker_evidence_id": "picker-154536", "probe_evidence_id": "probe-Gal-48000", "staging_result": "48000 HTTP 200" },
+        { "priority": 6, "product_voice": "Безлепкин", "base_code": "Bez", "assignment": "male library auto", "picker_evidence_id": "picker-154545", "probe_evidence_id": "probe-Bez-48000", "staging_result": "48000 HTTP 200" },
+        { "priority": 7, "product_voice": "Егоров", "base_code": "Ego", "assignment": "male library auto", "picker_evidence_id": "picker-154545", "probe_evidence_id": "probe-Ego-48000", "staging_result": "48000 HTTP 200" },
+        { "priority": 8, "product_voice": "Изволов", "base_code": "Izv", "assignment": "male library auto", "picker_evidence_id": "picker-154552", "probe_evidence_id": "probe-Izv-48000", "staging_result": "48000 HTTP 200" },
+        { "priority": 9, "product_voice": "Стремпаржевская (picker: Стемпаржевская)", "base_code": "Ste", "assignment": "female library auto", "picker_evidence_id": "picker-154536", "probe_evidence_id": "probe-Ste-48000", "staging_result": "48000 HTTP 200" },
+        { "priority": 10, "product_voice": "Цокаева", "base_code": "Tso", "assignment": "female library auto", "picker_evidence_id": "picker-154536", "probe_evidence_id": "probe-Tso-48000", "staging_result": "48000 HTTP 200" },
+        { "priority": 11, "product_voice": "Чернышова", "base_code": "Chr", "assignment": "female library auto", "picker_evidence_id": "picker-154552", "probe_evidence_id": "probe-Chr-48000", "staging_result": "48000 HTTP 200" },
+        { "priority": 12, "product_voice": "kid Сафронов", "base_code": "Ksa", "assignment": "male child auto", "picker_evidence_id": "picker-154559", "probe_evidence_id": "probe-Ksa-48000", "staging_result": "48000 HTTP 200" },
+        { "priority": 13, "product_voice": "Сафронова", "base_code": "Saf", "assignment": "female child auto", "picker_evidence_id": "picker-154536", "probe_evidence_id": "probe-Saf-48000", "staging_result": "48000 HTTP 200" },
+        { "priority": 14, "product_voice": "Сафронова сказки", "base_code": "Bsa", "assignment": "female child / fairy-tale auto", "picker_evidence_id": "picker-154552", "probe_evidence_id": "probe-Bsa-48000", "staging_result": "48000 HTTP 200" },
+        { "priority": 15, "product_voice": "Марков", "base_code": "Mar", "assignment": "male manual-only", "picker_evidence_id": "picker-154545", "probe_evidence_id": "probe-Mar-48000", "staging_result": "48000 HTTP 200" },
+        { "priority": 16, "product_voice": "Пират Касперович", "base_code": "Kas", "assignment": "male manual-only", "picker_evidence_id": "picker-154639", "probe_evidence_id": "probe-Kas-48000", "staging_result": "48000 HTTP 200" },
+        { "priority": 17, "product_voice": "Фокин", "base_code": "Efo", "assignment": "excluded from v1", "picker_evidence_id": "picker-154545", "probe_evidence_id": "probe-Efo-48000", "supporting_probe_evidence_id": "probe-Efo-24000", "staging_result": "24000/48000 unavailable" },
+        { "priority": 18, "product_voice": "Ковалев", "base_code": "Kov", "assignment": "excluded from v1", "picker_evidence_id": "picker-154610", "probe_evidence_id": "probe-Kov-48000", "supporting_probe_evidence_id": "probe-Kov-24000", "staging_result": "24000 HTTP 200; 48000 HTTP 400" }
+      ],
+      "voice_pool_summary": [
+        { "order": 1, "group": "Главные роли / assistants", "rate_48k": 3, "rate_24k": 0, "male": 1, "female": 2, "unspecified": 0, "policy": "Narrator и главные роли; пользователь выбирает narrator" },
+        { "order": 2, "group": "Обычные второстепенные", "rate_48k": 8, "rate_24k": 34, "male": 26, "female": 16, "unspecified": 0, "policy": "Сначала 48 kHz по полу, затем только подтверждённые picker evidence 24 kHz" },
+        { "order": 3, "group": "Детские", "rate_48k": 3, "rate_24k": 4, "male": 3, "female": 4, "unspecified": 0, "policy": "Только child-rule; Сафронова приоритетна девочкам/сказкам" },
+        { "order": 4, "group": "Manual-only allowlist / пасхалки", "rate_48k": 2, "rate_24k": 32, "male": 2, "female": 0, "unspecified": 32, "policy": "Успешно синтезируются, но не участвуют в auto-assignment; UI ручной смены ещё planned" },
+        { "order": 5, "group": "Итого", "rate_48k": 16, "rate_24k": 70, "male": 32, "female": 22, "unspecified": 32, "policy": "86 exact-case кодов в server-side allowlist" }
+      ],
+      "architecture": [
+        { "order": 1, "layer": "Electron client", "owns": "UI, локальные книги/заметки/кэш, installation identity, always-on essential + default-on extended telemetry, bounded offline event queue", "never": "Не содержит provider keys/Traction token и не выбирает provider/model", "state": "Реализовано локально; unsigned universal QA пройден" },
+        { "order": 2, "layer": "Narra Gateway", "owns": "Auth, schemas, quotas, routing, request/attempt/usage telemetry, content fetch, generic update feed", "never": "Не принимает анонимные дорогие запросы и не пишет сырой контент в аналитику", "state": "Gateway v2 в Railway staging; auth/events/OpenRouter complete/SSE smoke зелёные" },
+        { "order": 3, "layer": "Provider adapters", "owns": "Giga/LiteLLM, OpenRouter ZDR/data-deny, SaluteSpeech, Kandinsky, video; единый error contract", "never": "Не определяют продуктовую активность, не получают клиентский analytics token и не обходят CENSOR retry/fallback", "state": "OpenRouter staging live; Giga blocked by public HTTP; Sber CA bundle fingerprint-verified и Sber-only; strict attempt/body/SSE semantics готовы" },
+        { "order": 4, "layer": "Railway state", "owns": "Rotated JSONL audit, bounded segmented Traction outbox/dead-letter и planned installation registry", "never": "Не хранит книги, чаты, заметки, изображения или аудио", "state": "Gateway Volume `/data` и stats delivery live; auto-enrollment/revocation остаётся release gate" },
+        { "order": 5, "layer": "stats-narra", "owns": "Traction contract, агрегаты, Narra dashboard, retention и data-quality", "never": "Не обращается к production-клиентам и не хранит provider secrets", "state": "Отдельный Railway staging и loopback production service live; databases/tokens раздельны, read/ingest auth и persistence проверены" },
+        { "order": 6, "layer": "Traction hub", "owns": "Overview, health polling, общий доступ и сравнимость продуктов", "never": "Не угадывает продуктовые определения Narra", "state": "Production slot active с логотипом; poller healthy, dashboard за Basic Auth, health public, ingest token-protected" }
+      ],
+      "provider_matrix": [
+        { "order": 1, "capability": "Персонажный чат", "primary": "OpenRouter HTTPS · deepseek/deepseek-v4-flash", "fallback": "GigaChat 3 Ultra adapter ждёт HTTPS/private LiteLLM", "measurement": "Платный OpenRouter: около $0.09/$0.18 за 1M input/output tokens на 23.07; exact usage.cost, p50/p95, coverage" },
+        { "order": 2, "capability": "Разметка, summary, structured JSON", "primary": "Все staging purposes · deepseek/deepseek-v4-flash", "fallback": "gigachat-3-ultra настроен, но не является active staging route", "measurement": "валидность JSON, attempts/request, fallback rate, exact cost/result" },
+        { "order": 3, "capability": "Портреты и сцены", "primary": "Kandinsky · k6-image-t2i", "fallback": "Только при технической ошибке; CENSOR terminal", "measurement": "Публичной цены внутреннего endpoint нет; success, censor/rate, queue wait, latency, owner quota" },
+        { "order": 4, "capability": "Говорящий аватар и idle video", "primary": "Kandinsky video · k5-i2v-hd / k5-i2v-lite", "fallback": "Без смены модели; public release ждёт HTTPS", "measurement": "Публичной цены/квоты нет; GPU service time, queue wait, jobs/hour, failures, bytes" },
+        { "order": 5, "capability": "TTS / ASR", "primary": "SaluteSpeech YourVoice 48 kHz / universal_turbo", "fallback": "Нет скрытого cross-provider fallback и нет insecure TLS", "measurement": "Corporate public tariff 0.000186 ₽/char; фактический gigacons contract уточняется; latency/success/chars" },
+        { "order": 6, "capability": "Ручной rollback", "primary": "Railway variables/feature flags", "fallback": "Мгновенный возврат маршрута без пересборки клиента", "measurement": "route version, change timestamp, error delta" }
+      ],
+      "canonical_metrics": [
+        { "order": 1, "metric": "Ever used", "narra_definition": "Distinct HMAC installation IDs, которые хотя бы раз открыли книгу; простая установка или app_open не считается", "window": "Вся история с cutover", "guardrail": "Один installation actor-space; test/staging исключены" },
+        { "order": 2, "metric": "DAU", "narra_definition": "Distinct installations с квалифицированной reading session или осмысленным продуктовым действием", "window": "Текущая дата Europe/Moscow", "guardrail": "Только origin=user; background/health/update не создают активность" },
+        { "order": 3, "metric": "WAU", "narra_definition": "Те же active actors, что в DAU", "window": "Текущая ISO-неделя Europe/Moscow", "guardrail": "Не сумма DAU; только distinct actor IDs" },
+        { "order": 4, "metric": "MAU", "narra_definition": "Те же active actors, что в DAU", "window": "Текущий календарный месяц Europe/Moscow", "guardrail": "Не рисовать периоды до начала измерения нулями" },
+        { "order": 5, "metric": "Sessions / DAU", "narra_definition": "Distinct qualified sessions текущей московской даты / DAU той же даты; новая сессия после 30 минут бездействия", "window": "Сегодня Europe/Moscow", "guardrail": "Сессия квалифицируется ≥60 с или значимым действием; denominator=0 → ключ опускается" },
+        { "order": 6, "metric": "Tools / DAU", "narra_definition": "Logical AI requests с origin=user текущей московской даты / DAU той же даты", "window": "Сегодня Europe/Moscow", "guardrail": "Background jobs и provider retry/fallback attempts не увеличивают tool count" }
+      ],
+      "narra_dashboard": [
+        { "order": 1, "section": "Audience", "metrics": "Ever used, DAU/WAU/MAU, new installations, active versions", "decision": "Есть ли реальное использование и принят ли новый релиз" },
+        { "order": 2, "section": "Activation", "metrics": "App → book available → book opened → 5 min reading → first immersive action", "decision": "Где пользователь не доходит до первой ценности" },
+        { "order": 3, "section": "Reading health", "metrics": "Qualified sessions, minutes, chapters progressed/completed, active reading days", "decision": "Narra — читаемый продукт или только AI-демо" },
+        { "order": 4, "section": "Retention", "metrics": "D1/D7/D30 rolling retention только зрелых когорт", "decision": "Возвращаются ли после первой читающей сессии" },
+        { "order": 5, "section": "Feature adoption", "metrics": "Bookmarks, notes, character cards, chat, TTS, ASR, images, video — users и share of active", "decision": "Какие immersive-функции дают глубину" },
+        { "order": 6, "section": "Imports", "metrics": "Started/succeeded/failed уже инструментированы; exact format, latency и safe size buckets нужно добавить до public release", "decision": "Какие форматы и источники мешают активации" },
+        { "order": 7, "section": "AI & reliability", "metrics": "Logical request success с grace/pending/outcome coverage, matched attempts/request, event-window provider attempts после strict body/SSE consume, boundary count, errors/fallback, p50/p95, input/output/total tokens, exact USD cost + source/coverage, provider/model tables", "decision": "Где деградируют качество, скорость и unit economics" },
+        { "order": 8, "section": "Answer quality · planned", "metrics": "Helpful/unhelpful producer и response rate ещё нужно добавить в UI; схема без текста уже закрыта", "decision": "Подтверждает ли пользователь ценность, а не только proxy" },
+        { "order": 9, "section": "Update funnel", "metrics": "Offered → downloaded → verified → installed → next launch confirmed", "decision": "Можно ли безопасно закрывать legacy client/API" },
+        { "order": 10, "section": "Data quality", "metrics": "10 diagnostics: avg DAU, sessions/events/AI/value per user-day, classification, human-readable freshness, ingest p50/p95, errors/100 user-days, request-ID coverage; outcome/token/cost coverage в AI/quality", "decision": "Каким цифрам уже можно доверять" },
+        { "order": 11, "section": "Tools definitions", "metrics": "Overview-selected logical AI requests/24h DAU + 5 alternatives: attempts/DAU, AI/actions/breadth/value per user-day", "decision": "Не подменяем продуктовый KPI техническими вызовами" }
+      ],
+      "events": [
+        { "order": 1, "group": "Lifecycle", "events": "app_opened, app_closed, update_offered/downloaded/verified/installed, app_version_seen", "safe_properties": "app_version, OS major, arch, channel, status, duration bucket", "exclude": "Имя пользователя, пути к файлам, device fingerprint" },
+        { "order": 2, "group": "Library/import · Extended", "events": "book_import_started/completed/failed, book_analysis_started/completed/failed", "safe_properties": "format, source_class, size/chapter/duration/character-count buckets, stage, safe error_code, origin=user|background", "exclude": "Название, автор, URL, имя файла, текст, prompt/response" },
+        { "order": 3, "group": "Reading", "events": "reading_session_started/qualified/ended, chapter_changed/completed", "safe_properties": "session_id, elapsed seconds, chapter position bucket, navigation type", "exclude": "Текст страницы, цитаты, заголовки глав" },
+        { "order": 4, "group": "Immersive features", "events": "bookmark_added, note_added, character_opened, chat_opened", "safe_properties": "feature, builtin/imported, success", "exclude": "Заметка, цитата, имя персонажа, контекст сцены" },
+        { "order": 5, "group": "AI request", "events": "ai_request_started/completed/failed; answer_feedback_submitted schema ready, UI producer planned", "safe_properties": "request_id, purpose, route, status, latency, safe error code, rating, origin=user|background; background actor events are Extended", "exclude": "Prompt, response, messages, memory, book excerpt" },
+        { "order": 6, "group": "Provider attempt", "events": "provider_attempt_completed/failed/not_configured", "safe_properties": "attempt event_id, request_id, provider, model, retry_index, latency, status, safe error code, origin=user|background", "exclude": "Credentials, headers, provider response body" },
+        { "order": 7, "group": "Media/playback · Extended", "events": "media_job enqueued/started/completed/failed/cancelled; tts_first_audio_ready; playback started/abandoned", "safe_properties": "Closed enums/coarse buckets: job type, provider/model, quality, cache hit, queue wait, latency, retries, size, origin=user|background", "exclude": "Audio, image, video, transcript, generation prompt, book/character names" }
+      ],
+      "security_work": [
+        { "order": 1, "priority": "P0", "area": "Gateway auth", "work": "Открытая auto-enrollment beta: короткий per-install token, registration/IP velocity limits, revocation и per-install/global quotas", "acceptance": "Дорогой endpoint без token получает 401; конкретная установка отзывается; утечка cohort token ограничена budget/circuit breaker" },
+        { "order": 2, "priority": "P0", "area": "Rate/queue limits", "work": "Ограничить RPM, concurrency, body sizes, retries и очередь отдельно для LLM/image/video/speech", "acceptance": "Один клиент не может занять все GPU/LLM slots или вызвать неограниченный расход" },
+        { "order": 3, "priority": "P0", "area": "Transport", "work": "Video HTTP только internal staging test data; до внешней no-invite beta — HTTPS relay. LiteLLM возвращается только через HTTPS/private tunnel", "acceptance": "Ни один внешний beta/public media или credential не пересекает plaintext network hop" },
+        { "order": 4, "priority": "P0", "area": "Updater", "work": "HTTPS latest-mac.yml с SHA-512, Developer-ID-signed app, notarized/stapled DMG, tag/version gate и rollback; renderer не задаёт URL", "acceptance": "Подменённый ZIP/app отвергается updater/code signature; clean install проходит Gatekeeper" },
+        { "order": 5, "priority": "P1", "area": "Import/SSRF", "work": "Повторная проверка каждого redirect, DNS/IP policy, timeout, streaming byte cap, safe content types", "acceptance": "Open redirect не достигает private/metadata addresses; oversized response не буферизуется" },
+        { "order": 6, "priority": "P1", "area": "EPUB/ZIP", "work": "Path containment, realpath/symlink checks, entry/count/ratio limits, temp cleanup", "acceptance": "Traversal, symlink escape и zip bomb fixtures безопасно отклоняются" },
+        { "order": 7, "priority": "P1", "area": "Electron", "work": "sandbox, strict CSP, validated IPC schemas, external protocol allowlist, current supported Electron, fuses", "acceptance": "Renderer compromise не даёт произвольного filesystem/shell доступа" },
+        { "order": 8, "priority": "P1", "area": "Local privacy", "work": "Полное удаление книги и связанных чатов/memory/stats/cache, delete-all, понятная telemetry setting", "acceptance": "Regression test подтверждает отсутствие orphaned sensitive records" },
+        { "order": 9, "priority": "P1", "area": "Content exposure", "work": "Закрыть team content авторизацией или убрать из публичного gateway", "acceptance": "Неавторизованный запрос к закрытому контенту не возвращает файл" },
+        { "order": 10, "priority": "P2", "area": "Supply chain/CI", "work": "Pinned dependencies, typecheck/tests, OSV/npm audit, secret scan, SBOM/checksum release artifacts", "acceptance": "Чистый reproducible build и зелёный security pipeline" }
+      ],
+      "roadmap": [
+        { "order": 0, "phase": "0 · Contract freeze", "scope": "ADR архитектуры, event schemas, privacy allowlist, provider contract, metric dictionary, threat model", "result": "Согласованные JSON schemas и acceptance tests до сетевого кода", "estimate": "0.5–1 день", "dependency": "Нет" },
+        { "order": 1, "phase": "1 · Local security foundation", "scope": "Обновление зависимостей, Electron hardening, IPC validation, import/EPUB fixes, data deletion tests", "result": "Локальная сборка и security fixtures зелёные", "estimate": "2–4 дня", "dependency": "Нет" },
+        { "order": 2, "phase": "2 · Gateway v2", "scope": "Registration/auth, quotas, bounded queues, provider adapters, request/attempt logging, readiness, structured logs", "result": "Локальный gateway выдерживает abuse/failure tests", "estimate": "2–3 дня", "dependency": "Нет" },
+        { "order": 3, "phase": "3 · OpenRouter + Giga routing", "scope": "Purpose routes, ZDR/data-deny, input/output tokens, exact cost + coverage, retry/fallback policy, staging evaluation set", "result": "OpenRouter E2E зелёный; Giga adapter готов, но fail-closed ждёт HTTPS/private tunnel LiteLLM", "estimate": "1–2 дня", "dependency": "Копировать credentials точечно; public HTTP LLM URL и Giga fallbacks исключить" },
+        { "order": 4, "phase": "4 · Analytics client/outbox", "scope": "Installation ID, priority local queue, essential/extended event tiers, rotated JSONL audit, segmented Traction outbox, extended opt-out", "result": "Offline/restart не теряют и не дублируют essential события; poison events изолируются; opt-out не отключает canonical минимум", "estimate": "1.5–2.5 дня", "dependency": "Volume нужен только для staging проверки" },
+        { "order": 5, "phase": "5 · stats-narra + Traction", "scope": "Шесть canonical KPI, 6 Tools definitions, 10 diagnostics, provider/model/token/cost quality, contract tests, logo", "result": "Production hub показывает Narra live; staging/production databases раздельны, Overview и detailed dashboard честно считаются", "estimate": "1.5–2.5 дня", "dependency": "Завершено; AIWA late tuning и live cutover учтены" },
+        { "order": 6, "phase": "6 · Safe updater and signing", "scope": "Manual unsigned CI preflight; local Keychain signing/notarization/stapling; verify/checksums/SBOM; local upload to draft Release", "result": "Clean install проходит Gatekeeper на Apple Silicon и Intel; credentials не покидают Mac", "estimate": "2–3 дня", "dependency": "Нужны local matching Team profile/API key и разрешение com.narra.app; signed artifact ещё не собран" },
+        { "order": 7, "phase": "7 · Railway staging", "scope": "Read-only prod audit, staging + /data, selected safe provider credentials, separate app/analytics secrets, HTTP-video risk flag, smoke/load/failure tests", "result": "Gateway/stats infrastructure, auth, OpenRouter, Sber media, Kandinsky/video и analytics persistence E2E зелёные; старый production gateway не изменён", "estimate": "1–2 дня", "dependency": "Завершено; public release ждёт secure LiteLLM/video transports" },
+        { "order": 8, "phase": "8 · Release and observation", "scope": "RC, update внутренних установок, version adoption, provider/cost reconciliation, rollback rehearsal", "result": "Подписанный релиз, наблюдаемый gateway и проверенный rollback", "estimate": "1–2 дня + наблюдение", "dependency": "Все release gates" }
+      ],
+      "effort": [
+        { "phase": "0 · Contract freeze", "effort_mid": 0.75, "estimate": "0.5–1 день", "dependency": "Нет" },
+        { "phase": "1 · Security foundation", "effort_mid": 3.0, "estimate": "2–4 дня", "dependency": "Нет" },
+        { "phase": "2 · Gateway v2", "effort_mid": 2.5, "estimate": "2–3 дня", "dependency": "Нет" },
+        { "phase": "3 · OpenRouter + Giga", "effort_mid": 1.5, "estimate": "1–2 дня", "dependency": "OpenRouter live; Giga ждёт secure transport" },
+        { "phase": "4 · Analytics/outbox", "effort_mid": 2.0, "estimate": "1.5–2.5 дня", "dependency": "Завершено: отдельный stats endpoint/Volume/token" },
+        { "phase": "5 · stats-narra", "effort_mid": 2.0, "estimate": "1.5–2.5 дня", "dependency": "Завершено: production Traction live" },
+        { "phase": "6 · Updater/signing", "effort_mid": 2.5, "estimate": "2–3 дня", "dependency": "Local path готов; ждём notarization profile" },
+        { "phase": "7 · Railway staging", "effort_mid": 1.5, "estimate": "1–2 дня", "dependency": "Завершено; public transport gates отдельно" },
+        { "phase": "8 · Release", "effort_mid": 1.5, "estimate": "1–2 дня + наблюдение", "dependency": "Все release gates" }
+      ],
+      "release_gates": [
+        { "order": 1, "gate": "Build", "must_pass": "Чистая установка зависимостей, typecheck, unit/integration tests, reproducible package", "evidence": "CI run + artifact checksum/SBOM" },
+        { "order": 2, "gate": "Security", "must_pass": "Auth/rate/SSRF/ZIP/IPC/updater abuse cases и dependency/secret scans", "evidence": "Security test report без открытых P0/P1" },
+        { "order": 3, "gate": "Privacy", "must_pass": "Analytics allowlist не содержит content/PII; essential/extended tiers и extended opt-out работают", "evidence": "Captured staging payloads + selective queue cleanup regression test" },
+        { "order": 4, "gate": "Provider", "must_pass": "Giga/OpenRouter routes, fallback, strict SSE [DONE]/in-band-error/content-filter semantics, body-consume terminal attempts, exact cost source/USD и token split проверены", "evidence": "Broken/malformed/no-DONE/content-filter/oversized fixtures + staging usage/billing reconciliation" },
+        { "order": 5, "gate": "Reliability", "must_pass": "Client/gateway offline, restart, queue overflow, provider timeout и Railway restart не теряют состояние", "evidence": "Failure-injection checklist" },
+        { "order": 6, "gate": "Analytics", "must_pass": "Шесть canonical KPI, mature retention, no pre-cutover zeros, request/attempt separation, pending grace/outcome coverage/orphan exclusion", "evidence": "Traction contract tests + synthetic 10-start/1-complete and orphan assertions" },
+        { "order": 7, "gate": "macOS trust", "must_pass": "Universal arm64+x64 artifact, Developer ID signature, hardened runtime, notarization и Gatekeeper clean install", "evidence": "codesign, lipo, spctl и notarytool receipts на обеих архитектурах" },
+        { "order": 8, "gate": "Upgrade/cutover", "must_pass": "Новый клиент работает только с v2; legacy API закрыт; данные сохраняются и подменённый пакет отвергается", "evidence": "Cutover matrix + rollback test" },
+        { "order": 9, "gate": "Operations", "must_pass": "Health/readiness, logs, alerts, budget caps, backup/restore и rollback owner определены", "evidence": "Staging runbook и release checklist" }
+      ],
+      "responsibilities": [
+        { "order": 1, "lane": "Репозиторий Narra", "now": "Schemas, tests, hardening, import/EPUB, provider abstraction, analytics queue, logo asset", "later": "Merge/release после ревью", "owner": "Мы" },
+        { "order": 2, "lane": "Gateway", "now": "Railway staging v2, /data, separate secrets, quotas, exact-host video HTTP policy, ZDR/data-deny, strict terminal attempts и Traction outbox live", "later": "Auto-enrollment/revocation, secure LiteLLM/video transport и отдельный production gateway cutover", "owner": "Мы + Railway access" },
+        { "order": 3, "lane": "OpenRouter/Giga", "now": "OpenRouter HTTPS purpose routes и E2E; Giga adapter/usage/cost harness готов, но current LiteLLM public HTTP исключён", "later": "HTTPS/private tunnel LiteLLM, затем Giga smoke и billing reconciliation", "owner": "Мы + владелец LiteLLM transport" },
+        { "order": 4, "lane": "Traction", "now": "Production module active: loopback systemd service, separate token/database, logo, six canonical KPI, healthy poller and protected dashboard", "later": "Подключить production gateway token только во время reviewed v2 cutover", "owner": "Мы + доступ к Traction ingest" },
+        { "order": 5, "lane": "Railway", "now": "Production read-only audited; isolated gateway/stats staging domains, Volumes and secrets live; analytics/media E2E зелёные", "later": "Reviewed source/autodeploy policy и отдельный production cutover после release gates", "owner": "Мы; production gateway mutation только по отдельному release gate" },
+        { "order": 6, "lane": "Apple release", "now": "Manual unsigned CI preflight, local release script, entitlements/fuses и локальная Developer ID identity Жени готовы", "later": "Local matching Team profile/API key; signed/notarized RC и двухархитектурный upgrade test", "owner": "Мы + владелец Apple Team Жени + владелец Intel-проверки" },
+        { "order": 7, "lane": "Telemetry policy", "now": "Всегда включённый essential tier + default-on extended tier с opt-out, allowlist и selective queue cleanup", "later": "Финальный privacy text перед релизом", "owner": "Мы + утверждение текста от тебя/Сони" }
+      ]
+    }
+  },
+  "sources": [
+    {
+      "id": "narra_code",
+      "label": "Narra — baseline, с которого начат аудит",
+      "href": "https://github.com/sboo-create/narra/tree/e7c1e5f8a07117605653d5a361f0ce1a0b27f5d6",
+      "query": {
+        "engine": "artifact-snapshot",
+        "sql": "SELECT priority, area, work, acceptance FROM security_work ORDER BY order",
+        "description": "Immutable baseline до текущего release-foundation diff; не выдаётся за состояние рабочей feat-ветки.",
+        "executed_at": "2026-07-23T12:00:00+03:00",
+        "language": "TypeScript/JavaScript",
+        "tables_used": ["src/main/api/proxy.ts", "src/main/store.ts", "src/main/importer.ts", "src/renderer/components/Logo.tsx", "server/index.mjs", "package.json"]
+      }
+    },
+    {
+      "id": "narra_release_candidate_worktree",
+      "label": "Narra — текущий monitoring/voices candidate",
+      "href": "https://github.com/sboo-create/narra/tree/feat/narra-monitoring-and-voices",
+      "query": {
+        "engine": "git",
+        "description": "Текущий candidate ветки feat/narra-monitoring-and-voices проходит финальные review gates; production gateway этой веткой ещё не переключался.",
+        "executed_at": "2026-07-23T20:15:00+03:00",
+        "language": "TypeScript/JavaScript/Python/HTML",
+        "tables_used": ["server/index.mjs", "server/event-store.mjs", "src/main/telemetry.ts", "src/main/pdf-worker.ts", "src/renderer/lib/scenario.ts", "src/renderer/screens/Reader.tsx", "src/renderer/lib/ttsController.ts", "stats/server.py", "stats/index.html", ".github/workflows/release-macos.yml"]
+      }
+    },
+    {
+      "id": "traction_contract",
+      "label": "Traction — canonical Overview и контракт модуля",
+      "href": "https://github.com/q121212/Traction/tree/144341a12c07c625d99c172eed62681e3f14ce2d",
+      "query": {
+        "engine": "artifact-snapshot",
+        "sql": "SELECT metric, narra_definition, window, guardrail FROM canonical_metrics ORDER BY order",
+        "description": "Ревью SPEC, ONBOARDING, hub и контрактных тестов после унификации шести canonical-метрик.",
+        "executed_at": "2026-07-23T14:29:41+03:00",
+        "language": "Markdown/Python/JavaScript",
+        "tables_used": ["SPEC.md", "ONBOARDING.md", "service/server.py", "hub/index.html", "tests/test_contract.py"]
+      }
+    },
+    {
+      "id": "aiwa_tuning",
+      "label": "AIWA — analytics v2 и доработанный stats-модуль",
+      "href": "https://github.com/sboo-create/aiwa-bot/tree/74b90c0",
+      "query": {
+        "description": "Ревью dual-write, request/attempt модели, data-quality coverage, product health, feedback, push funnels и UX дашборда.",
+        "executed_at": "2026-07-23T12:00:00+03:00",
+        "language": "Python/HTML",
+        "tables_used": ["ANALYTICS_V2.md", "analytics_v2.py", "stats/server.py", "stats/index.html"]
+      }
+    },
+    {
+      "id": "owner_context",
+      "label": "Продуктовые вводные владельца Narra, переданные 23 июля 2026",
+      "query": {
+        "description": "Проект ещё не релизнут; историческую аналитику переносить не требуется; необходимо добавить OpenRouter и сохранить Giga; отдельные staging provider keys не выдаются; LLM и Kandinsky video являются доверенными сервисами команды.",
+        "executed_at": "2026-07-23T12:00:00+03:00",
+        "language": "conversation"
+      }
+    },
+    {
+      "id": "voice_registry_review",
+      "label": "SaluteSpeech voice picker screenshots + Narra Railway staging probe — 23 июля 2026",
+      "query": {
+        "engine": "evidence-join",
+        "sql": "SELECT r.priority, r.product_voice, r.base_code, r.assignment, r.picker_evidence_id, r.probe_evidence_id, r.supporting_probe_evidence_id, r.staging_result FROM voice_registry r LEFT JOIN voice_screenshot_evidence s ON s.evidence_id = r.picker_evidence_id LEFT JOIN voice_probe_results p ON p.evidence_id = r.probe_evidence_id LEFT JOIN voice_probe_results p2 ON p2.evidence_id = r.supporting_probe_evidence_id ORDER BY r.priority",
+        "description": "Одиннадцать новых picker screenshots и один ранее полученный скриншот Джой сохранены как filename + SHA-256 + observed mappings; все 188 raw probe rows содержат code/sample-rate/HTTP status/content type/actual WAV rate. Immutable CSV SHA-256: 30fee1f23901f5e8eda7790a8fdcee7e89d36da19d20a1e6e6a78732bad51bcc. Ключи не читались и не печатались.",
+        "executed_at": "2026-07-23T16:20:00+03:00",
+        "language": "image/JavaScript",
+        "tables_used": [
+          "voice_screenshot_evidence",
+          "voice_probe_results",
+          "voice_probe_raw",
+          "docs/evidence/salutespeech-voice-probe-2026-07-23.csv",
+          "voice_registry"
+        ]
+      }
+    },
+    {
+      "id": "salutespeech_staging_benchmark",
+      "label": "Narra SaluteSpeech staging benchmark — 23 июля 2026",
+      "query": {
+        "engine": "Railway staging console",
+        "description": "Пять последовательных синтезов одного текста длиной 708 символов для Erm_24000 и Erm_48000; затем exact-case probe присланных private voice codes. Credentials не извлекались из Railway и не печатались.",
+        "executed_at": "2026-07-23T18:30:00+03:00",
+        "language": "JavaScript",
+        "tables_used": ["server/http.mjs", "server/sber-tls.mjs", "https://smartspeech.sber.ru/rest/v1/text:synthesize", "voice_probe_raw", "docs/evidence/salutespeech-voice-probe-2026-07-23.csv (SHA-256 30fee1f23901f5e8eda7790a8fdcee7e89d36da19d20a1e6e6a78732bad51bcc)"],
+        "metric_definitions": [
+          "latency_ms = wall-clock duration одного synchronous synthesis request",
+          "avg_bytes = средний размер полученного WAV",
+          "Один текст и пять последовательных запусков на качество; это направляющий тест, не полный load benchmark"
+        ]
+      }
+    },
+    {
+      "id": "provider_models_pricing",
+      "label": "Официальные страницы моделей и тарифов — проверено 23 июля 2026",
+      "href": "https://openrouter.ai/deepseek/deepseek-v4-flash/pricing",
+      "query": {
+        "engine": "official-web-docs",
+        "description": "Проверены текущая OpenRouter цена DeepSeek V4 Flash, corporate tariff SaluteSpeech и статус GigaChat 3 Ultra. Фактические staging model/route names зафиксированы в sanitized Railway evidence SHA-256 bc19e573bb77ea5e5fba3aff0462b2dbcc82af297efd89b9711f4535454b08ca. Для внутренних Kandinsky image/video endpoints публичной цены в переданных контрактах нет.",
+        "executed_at": "2026-07-23T17:50:00+03:00",
+        "language": "web",
+        "tables_used": [
+          "https://openrouter.ai/deepseek/deepseek-v4-flash/pricing",
+          "https://developers.sber.ru/docs/ru/salutespeech/tariffs/legal-tariffs",
+          "https://developers.sber.ru/docs/ru/gigachat/models/gigachat-3-ultra",
+          "docs/evidence/railway-staging-provider-config-2026-07-23.json"
+        ]
+      }
+    },
+    {
+      "id": "engineering_estimate",
+      "label": "Инженерная оценка плана Narra от 23 июля 2026",
+      "query": {
+        "engine": "duckdb",
+        "sql": "SELECT * FROM (VALUES ('0 · Contract freeze', 0.75, '0.5–1 день', 'Нет'), ('1 · Security foundation', 3.0, '2–4 дня', 'Нет'), ('2 · Gateway v2', 2.5, '2–3 дня', 'Нет'), ('3 · OpenRouter + Giga', 1.5, '1–2 дня', 'OpenRouter live; Giga ждёт secure transport'), ('4 · Analytics/outbox', 2.0, '1.5–2.5 дня', 'Завершено: отдельный stats endpoint/Volume/token'), ('5 · stats-narra', 2.0, '1.5–2.5 дня', 'Завершено: production Traction live'), ('6 · Updater/signing', 2.5, '2–3 дня', 'Local path готов; ждём notarization profile'), ('7 · Railway staging', 1.5, '1–2 дня', 'Завершено; public transport gates отдельно'), ('8 · Release', 1.5, '1–2 дня + наблюдение', 'Все release gates')) AS effort(phase, effort_mid, estimate, dependency)",
+        "description": "Диапазоны трудоёмкости по этапам, сформированные из объёма известных изменений и обязательных проверок; midpoint используется только для сравнительного графика.",
+        "executed_at": "2026-07-23T12:00:00+03:00",
+        "language": "sql",
+        "metric_definitions": [
+          "effort_mid = midpoint нижней и верхней оценки рабочих дней этапа",
+          "Внешнее ожидание Railway, Apple и review в effort_mid не включается"
+        ]
+      }
+    }
+  ]
+}

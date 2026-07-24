@@ -6,12 +6,18 @@ export default defineConfig({
   main: {
     define: {
       // адрес прокси зашивается при сборке: NARRA_PROXY_URL=https://… npm run dist
-      'process.env.NARRA_PROXY_URL': JSON.stringify(process.env.NARRA_PROXY_URL || '')
+      'process.env.NARRA_PROXY_URL': JSON.stringify(process.env.NARRA_PROXY_URL || ''),
+      'process.env.NARRA_UPDATE_BASE_URL': JSON.stringify(process.env.NARRA_UPDATE_BASE_URL || ''),
+      'process.env.NARRA_ALLOW_CUSTOM_PROXY': JSON.stringify('false')
     },
     build: {
       rollupOptions: {
-        // electron-store & uuid are ESM-ish; let vite bundle them but keep electron external
-        external: ['electron']
+        // Bundle application dependencies, keep only Electron external.
+        external: ['electron'],
+        input: {
+          index: resolve(__dirname, 'src/main/index.ts'),
+          'pdf-worker': resolve(__dirname, 'src/main/pdf-worker.ts')
+        }
       }
     }
   },

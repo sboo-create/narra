@@ -1,4 +1,8 @@
-import type { Emotion } from '@shared/types'
+import {
+  saluteVoiceSampleRate,
+  type Emotion,
+  type SaluteVoice
+} from '@shared/types'
 import { buildMultilingualSsml } from './ttsLanguage'
 
 // Маппинг эмоция → просодия SSML. Вынесен в конфиг — легко тюнить.
@@ -38,14 +42,14 @@ function escapeXml(s: string): string {
     .replace(/'/g, '&apos;')
 }
 
-export function buildSsml(text: string, emotion: Emotion, voice?: string): string {
+export function buildSsml(text: string, emotion: Emotion, voice?: SaluteVoice): string {
   const p = EMOTION_SSML[emotion] || EMOTION_SSML.neutral
   if (voice) {
     // Иноязычные вставки (французский в «Войне и мире» и т.п.) получают свой
-    // lang в <voice name lang>; имя голоса — как в query шлюза (`${voice}_24000`).
+    // lang в <voice name lang>; имя и sample rate совпадают с gateway registry.
     const multilingual = buildMultilingualSsml({
       text: text.trim(),
-      providerVoice: `${voice}_24000`,
+      providerVoice: `${voice}_${saluteVoiceSampleRate(voice)}`,
       prosody: p
     })
     if (multilingual) return multilingual

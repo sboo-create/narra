@@ -1,11 +1,182 @@
 import { app } from 'electron'
 import { promises as fs } from 'fs'
 import path from 'path'
-import { getSettings } from '../store'
-import type { ApiResult, LlmMessage, ProxyHealth } from '../../shared/types'
+import { randomUUID } from 'node:crypto'
+import {
+  clearGatewayTokenIf,
+  getGatewayIdentity,
+  getSettings,
+  setGatewayToken
+} from '../store'
+import type { ApiResult, LlmMessage, LlmPurpose, ProxyHealth } from '../../shared/types'
+import type { AnalyticsEvent } from '../../shared/analytics'
+import { runLocalDataWrite } from '../local-data-barrier'
+import { versionedAudioCacheKey } from '../audio-cache-key'
+import { consumeOpenAiSse } from './sse-protocol'
 
 function base(): string {
   return getSettings().proxyUrl.replace(/\/+$/, '')
+}
+
+let registration: {
+  proxyUrl: string
+  promise: Promise<string>
+  controller: AbortController
+} | null = null
+let gatewayActivityController = new AbortController()
+let localDataResetting = false
+
+export function cancelGatewayActivity(): void {
+  localDataResetting = true
+  gatewayActivityController.abort(new Error('local data reset'))
+  registration?.controller.abort(new Error('local data reset'))
+  registration = null
+}
+
+async function gatewayToken(): Promise<string> {
+  const proxyUrl = base()
+  const identity = getGatewayIdentity()
+  if (
+    identity.token &&
+    identity.tokenProxyUrl === proxyUrl &&
+    !tokenExpiresSoon(identity.token)
+  ) {
+    return identity.token
+  }
+  if (registration?.proxyUrl === proxyUrl) return registration.promise
+  if (registration) {
+    registration.controller.abort(new Error('gateway changed'))
+    registration = null
+  }
+  const controller = new AbortController()
+  const promise = (async () => {
+    const { signal, done } = withTimeout(10_000)
+    let response: Response
+    try {
+      const abortSignal = AbortSignal.any([signal, controller.signal])
+      if (identity.token && identity.tokenProxyUrl === proxyUrl) {
+        response = await fetch(`${proxyUrl}/v2/installations/refresh`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            installation_id: identity.installationId,
+            installation_secret: identity.refreshSecret
+          }),
+          signal: abortSignal
+        })
+        if (
+          (response.status === 401 && isInstallationAuthFailure(response)) ||
+          (response.status === 404 && isInstallationNotFound(response))
+        ) {
+          clearGatewayTokenIf(identity.token, proxyUrl)
+          response = await fetch(`${proxyUrl}/v2/installations/register`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              installation_id: identity.installationId,
+              installation_secret: identity.refreshSecret,
+              app_version: app.getVersion(),
+              platform: process.platform,
+              arch: process.arch
+            }),
+            signal: abortSignal
+          })
+        }
+      } else {
+        response = await fetch(`${proxyUrl}/v2/installations/register`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            installation_id: identity.installationId,
+            installation_secret: identity.refreshSecret,
+            app_version: app.getVersion(),
+            platform: process.platform,
+            arch: process.arch
+          }),
+          signal: abortSignal
+        })
+      }
+    } finally {
+      done()
+    }
+    if (!response.ok) throw new Error(`Регистрация gateway: ${response.status}`)
+    const payload = (await response.json()) as { token?: string }
+    if (!payload.token) throw new Error('Gateway не вернул installation token')
+    setGatewayToken(payload.token, proxyUrl)
+    return payload.token
+  })()
+  registration = { proxyUrl, promise, controller }
+  try {
+    return await promise
+  } finally {
+    if (registration?.promise === promise) registration = null
+  }
+}
+
+function tokenExpiresSoon(token: string, now = Date.now()): boolean {
+  try {
+    const [prefix, body] = token.split('.')
+    if (prefix !== 'nrv3' || !body) return true
+    const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8')) as {
+      iat?: number
+      exp?: number
+    }
+    if (!Number.isInteger(payload.iat) || !Number.isInteger(payload.exp)) return true
+    const lifetimeMs = (Number(payload.exp) - Number(payload.iat)) * 1000
+    const refreshMarginMs = Math.min(60_000, Math.max(5_000, lifetimeMs / 10))
+    return Number(payload.exp) * 1000 <= now + refreshMarginMs
+  } catch {
+    return true
+  }
+}
+
+export async function gatewayFetch(
+  pathname: string,
+  init: RequestInit = {},
+  retryAuth = true
+): Promise<Response> {
+  if (localDataResetting) throw new Error('local data reset in progress')
+  const token = await gatewayToken()
+  const headers = new Headers(init.headers)
+  headers.set('Authorization', `Bearer ${token}`)
+  const suppliedSignal = init.signal
+  const response = await fetch(`${base()}${pathname}`, {
+    ...init,
+    headers,
+    signal: suppliedSignal
+      ? AbortSignal.any([suppliedSignal, gatewayActivityController.signal])
+      : gatewayActivityController.signal
+  })
+  if (response.status === 401 && retryAuth && isInstallationAuthFailure(response)) {
+    clearGatewayTokenIf(token, base())
+    return gatewayFetch(pathname, init, false)
+  }
+  return response
+}
+
+function isInstallationAuthFailure(response: Response): boolean {
+  return response.headers.get('x-narra-auth-error') === 'installation_token'
+}
+
+function isInstallationNotFound(response: Response): boolean {
+  return response.headers.get('x-narra-auth-error') === 'installation_not_found'
+}
+
+export async function sendTelemetryBatch(
+  events: AnalyticsEvent[]
+): Promise<ApiResult<{ accepted: number; rejected: Array<{ event_id: string }> }>> {
+  if (!events.length) return { ok: true, data: { accepted: 0, rejected: [] } }
+  try {
+    const response = await gatewayFetch('/v2/events/batch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ events })
+    })
+    if (!response.ok) return parseErr(response)
+    return { ok: true, data: (await response.json()) as { accepted: number; rejected: Array<{ event_id: string }> } }
+  } catch (error) {
+    return netErr(error)
+  }
 }
 
 function noProxy(): ApiResult<never> {
@@ -28,6 +199,10 @@ async function parseErr(res: Response): Promise<ApiResult<never>> {
 function netErr(e: unknown): ApiResult<never> {
   const msg = (e as Error)?.message || 'Сетевая ошибка'
   if (/abort/i.test(msg)) return { ok: false, error: 'Запрос отменён', code: 'UNKNOWN' }
+  const code = (e as { code?: ApiResult<never>['code'] })?.code
+  if (code && ['PARSE', 'CENSOR', 'VALIDATION', 'NETWORK'].includes(code)) {
+    return { ok: false, error: msg, code }
+  }
   return { ok: false, error: `Нет связи с прокси: ${msg}`, code: 'NETWORK' }
 }
 
@@ -58,7 +233,11 @@ export async function chatStream(
   messages: LlmMessage[],
   onChunk: (delta: string) => void,
   signal: { aborted: boolean },
-  temperature = 0.8
+  temperature = 0.8,
+  purpose: LlmPurpose = 'character_chat',
+  requestId = randomRequestId(),
+  origin: 'user' | 'background' = 'user',
+  analyticsTier: 'essential' | 'extended' | 'none' = 'essential'
 ): Promise<ApiResult<{ text: string }>> {
   if (!base()) return noProxy()
   const ctrl = new AbortController()
@@ -66,40 +245,23 @@ export async function chatStream(
     if (signal.aborted) ctrl.abort()
   }, 150)
   try {
-    const res = await fetch(`${base()}/gigachat/chat`, {
+    const res = await gatewayFetch('/v2/ai/chat/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages, temperature }),
+      body: JSON.stringify({
+        messages, temperature, purpose, request_id: requestId,
+        origin, analytics_tier: analyticsTier
+      }),
       signal: ctrl.signal
     })
     if (!res.ok || !res.body) {
       clearInterval(iv)
       return res.ok ? { ok: false, error: 'Пустой поток', code: 'NETWORK' } : await parseErr(res)
     }
-    const decoder = new TextDecoder()
-    let buffer = ''
-    let full = ''
-    for await (const chunk of res.body as unknown as AsyncIterable<Uint8Array>) {
-      buffer += decoder.decode(chunk, { stream: true })
-      const lines = buffer.split('\n')
-      buffer = lines.pop() || ''
-      for (const line of lines) {
-        const t = line.trim()
-        if (!t.startsWith('data:')) continue
-        const payload = t.slice(5).trim()
-        if (payload === '[DONE]') continue
-        try {
-          const obj = JSON.parse(payload)
-          const delta: string = obj?.choices?.[0]?.delta?.content ?? ''
-          if (delta) {
-            full += delta
-            onChunk(delta)
-          }
-        } catch {
-          /* partial */
-        }
-      }
-    }
+    const full = await consumeOpenAiSse(
+      res.body as unknown as AsyncIterable<Uint8Array>,
+      onChunk
+    )
     clearInterval(iv)
     return { ok: true, data: { text: full } }
   } catch (e) {
@@ -111,15 +273,22 @@ export async function chatStream(
 // ================= GigaChat: обычный ответ =================
 export async function chatComplete(
   messages: LlmMessage[],
-  temperature = 0.7
+  temperature = 0.7,
+  purpose: LlmPurpose = 'structured_task',
+  requestId = randomRequestId(),
+  origin: 'user' | 'background' = 'user',
+  analyticsTier: 'essential' | 'extended' | 'none' = 'essential'
 ): Promise<ApiResult<{ text: string }>> {
   if (!base()) return noProxy()
   const { signal, done } = withTimeout(120000)
   try {
-    const res = await fetch(`${base()}/gigachat/complete`, {
+    const res = await gatewayFetch('/v2/ai/chat/complete', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages, temperature }),
+      body: JSON.stringify({
+        messages, temperature, purpose, request_id: requestId,
+        origin, analytics_tier: analyticsTier
+      }),
       signal
     })
     done()
@@ -133,10 +302,18 @@ export async function chatComplete(
 }
 
 // ================= GigaChat: JSON-задача =================
-export async function chatJson<T = unknown>(messages: LlmMessage[], attempts = 3): Promise<ApiResult<T>> {
+export async function chatJson<T = unknown>(
+  messages: LlmMessage[],
+  attempts = 3,
+  origin: 'user' | 'background' = 'user',
+  analyticsTier: 'essential' | 'extended' | 'none' = 'essential'
+): Promise<ApiResult<T>> {
   let lastErr = ''
+  const requestId = randomRequestId()
   for (let i = 0; i < attempts; i++) {
-    const r = await chatComplete(messages, 0.5)
+    const r = await chatComplete(
+      messages, 0.5, 'structured_task', requestId, origin, analyticsTier
+    )
     if (!r.ok) {
       if (r.code === 'NO_PROXY' || r.code === 'NO_KEY' || r.code === 'AUTH') return r as ApiResult<T>
       lastErr = r.error || 'ошибка'
@@ -149,12 +326,20 @@ export async function chatJson<T = unknown>(messages: LlmMessage[], attempts = 3
   return { ok: false, error: lastErr, code: 'PARSE' }
 }
 
+function randomRequestId(): string {
+  return randomUUID()
+}
+
 // ================= FusionBrain: изображения =================
 function imagesDir(): string {
   return path.join(app.getPath('userData'), 'images')
 }
+function safeCacheKey(key: string): string {
+  if (!/^[a-zA-Z0-9_-]{1,180}$/.test(key)) throw new Error('Некорректный ключ кэша')
+  return key
+}
 function imgPath(key: string): string {
-  return path.join(imagesDir(), `${key}.png`)
+  return path.join(imagesDir(), `${safeCacheKey(key)}.png`)
 }
 
 export async function getCachedImage(cacheKey: string): Promise<ApiResult<{ dataUrl: string }>> {
@@ -181,7 +366,7 @@ export async function generateImage(
   if (!base()) return noProxy()
   const { signal, done } = withTimeout(90000)
   try {
-    const res = await fetch(`${base()}/kandinsky/generate`, {
+    const res = await gatewayFetch('/v2/media/images', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt, width, height, engine }),
@@ -191,9 +376,11 @@ export async function generateImage(
     if (!res.ok) return parseErr(res)
     const j = (await res.json()) as { image: string }
     if (!j.image) return { ok: false, error: 'Пустой результат', code: 'UNKNOWN' }
-    if (cacheKey) {
-      await fs.mkdir(imagesDir(), { recursive: true })
-      await fs.writeFile(imgPath(cacheKey), Buffer.from(j.image, 'base64'))
+    if (cacheKey && !localDataResetting) {
+      await runLocalDataWrite(async () => {
+        await fs.mkdir(imagesDir(), { recursive: true })
+        await fs.writeFile(imgPath(cacheKey), Buffer.from(j.image, 'base64'))
+      })
     }
     return { ok: true, data: { dataUrl: `data:image/png;base64,${j.image}`, cached: false } }
   } catch (e) {
@@ -207,7 +394,7 @@ function audioDir(): string {
   return path.join(app.getPath('userData'), 'audio')
 }
 function audioPath(key: string): string {
-  return path.join(audioDir(), `${key}.wav`)
+  return path.join(audioDir(), `${safeCacheKey(key)}.wav`)
 }
 
 export async function getCachedAudio(cacheKey: string): Promise<ApiResult<{ dataUrl: string }>> {
@@ -223,14 +410,15 @@ export async function synthesize(
   payload: { text?: string; ssml?: string; voice: string },
   cacheKey?: string
 ): Promise<ApiResult<{ dataUrl: string; cached: boolean }>> {
-  if (cacheKey) {
-    const c = await getCachedAudio(cacheKey)
+  const resolvedCacheKey = cacheKey ? versionedAudioCacheKey(cacheKey, payload) : undefined
+  if (resolvedCacheKey) {
+    const c = await getCachedAudio(resolvedCacheKey)
     if (c.ok) return { ok: true, data: { dataUrl: c.data!.dataUrl, cached: true } }
   }
   if (!base()) return noProxy()
   const { signal, done } = withTimeout(60000)
   try {
-    const res = await fetch(`${base()}/salutespeech/synthesize`, {
+    const res = await gatewayFetch('/v2/speech/synthesize', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -239,9 +427,11 @@ export async function synthesize(
     done()
     if (!res.ok) return parseErr(res)
     const buf = Buffer.from(await res.arrayBuffer())
-    if (cacheKey) {
-      await fs.mkdir(audioDir(), { recursive: true })
-      await fs.writeFile(audioPath(cacheKey), buf)
+    if (resolvedCacheKey && !localDataResetting) {
+      await runLocalDataWrite(async () => {
+        await fs.mkdir(audioDir(), { recursive: true })
+        await fs.writeFile(audioPath(resolvedCacheKey), buf)
+      })
     }
     return { ok: true, data: { dataUrl: `data:audio/wav;base64,${buf.toString('base64')}`, cached: false } }
   } catch (e) {
@@ -255,7 +445,33 @@ function videoDir(): string {
   return path.join(app.getPath('userData'), 'video')
 }
 function videoPath(key: string): string {
-  return path.join(videoDir(), `${key}.mp4`)
+  return path.join(videoDir(), `${safeCacheKey(key)}.mp4`)
+}
+
+export async function deleteBookCache(bookId: string): Promise<void> {
+  safeCacheKey(bookId)
+  const belongsToBook = (filename: string) =>
+    filename.includes(`-${bookId}-`) || filename.startsWith(`${bookId}-`)
+  for (const directory of [imagesDir(), audioDir(), videoDir()]) {
+    let entries: string[] = []
+    try {
+      entries = await fs.readdir(directory)
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') continue
+      throw error
+    }
+    await Promise.all(
+      entries
+        .filter(belongsToBook)
+        .map(async (filename) => {
+          try {
+            await fs.unlink(path.join(directory, filename))
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+          }
+        })
+    )
+  }
 }
 
 export async function deleteCachedImage(cacheKey: string): Promise<ApiResult<{ ok: true }>> {
@@ -269,9 +485,12 @@ export async function deleteCachedImage(cacheKey: string): Promise<ApiResult<{ o
 
 export async function saveCachedVideo(cacheKey: string, dataUrl: string): Promise<ApiResult<{ ok: true }>> {
   try {
-    await fs.mkdir(videoDir(), { recursive: true })
-    const b64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl
-    await fs.writeFile(videoPath(cacheKey), Buffer.from(b64, 'base64'))
+    if (localDataResetting) throw new Error('local data reset in progress')
+    await runLocalDataWrite(async () => {
+      await fs.mkdir(videoDir(), { recursive: true })
+      const b64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl
+      await fs.writeFile(videoPath(cacheKey), Buffer.from(b64, 'base64'))
+    })
     return { ok: true, data: { ok: true } }
   } catch (e) {
     return netErr(e)
@@ -310,7 +529,7 @@ export async function generateAvatar(
   const audio = audioDataUrl.includes(',') ? audioDataUrl.split(',')[1] : audioDataUrl
   const { signal, done } = withTimeout(540000)
   try {
-    const res = await fetch(`${base()}/avatar/generate`, {
+    const res = await gatewayFetch('/v2/media/avatar', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ image, audio }),
@@ -321,11 +540,14 @@ export async function generateAvatar(
     const j = (await res.json()) as { video?: string; error?: string; code?: string }
     if (j.error) return { ok: false, error: j.error, code: (j.code as never) || 'UNKNOWN' }
     if (!j.video) return { ok: false, error: 'Пустой результат', code: 'UNKNOWN' }
-    if (cacheKey) {
-      await fs.mkdir(videoDir(), { recursive: true })
-      await fs.writeFile(videoPath(cacheKey), Buffer.from(j.video, 'base64'))
+    const video = j.video
+    if (cacheKey && !localDataResetting) {
+      await runLocalDataWrite(async () => {
+        await fs.mkdir(videoDir(), { recursive: true })
+        await fs.writeFile(videoPath(cacheKey), Buffer.from(video, 'base64'))
+      })
     }
-    return { ok: true, data: { dataUrl: `data:video/mp4;base64,${j.video}`, cached: false } }
+    return { ok: true, data: { dataUrl: `data:video/mp4;base64,${video}`, cached: false } }
   } catch (e) {
     done()
     return netErr(e)
@@ -346,7 +568,7 @@ export async function animatePortrait(
   const image = imageDataUrl.includes(',') ? imageDataUrl.split(',')[1] : imageDataUrl
   const { signal, done } = withTimeout(540000)
   try {
-    const res = await fetch(`${base()}/animate/portrait`, {
+    const res = await gatewayFetch('/v2/media/portrait-animation', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ image, query, quality }),
@@ -357,11 +579,14 @@ export async function animatePortrait(
     const j = (await res.json()) as { video?: string; error?: string; code?: string }
     if (j.error) return { ok: false, error: j.error, code: (j.code as never) || 'UNKNOWN' }
     if (!j.video) return { ok: false, error: 'Пустой результат', code: 'UNKNOWN' }
-    if (cacheKey) {
-      await fs.mkdir(videoDir(), { recursive: true })
-      await fs.writeFile(videoPath(cacheKey), Buffer.from(j.video, 'base64'))
+    const video = j.video
+    if (cacheKey && !localDataResetting) {
+      await runLocalDataWrite(async () => {
+        await fs.mkdir(videoDir(), { recursive: true })
+        await fs.writeFile(videoPath(cacheKey), Buffer.from(video, 'base64'))
+      })
     }
-    return { ok: true, data: { dataUrl: `data:video/mp4;base64,${j.video}`, cached: false } }
+    return { ok: true, data: { dataUrl: `data:video/mp4;base64,${video}`, cached: false } }
   } catch (e) {
     done()
     return netErr(e)
@@ -373,7 +598,7 @@ export async function recognize(base64: string, mime: string): Promise<ApiResult
   if (!base()) return noProxy()
   const { signal, done } = withTimeout(60000)
   try {
-    const res = await fetch(`${base()}/salutespeech/recognize`, {
+    const res = await gatewayFetch('/v2/speech/recognize', {
       method: 'POST',
       headers: { 'Content-Type': 'application/octet-stream', 'X-Audio-Type': mime },
       body: Buffer.from(base64, 'base64'),
@@ -423,71 +648,4 @@ function extractJson<T>(text: string): T | null {
     }
   }
   return null
-}
-
-/** Проверка обновления приложения: сравнивает версию с ${base()}/app/latest. */
-export async function checkAppUpdate(
-  current: string
-): Promise<ApiResult<{ hasUpdate: boolean; version: string; url: string }>> {
-  if (!base()) return noProxy()
-  const { signal, done } = withTimeout(15000)
-  try {
-    const res = await fetch(`${base()}/app/latest`, { signal })
-    done()
-    if (!res.ok) return parseErr(res)
-    const j = (await res.json()) as { version?: string; url?: string }
-    const latest = (j.version || '').trim()
-    const newer = (a: string, b: string) => {
-      const pa = a.split('.').map(Number)
-      const pb = b.split('.').map(Number)
-      for (let i = 0; i < 3; i++) {
-        if ((pa[i] || 0) > (pb[i] || 0)) return true
-        if ((pa[i] || 0) < (pb[i] || 0)) return false
-      }
-      return false
-    }
-    return {
-      ok: true,
-      data: { hasUpdate: !!latest && !!j.url && newer(latest, current), version: latest, url: j.url || '' }
-    }
-  } catch (e) {
-    done()
-    return netErr(e)
-  }
-}
-
-/**
- * Обновление в один клик: качаем dmg, отдаём его внешнему скрипту (он ждёт выхода
- * приложения, подменяет .app в «Программах», снимает карантин и запускает снова).
- */
-export async function installUpdate(url: string): Promise<ApiResult<{ started: true }>> {
-  try {
-    const { tmpdir } = await import('node:os')
-    const { spawn } = await import('node:child_process')
-    const dmg = path.join(tmpdir(), `narra-update-${Date.now()}.dmg`)
-    const res = await fetch(url)
-    if (!res.ok) return { ok: false, error: `Не удалось скачать (${res.status})`, code: 'NETWORK' }
-    await fs.writeFile(dmg, Buffer.from(await res.arrayBuffer()))
-
-    const sh = path.join(tmpdir(), `narra-update-${Date.now()}.sh`)
-    await fs.writeFile(
-      sh,
-      `#!/bin/bash
-sleep 2
-MNT=$(hdiutil attach -nobrowse -readonly "${dmg}" | awk -F'\t' '/\/Volumes\//{print $NF; exit}')
-[ -z "$MNT" ] && exit 1
-rm -rf "/Applications/Narra.app"
-cp -R "$MNT/Narra.app" /Applications/
-hdiutil detach "$MNT" -quiet
-xattr -cr "/Applications/Narra.app"
-rm -f "${dmg}" "${sh}"
-open "/Applications/Narra.app"
-`,
-      { mode: 0o755 }
-    )
-    spawn('/bin/bash', [sh], { detached: true, stdio: 'ignore' }).unref()
-    return { ok: true, data: { started: true } }
-  } catch (e) {
-    return { ok: false, error: (e as Error).message, code: 'UNKNOWN' }
-  }
 }

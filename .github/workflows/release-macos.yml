@@ -1,0 +1,48 @@
+name: macOS release preflight (unsigned)
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: 'Exact tag to verify, for example v0.7.7'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    runs-on: macos-14
+    env:
+      RELEASE_VERSION: ${{ inputs.release_version }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ env.RELEASE_VERSION }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: npm
+      - name: Verify release tag matches package version
+        run: node scripts/verify-release-tag.mjs "$RELEASE_VERSION"
+      - run: npm ci
+      - run: npm ci --prefix server
+      - run: npm audit --audit-level=moderate
+      - run: npm audit --prefix server --audit-level=moderate
+      - run: python -m venv stats/.venv && stats/.venv/bin/pip install -r stats/requirements.txt
+      - run: npm run typecheck && npm run test:gateway && npm run test:release && npm run test:stats
+      - name: Build unsigned universal preflight
+        run: npm run dist:unsigned
+      - run: npm run smoke:pdf-worker
+      - run: npm run release:verify:unsigned
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: Narra-${{ env.RELEASE_VERSION }}-unsigned-preflight
+          path: |
+            release/Narra-*-universal.dmg
+            release/Narra-*-universal.zip
+            release/latest-mac.yml
+            release/*.blockmap
+          if-no-files-found: error

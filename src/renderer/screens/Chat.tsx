@@ -78,7 +78,7 @@ export function Chat({ id, sceneContext, autoAsk }: Props) {
     // эмоция → голос
     let emo: Emotion = 'neutral'
     if (gcReady) {
-      const er = await window.narra.llmText(emotionRequest(m.content), 0)
+      const er = await window.narra.llmText(emotionRequest(m.content), 0, 'background')
       const w = (er.ok ? er.data!.text : '').trim().toLowerCase()
       const f = EMOTIONS.find((e) => w.includes(e))
       if (f) emo = f
@@ -86,14 +86,18 @@ export function Chat({ id, sceneContext, autoAsk }: Props) {
     const voice = voiceFor(id)
     const aud = await window.narra.synthesize(
       { ssml: buildSsml(m.content, emo, voice), voice },
-      `chatmsg-${m.id}-${emo}${hasForeignLanguage(m.content) ? '-ml1' : ''}`
+      `chatmsg-${fanfic.id}-${m.id}-${emo}${hasForeignLanguage(m.content) ? '-ml1' : ''}`
     )
     if (!aud.ok) {
       setAvatarBusy(null)
       toast({ type: 'error', title: 'Озвучка не удалась', message: aud.error })
       return
     }
-    const vid = await window.narra.generateAvatar(imgRes.data!.dataUrl, aud.data!.dataUrl, `avatar-${m.id}-${emo}`)
+    const vid = await window.narra.generateAvatar(
+      imgRes.data!.dataUrl,
+      aud.data!.dataUrl,
+      `avatar-${fanfic.id}-${m.id}-${emo}`
+    )
     setAvatarBusy(null)
     if (vid.ok) {
       setEmotion(emo)
@@ -143,7 +147,11 @@ export function Chat({ id, sceneContext, autoAsk }: Props) {
         if (useStore.getState().persisted.summaries[key]) continue
         const ch = fanfic.chapters[n - 1]
         if (!ch) continue
-        const r = await window.narra.llmText(summaryRequest(ch.text, ch.title), 0.4)
+        const r = await window.narra.llmText(
+          summaryRequest(ch.text, ch.title),
+          0.4,
+          'background'
+        )
         if (!alive) return
         if (r.ok && r.data!.text.trim()) setSummary(key, r.data!.text.trim())
       }
@@ -243,7 +251,7 @@ export function Chat({ id, sceneContext, autoAsk }: Props) {
   // Эмоция последней реплики → анимация портрета.
   async function classifyReplyEmotion(text: string) {
     if (!gcReady || !text.trim()) return
-    const er = await window.narra.llmText(emotionRequest(text), 0)
+    const er = await window.narra.llmText(emotionRequest(text), 0, 'background')
     const w = (er.ok ? er.data!.text : '').trim().toLowerCase()
     const found = EMOTIONS.find((e) => w.includes(e))
     setEmotion(found || 'neutral')
@@ -259,7 +267,8 @@ export function Chat({ id, sceneContext, autoAsk }: Props) {
     const recent = all.slice(-12).map((m) => ({ role: m.role, content: m.content }))
     const res = await window.narra.llmText(
       memoryUpdateRequest(char.name, recent, persisted.memories[ckey] || ''),
-      0.3
+      0.3,
+      'background'
     )
     memoryBusy.current = false
     if (res.ok && res.data!.text.trim()) setMemory(id, res.data!.text.trim())
@@ -282,7 +291,7 @@ export function Chat({ id, sceneContext, autoAsk }: Props) {
       // определяем эмоцию реплики, чтобы озвучить с нужной интонацией
       let emotion: Emotion = 'neutral'
       if (gcReady) {
-        const er = await window.narra.llmText(emotionRequest(m.content), 0)
+        const er = await window.narra.llmText(emotionRequest(m.content), 0, 'background')
         const w = (er.ok ? er.data!.text : '').trim().toLowerCase()
         const found = EMOTIONS.find((e) => w.includes(e))
         if (found) emotion = found

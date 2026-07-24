@@ -9,6 +9,7 @@ import { coverPrompt } from '../lib/passport'
 export function Book() {
   const fanfic = useStore((s) => s.fanfic)
   const characters = useStore((s) => s.characters)
+  const narratorVoice = useStore((s) => s.narratorVoice)
   const persisted = useStore((s) => s.persisted)
   const chapter = useStore((s) => s.chapter)
   const setChapter = useStore((s) => s.setChapter)
@@ -80,15 +81,32 @@ export function Book() {
                           toast({ type: 'error', title: 'Только для загруженных книг', message: ex.error })
                           return
                         }
-                        const built = await buildCharacters(ex.data!.title, ex.data!.author, ex.data!.excerpt)
+                        const built = await buildCharacters(
+                          ex.data!.title,
+                          ex.data!.author,
+                          ex.data!.excerpt,
+                          narratorVoice
+                        )
                         if (built.ok) {
-                          await window.narra.saveBookCharacters(fanfic.id, built.characters)
-                          await reloadBooks()
-                          toast({
-                            type: 'success',
-                            title: 'Герои перерисованы',
-                            message: built.characters.map((c) => c.name).join(', ')
-                          })
+                          const saved = await window.narra.saveBookCharacters(
+                            fanfic.id,
+                            narratorVoice,
+                            built.characters
+                          )
+                          if (saved.ok) {
+                            await reloadBooks()
+                            toast({
+                              type: 'success',
+                              title: 'Герои перерисованы',
+                              message: built.characters.map((c) => c.name).join(', ')
+                            })
+                          } else {
+                            toast({
+                              type: 'error',
+                              title: 'Герои не сохранились',
+                              message: saved.error
+                            })
+                          }
                         } else {
                           toast({ type: 'error', title: 'Не удалось', message: built.error })
                         }

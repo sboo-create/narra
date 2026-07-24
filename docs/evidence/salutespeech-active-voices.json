@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "reviewed_at": "2026-07-23",
+  "probe_source": "docs/evidence/salutespeech-voice-probe-2026-07-23.csv",
+  "policy": "Only voices with a saved HTTP 200 audio/wav probe at the configured sample rate are allowlisted. Automatic pools additionally require reviewed gender and role evidence; unapproved voices remain manual-only.",
+  "groups": [
+    {
+      "sample_rate": 48000,
+      "gender": "female",
+      "group": "assistant",
+      "evidence_id": "picker-assistants",
+      "codes": ["Che", "Erm"]
+    },
+    {
+      "sample_rate": 48000,
+      "gender": "male",
+      "group": "assistant",
+      "evidence_id": "picker-assistants",
+      "codes": ["She"]
+    },
+    {
+      "sample_rate": 48000,
+      "gender": "male",
+      "group": "library",
+      "evidence_id": "picker-reviewed-48k",
+      "codes": ["Ast", "Gal", "Bez", "Ego", "Izv"]
+    },
+    {
+      "sample_rate": 48000,
+      "gender": "female",
+      "group": "library",
+      "evidence_id": "picker-reviewed-48k",
+      "codes": ["Ste", "Tso", "Chr"]
+    },
+    {
+      "sample_rate": 24000,
+      "gender": "male",
+      "group": "library",
+      "evidence_id": "picker-reviewed-24k",
+      "codes": ["Ana", "Ann", "Bek", "Boc", "Chp", "Dsu", "Klu", "Min", "Mir", "Ovs", "San", "Sdo", "Shc", "Shl", "Sid", "Sto", "Str", "Tar", "Tre", "Uso", "Vol"]
+    },
+    {
+      "sample_rate": 24000,
+      "gender": "female",
+      "group": "library",
+      "evidence_id": "picker-reviewed-24k",
+      "codes": ["Aer", "Bal", "Buz", "Dad", "Dyu", "Kab", "Kud", "Mak", "Sko", "Smi", "Sne", "Sta", "Ved"]
+    },
+    {
+      "sample_rate": 48000,
+      "gender": "male",
+      "group": "child",
+      "evidence_id": "picker-child",
+      "codes": ["Ksa"]
+    },
+    {
+      "sample_rate": 48000,
+      "gender": "female",
+      "group": "child",
+      "evidence_id": "picker-child",
+      "codes": ["Saf", "Bsa"]
+    },
+    {
+      "sample_rate": 24000,
+      "gender": "male",
+      "group": "child",
+      "evidence_id": "picker-child",
+      "codes": ["Kkr", "Ktr"]
+    },
+    {
+      "sample_rate": 24000,
+      "gender": "female",
+      "group": "child",
+      "evidence_id": "picker-child",
+      "codes": ["Kbu", "Koz"]
+    },
+    {
+      "sample_rate": 48000,
+      "gender": "male",
+      "group": "manual",
+      "evidence_id": "picker-manual",
+      "codes": ["Mar", "Kas"]
+    },
+    {
+      "sample_rate": 24000,
+      "gender": "unspecified",
+      "group": "manual",
+      "evidence_id": "probe-only-pending-product-review",
+      "codes": ["Aso", "Bai", "Bik", "Bol", "Gav", "Gri", "Gur", "Igr", "Kai", "Kar", "Ker", "Kha", "Kis", "Kka", "Kor", "Kov", "Lil", "Mel", "Nag", "Ore", "Peh", "Pik", "Pot", "Pru", "Rab", "Res", "Roz", "Rum", "Shi", "Tob", "Tya", "Voy"]
+    }
+  ]
+}

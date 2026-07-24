@@ -1,3 +1,9 @@
+import {
+  normalizeCharacterVoices,
+  normalizeNarratorVoice,
+  type Character
+} from '@shared/types'
+
 /*
  * Браузерная заглушка window.narra — позволяет открыть renderer в обычном
  * браузере (vite dev, localhost:5173) и проверять UI без Electron.
@@ -13,6 +19,47 @@ interface ChatHandlers {
 
 const PROXY = 'http://localhost:8787'
 const mem = new Map<string, string>()
+
+async function devGatewayFetch(pathname: string, init: RequestInit = {}, retry = true): Promise<Response> {
+  let installationId = localStorage.getItem('narra-dev-installation-id')
+  if (!installationId) {
+    installationId = crypto.randomUUID()
+    localStorage.setItem('narra-dev-installation-id', installationId)
+  }
+  let installationSecret = localStorage.getItem('narra-dev-installation-secret')
+  if (!installationSecret) {
+    const bytes = crypto.getRandomValues(new Uint8Array(32))
+    installationSecret = btoa(String.fromCharCode(...bytes))
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '')
+    localStorage.setItem('narra-dev-installation-secret', installationSecret)
+  }
+  let token = localStorage.getItem('narra-dev-gateway-token')
+  if (!token) {
+    const registration = await fetch(`${PROXY}/v2/installations/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        installation_id: installationId,
+        installation_secret: installationSecret,
+        platform: 'browser',
+        arch: 'dev'
+      })
+    })
+    if (!registration.ok) throw new Error(`gateway registration ${registration.status}`)
+    token = ((await registration.json()) as { token: string }).token
+    localStorage.setItem('narra-dev-gateway-token', token)
+  }
+  const headers = new Headers(init.headers)
+  headers.set('Authorization', `Bearer ${token}`)
+  const response = await fetch(`${PROXY}${pathname}`, { ...init, headers })
+  if (response.status === 401 && retry) {
+    localStorage.removeItem('narra-dev-gateway-token')
+    return devGatewayFetch(pathname, init, false)
+  }
+  return response
+}
 
 function lsGet(): Record<string, unknown> {
   try {
@@ -59,12 +106,22 @@ async function loadJson(rel: string): Promise<unknown> {
 }
 
 export function installDevShim(): void {
-  const llmText = async (messages: unknown, temperature?: number) => {
+  const llmText = async (
+    messages: unknown,
+    temperature?: number,
+    origin: 'user' | 'background' = 'user'
+  ) => {
     try {
-      const r = await fetch(`${PROXY}/gigachat/complete`, {
+      const r = await devGatewayFetch('/v2/ai/chat/complete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ messages, temperature })
+        body: JSON.stringify({
+          messages,
+          temperature,
+          purpose: 'structured_task',
+          origin,
+          analytics_tier: origin === 'background' ? 'extended' : 'essential'
+        })
       })
       if (!r.ok) return { ok: false, error: `LLM ${r.status}`, code: 'NETWORK' }
       return { ok: true, data: await r.json() }
@@ -89,20 +146,31 @@ export function installDevShim(): void {
       for (const [f, c] of pairs) {
         try {
           const fanfic = (await loadJson(f)) as Record<string, unknown>
-          const cf = (await loadJson(c)) as { narratorVoice: string; characters: unknown[] }
-          data.push({ fanfic, narratorVoice: cf.narratorVoice, characters: cf.characters })
+          const cf = (await loadJson(c)) as { narratorVoice: string; characters: Character[] }
+          data.push({
+            fanfic,
+            narratorVoice: normalizeNarratorVoice(cf.narratorVoice),
+            characters: normalizeCharacterVoices(cf.characters)
+          })
         } catch {
           /* нет пары — пропускаем */
         }
       }
       return { ok: true, data }
     },
-    getSettings: async () => ({ proxyUrl: PROXY }),
-    setSettings: async () => ({ proxyUrl: PROXY }),
+    getSettings: async () => ({ proxyUrl: PROXY, extendedTelemetryEnabled: true }),
+    setSettings: async () => ({ proxyUrl: PROXY, extendedTelemetryEnabled: true }),
+    trackEvent: async () => ({ ok: true }),
+    touchTelemetrySession: async () => ({ ok: true }),
     getState: async () => lsGet(),
     setState: async (next: Record<string, unknown>) => {
       localStorage.setItem('narra-state', JSON.stringify(next))
       return { ok: true }
+    },
+    deleteAllLocalData: async () => {
+      localStorage.removeItem('narra-state')
+      mem.clear()
+      return { ok: true, data: { deleted: true as const } }
     },
     testProxy: async () => {
       try {
@@ -114,8 +182,8 @@ export function installDevShim(): void {
       }
     },
     llmText,
-    llmJson: async (messages: unknown) => {
-      const r = await llmText(messages, 0.5)
+    llmJson: async (messages: unknown, origin: 'user' | 'background' = 'user') => {
+      const r = await llmText(messages, 0.5, origin)
       if (!r.ok) return r
       const parsed = extractJson((r.data as { text: string }).text)
       return parsed === null
@@ -139,7 +207,7 @@ export function installDevShim(): void {
     deleteCachedImage: async () => ({ ok: true, data: { ok: true } }),
     deleteCachedVideo: async () => ({ ok: true, data: { ok: true } }),
     saveCachedVideo: async () => ({ ok: true, data: { ok: true } }),
-    checkAppUpdate: async () => ({ ok: true, data: { hasUpdate: false, version: '', url: '' } }),
+    checkAppUpdate: async () => ({ ok: true, data: { hasUpdate: false, version: '' } }),
     installUpdate: async () => ({ ok: false, error: 'только в приложении', code: 'UNKNOWN' }),
     deleteBook: async () => ({ ok: true, data: { builtin: true } }),
     bookExcerpt: async () => ({ ok: false, error: 'только в приложении', code: 'UNKNOWN' }),
@@ -149,7 +217,7 @@ export function installDevShim(): void {
         const bin = atob(base64)
         const bytes = new Uint8Array(bin.length)
         for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
-        const r = await fetch(`${PROXY}/salutespeech/recognize`, {
+        const r = await devGatewayFetch('/v2/speech/recognize', {
           method: 'POST',
           headers: { 'Content-Type': 'application/octet-stream', 'X-Audio-Type': mime },
           body: bytes
@@ -166,10 +234,16 @@ export function installDevShim(): void {
       const ctrl = new AbortController()
       ;(async () => {
         try {
-          const r = await fetch(`${PROXY}/gigachat/chat`, {
+          const r = await devGatewayFetch('/v2/ai/chat/stream', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ messages, temperature }),
+            body: JSON.stringify({
+              messages,
+              temperature,
+              purpose: 'character_chat',
+              origin: 'user',
+              analytics_tier: 'essential'
+            }),
             signal: ctrl.signal
           })
           if (!r.ok || !r.body) {

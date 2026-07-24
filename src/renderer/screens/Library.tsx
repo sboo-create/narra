@@ -4,7 +4,9 @@ import { GeneratedImage } from '../components/GeneratedImage'
 import { coverKey } from '../lib/imageStyle'
 import { buildCharacters } from '../lib/importFlow'
 import { coverPrompt } from '../lib/passport'
-import type { BookContent } from '@shared/types'
+import { DEFAULT_NARRATOR_VOICE, type BookContent } from '@shared/types'
+import { prepareChapterScenario } from '../lib/scenario'
+import { proseOnly } from '../lib/blocks'
 
 type SortKey = 'title' | 'progress'
 
@@ -21,6 +23,155 @@ const SHELF_TINT: Record<string, string> = {
 
 const CARD_W = 168
 const CARD_GAP = 44
+const backgroundBookPreparation = new Set<string>()
+
+function durationBucket(startedAt: number): string {
+  const elapsed = performance.now() - startedAt
+  if (elapsed < 1_000) return '<1s'
+  if (elapsed < 5_000) return '1-4s'
+  if (elapsed < 15_000) return '5-14s'
+  if (elapsed < 60_000) return '15-59s'
+  if (elapsed < 300_000) return '1-4m'
+  return '5m+'
+}
+
+function resultSizeBucket(value: unknown): string {
+  const bytes = new TextEncoder().encode(JSON.stringify(value)).byteLength
+  if (bytes < 256 * 1024) return '<256kb'
+  if (bytes < 1024 * 1024) return '256kb-1mb'
+  if (bytes < 10 * 1024 * 1024) return '1-9mb'
+  return '10mb+'
+}
+
+async function prepareImportedBook(
+  meta: { id: string; title: string; author: string; excerpt: string },
+  toast: ReturnType<typeof useStore.getState>['toast']
+): Promise<void> {
+  if (backgroundBookPreparation.has(meta.id)) return
+  backgroundBookPreparation.add(meta.id)
+  const analysisStartedAt = performance.now()
+  void window.narra.trackEvent('book_analysis_started', {
+    analysis_version: 'v1',
+    origin: 'background'
+  })
+  try {
+    const built = await buildCharacters(
+      meta.title, meta.author, meta.excerpt, DEFAULT_NARRATOR_VOICE, 'background'
+    )
+    if (!built.ok) {
+      void window.narra.trackEvent('book_analysis_failed', {
+        analysis_version: 'v1',
+        stage: 'character_markup',
+        safe_error_code: 'PARSE',
+        origin: 'background'
+      })
+      toast({
+        type: 'error',
+        title: 'Герои пока не разметились',
+        message: 'Книга уже доступна. Подготовку можно повторить позднее.'
+      })
+      return
+    }
+    const saved = await window.narra.saveBookCharacters(
+      meta.id,
+      DEFAULT_NARRATOR_VOICE,
+      built.characters
+    )
+    if (!saved.ok) {
+      void window.narra.trackEvent('book_analysis_failed', {
+        analysis_version: 'v1',
+        stage: 'character_markup',
+        safe_error_code: 'UNKNOWN',
+        origin: 'background'
+      })
+      toast({ type: 'error', title: 'Герои не сохранились', message: saved.error })
+      return
+    }
+    await useStore.getState().reloadBooks()
+    void window.narra.trackEvent('book_analysis_completed', {
+      analysis_version: 'v1',
+      character_count_bucket: built.characters.length <= 3 ? '1-3' : built.characters.length <= 8 ? '4-8' : '9+',
+      duration_bucket: durationBucket(analysisStartedAt),
+      origin: 'background'
+    })
+    toast({ type: 'success', title: `Герои готовы: ${built.characters.map((c) => c.name).join(', ')}` })
+
+    const book = useStore.getState().books.find((candidate) => candidate.fanfic.id === meta.id)
+    const firstChapter = book?.fanfic.chapters[0]
+    if (!book || !firstChapter || !proseOnly(firstChapter.text).trim()) return
+    const key = `${meta.id}-1`
+    if (useStore.getState().persisted.scenarios[key]) return
+    const markupStartedAt = performance.now()
+    void window.narra.trackEvent('media_job_enqueued', {
+      job_type: 'chapter_markup',
+      quality: 'standard',
+      origin: 'background'
+    })
+    void window.narra.trackEvent('media_job_started', {
+      job_type: 'chapter_markup',
+      origin: 'background'
+    })
+    try {
+      const preparation = prepareChapterScenario(
+        key,
+        1,
+        proseOnly(firstChapter.text),
+        built.characters,
+        'background'
+      )
+      const scenario = await preparation.complete
+      // A deletion while preparation was running must not resurrect state.
+      if (!useStore.getState().books.some((candidate) => candidate.fanfic.id === meta.id)) return
+      useStore.getState().setScenario(key, scenario)
+      if (preparation.getFallbackCount() > 0) {
+        void window.narra.trackEvent('media_job_failed', {
+          job_type: 'chapter_markup',
+          stage: 'provider',
+          safe_error_code: 'UNKNOWN',
+          retry_count_bucket: '0',
+          origin: 'background'
+        })
+      } else {
+        void window.narra.trackEvent('media_job_completed', {
+          job_type: 'chapter_markup',
+          job_latency_bucket: durationBucket(markupStartedAt),
+          cache_hit: false,
+          result_size_bucket: resultSizeBucket(scenario),
+          origin: 'background'
+        })
+      }
+      toast({ type: 'success', title: 'Первая глава готова к озвучке' })
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') return
+      void window.narra.trackEvent('media_job_failed', {
+        job_type: 'chapter_markup',
+        stage: 'chapter_markup',
+        safe_error_code: 'UNKNOWN',
+        retry_count_bucket: '0',
+        origin: 'background'
+      })
+      toast({
+        type: 'error',
+        title: 'Первая глава пока не подготовилась',
+        message: 'Книга и герои уже готовы; разметка повторится при запуске озвучки.'
+      })
+    }
+  } catch {
+    void window.narra.trackEvent('book_analysis_failed', {
+      analysis_version: 'v1',
+      stage: 'character_markup',
+      safe_error_code: 'UNKNOWN',
+      origin: 'background'
+    })
+    toast({
+      type: 'error',
+      title: 'Фоновая подготовка не завершилась',
+      message: 'Книга уже доступна. Подготовку можно повторить позднее.'
+    })
+  } finally {
+    backgroundBookPreparation.delete(meta.id)
+  }
+}
 
 /** Сколько книг помещается в ряд — чтобы под каждым рядом была своя полка. */
 function useColumns(ref: React.RefObject<HTMLDivElement>): number {
@@ -84,16 +235,13 @@ export function Library() {
   const [bookUrl, setBookUrl] = useState('')
 
   async function afterImport(meta: { id: string; title: string; author: string; chapters: number; excerpt: string }) {
-    toast({ type: 'success', title: `«${meta.title}» загружена`, message: `${meta.chapters} глав · размечаю героев…` })
-    const built = await buildCharacters(meta.title, meta.author, meta.excerpt)
-    if (built.ok) {
-      await window.narra.saveBookCharacters(meta.id, built.characters)
-      toast({ type: 'success', title: `Готово: ${built.characters.map((c) => c.name).join(', ')}` })
-    } else {
-      await window.narra.saveBookCharacters(meta.id, [])
-      toast({ type: 'error', title: 'Герои не разметились', message: `${built.error}. Книга добавлена без героев.` })
-    }
+    toast({
+      type: 'success',
+      title: `«${meta.title}» загружена`,
+      message: `${meta.chapters} глав · книга уже доступна, героев и первую главу готовлю в фоне`
+    })
     await reloadBooks()
+    void prepareImportedBook(meta, toast)
   }
 
   const deleteBook = useStore((s) => s.deleteBook)

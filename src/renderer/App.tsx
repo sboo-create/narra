@@ -34,7 +34,7 @@ export default function App() {
           actionLabel: '⬇ Обновить',
           onRetry: async () => {
             toast({ type: 'info', title: 'Качаю обновление…', message: 'Приложение перезапустится само.' })
-            const res = await window.narra.installUpdate(r.data!.url)
+            const res = await window.narra.installUpdate()
             if (!res.ok) {
               toast({ type: 'error', title: 'Не удалось обновить', message: res.error })
             }

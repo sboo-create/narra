@@ -1,0 +1,29 @@
+[Unit]
+Description=Narra Traction analytics module
+After=network.target
+
+[Service]
+Type=simple
+User=gigatool
+Group=gigatool
+WorkingDirectory=/srv/stats/narra/app
+Environment=STATS_PORT=9905
+Environment=STATS_ENVIRONMENT=production
+Environment=STATS_DB=/srv/stats/narra/data/events.db
+Environment=STATS_TRUST_LOOPBACK_PROXY=1
+EnvironmentFile=-/etc/stats/narra.env
+ExecStart=/srv/stats/narra/app/.venv/bin/python server.py
+Restart=always
+RestartSec=3
+MemoryMax=512M
+CPUQuota=50%
+TasksMax=128
+NoNewPrivileges=true
+UMask=0077
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/stats/narra/data
+
+[Install]
+WantedBy=multi-user.target

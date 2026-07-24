@@ -7,6 +7,7 @@ import type {
   ProxyHealth,
   Settings
 } from '../shared/types'
+import type { AnalyticsEventName, SafeAnalyticsValue } from '../shared/analytics'
 
 export interface ChatHandlers {
   onChunk: (delta: string) => void
@@ -19,17 +20,32 @@ const api = {
 
   getSettings: (): Promise<Settings> => ipcRenderer.invoke(IPC.getSettings),
   setSettings: (next: Partial<Settings>): Promise<Settings> => ipcRenderer.invoke(IPC.setSettings, next),
+  trackEvent: (
+    name: AnalyticsEventName,
+    properties: Record<string, SafeAnalyticsValue> = {}
+  ): Promise<{ ok: boolean }> => ipcRenderer.invoke(IPC.trackEvent, name, properties),
+  touchTelemetrySession: (): Promise<{ ok: boolean }> =>
+    ipcRenderer.invoke(IPC.touchTelemetrySession),
 
   getState: (): Promise<Record<string, unknown>> => ipcRenderer.invoke(IPC.getState),
   setState: (next: Record<string, unknown>): Promise<{ ok: boolean }> =>
     ipcRenderer.invoke(IPC.setState, next),
+  deleteAllLocalData: (): Promise<ApiResult<{ deleted: true }>> =>
+    ipcRenderer.invoke(IPC.deleteAllLocalData),
 
   testProxy: (): Promise<ApiResult<ProxyHealth>> => ipcRenderer.invoke(IPC.testProxy),
 
-  llmJson: <T = unknown>(messages: LlmMessage[]): Promise<ApiResult<T>> =>
-    ipcRenderer.invoke(IPC.llmJson, messages),
-  llmText: (messages: LlmMessage[], temperature?: number): Promise<ApiResult<{ text: string }>> =>
-    ipcRenderer.invoke(IPC.llmText, messages, temperature),
+  llmJson: <T = unknown>(
+    messages: LlmMessage[],
+    origin: 'user' | 'background' = 'user'
+  ): Promise<ApiResult<T>> =>
+    ipcRenderer.invoke(IPC.llmJson, messages, origin),
+  llmText: (
+    messages: LlmMessage[],
+    temperature?: number,
+    origin: 'user' | 'background' = 'user'
+  ): Promise<ApiResult<{ text: string }>> =>
+    ipcRenderer.invoke(IPC.llmText, messages, temperature, origin),
 
   generateImage: (
     prompt: string,
@@ -37,62 +53,88 @@ const api = {
     width?: number,
     height?: number,
     force?: boolean,
-    engine?: 'kandinsky'
+    engine?: 'kandinsky',
+    origin?: 'user' | 'background'
   ): Promise<ApiResult<{ dataUrl: string; cached: boolean }>> =>
-    ipcRenderer.invoke(IPC.generateImage, prompt, cacheKey, width, height, force, engine),
+    ipcRenderer.invoke(IPC.generateImage, prompt, cacheKey, width, height, force, engine, origin),
   getCachedImage: (cacheKey: string): Promise<ApiResult<{ dataUrl: string }>> =>
     ipcRenderer.invoke(IPC.getCachedImage, cacheKey),
 
   synthesize: (
     payload: { text?: string; ssml?: string; voice: string },
-    cacheKey?: string
+    cacheKey?: string,
+    origin?: 'user' | 'background'
   ): Promise<ApiResult<{ dataUrl: string; cached: boolean }>> =>
-    ipcRenderer.invoke(IPC.synthesize, payload, cacheKey),
+    ipcRenderer.invoke(IPC.synthesize, payload, cacheKey, origin),
   getCachedAudio: (cacheKey: string): Promise<ApiResult<{ dataUrl: string }>> =>
     ipcRenderer.invoke(IPC.getCachedAudio, cacheKey),
 
   generateAvatar: (
     imageDataUrl: string,
     audioDataUrl: string,
-    cacheKey?: string
+    cacheKey?: string,
+    origin?: 'user' | 'background'
   ): Promise<ApiResult<{ dataUrl: string; cached: boolean }>> =>
-    ipcRenderer.invoke(IPC.generateAvatar, imageDataUrl, audioDataUrl, cacheKey),
+    ipcRenderer.invoke(IPC.generateAvatar, imageDataUrl, audioDataUrl, cacheKey, origin),
   getCachedVideo: (cacheKey: string): Promise<ApiResult<{ dataUrl: string }>> =>
     ipcRenderer.invoke(IPC.getCachedVideo, cacheKey),
   animatePortrait: (
     imageDataUrl: string,
     query: string,
     cacheKey?: string,
-    quality?: 'lite' | 'hd'
+    quality?: 'lite' | 'hd',
+    origin?: 'user' | 'background'
   ): Promise<ApiResult<{ dataUrl: string; cached: boolean }>> =>
-    ipcRenderer.invoke(IPC.animatePortrait, imageDataUrl, query, cacheKey, quality),
+    ipcRenderer.invoke(IPC.animatePortrait, imageDataUrl, query, cacheKey, quality, origin),
   deleteCachedImage: (cacheKey: string): Promise<ApiResult<{ ok: true }>> =>
     ipcRenderer.invoke(IPC.deleteCachedImage, cacheKey),
   deleteCachedVideo: (cacheKey: string): Promise<ApiResult<{ ok: true }>> =>
     ipcRenderer.invoke(IPC.deleteCachedVideo, cacheKey),
   saveCachedVideo: (cacheKey: string, dataUrl: string): Promise<ApiResult<{ ok: true }>> =>
     ipcRenderer.invoke(IPC.saveCachedVideo, cacheKey, dataUrl),
-  checkAppUpdate: (): Promise<ApiResult<{ hasUpdate: boolean; version: string; url: string }>> =>
+  checkAppUpdate: (): Promise<ApiResult<{ hasUpdate: boolean; version: string }>> =>
     ipcRenderer.invoke(IPC.checkAppUpdate),
-  installUpdate: (url: string): Promise<ApiResult<{ started: true }>> =>
-    ipcRenderer.invoke(IPC.installUpdate, url),
-  deleteBook: (bookId: string): Promise<ApiResult<{ builtin: boolean }>> =>
+  installUpdate: (): Promise<ApiResult<{ started: true; version: string }>> =>
+    ipcRenderer.invoke(IPC.installUpdate),
+  deleteBook: (bookId: string): Promise<ApiResult<{ builtin: boolean; cleanupPending?: boolean }>> =>
     ipcRenderer.invoke(IPC.deleteBook, bookId),
   bookExcerpt: (bookId: string): Promise<ApiResult<{ title: string; author: string; excerpt: string }>> =>
     ipcRenderer.invoke(IPC.bookExcerpt, bookId),
   importBookFromUrl: (
     url: string
-  ): Promise<ApiResult<{ id: string; title: string; author: string; chapters: number; words: number; excerpt: string }>> =>
+  ): Promise<ApiResult<{
+    id: string
+    title: string
+    author: string
+    chapters: number
+    words: number
+    excerpt: string
+    format: 'html'
+    sizeBucket: '<1mb' | '1-9mb' | '10-39mb'
+  }>> =>
     ipcRenderer.invoke(IPC.importBookFromUrl, url),
   recognize: (base64: string, mime: string): Promise<ApiResult<{ text: string }>> =>
     ipcRenderer.invoke(IPC.recognize, base64, mime),
-  importBook: (): Promise<ApiResult<{ id: string; title: string; author: string; chapters: number; words: number; excerpt: string }>> =>
+  importBook: (): Promise<ApiResult<{
+    id: string
+    title: string
+    author: string
+    chapters: number
+    words: number
+    excerpt: string
+    format: 'epub' | 'fb2' | 'txt' | 'pdf' | 'unknown'
+    sizeBucket: '<1mb' | '1-9mb' | '10-39mb'
+  }>> =>
     ipcRenderer.invoke(IPC.importBook),
-  saveBookCharacters: (bookId: string, characters: unknown): Promise<ApiResult<{ ok: true }>> =>
-    ipcRenderer.invoke(IPC.saveBookCharacters, bookId, characters),
+  saveBookCharacters: (
+    bookId: string,
+    narratorVoice: string,
+    characters: unknown
+  ): Promise<ApiResult<{ ok: true }>> =>
+    ipcRenderer.invoke(IPC.saveBookCharacters, bookId, narratorVoice, characters),
 
   chat: (messages: LlmMessage[], handlers: ChatHandlers, temperature?: number): (() => void) => {
-    const requestId = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+    const requestId = crypto.randomUUID()
     const onChunk = (_e: unknown, p: { requestId: string; delta: string }) => {
       if (p.requestId === requestId) handlers.onChunk(p.delta)
     }

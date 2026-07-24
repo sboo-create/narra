@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Проверки мультиязычного TTS-детектора: `bun scripts/check-tts-language.mjs`
+// Проверки мультиязычного TTS-детектора: `bun scripts/tts-language.test.mjs`
 // (или node ≥23.6 — типы вырезаются нативно). Без внешних зависимостей.
 import assert from 'node:assert/strict'
 import {
@@ -9,6 +9,7 @@ import {
   buildMultilingualSsml,
   SALUTE_TTS_LANGUAGES
 } from '../src/renderer/lib/ttsLanguage.ts'
+import { saluteVoiceSampleRate } from '../src/shared/types.ts'
 
 const PROSODY = { rate: '100%', pitch: '+0%', endPauseMs: 120 }
 
@@ -56,6 +57,26 @@ const tolstoy =
   assert.ok(/<prosody rate="100%" pitch="\+0%">/.test(ssml), 'просодия эмоции сохранена')
   assert.ok(ssml.indexOf('Князь улыбнулся.') < ssml.indexOf('Bonjour'))
   assert.ok(ssml.indexOf('Bonjour') < ssml.indexOf('Затем он вышел.'))
+}
+
+// --- Product voice registry: multilingual SSML uses the real provider rate. ---
+{
+  const assistantVoice = `Che_${saluteVoiceSampleRate('Che')}`
+  const secondaryVoice = `Aer_${saluteVoiceSampleRate('Aer')}`
+  const assistant = buildMultilingualSsml({
+    text: tolstoy,
+    providerVoice: assistantVoice,
+    prosody: PROSODY
+  })
+  const secondary = buildMultilingualSsml({
+    text: tolstoy,
+    providerVoice: secondaryVoice,
+    prosody: PROSODY
+  })
+  assert.ok(assistant && secondary)
+  assert.ok(assistant.includes('name="Che_48000"'), '48 kHz assistant stays 48 kHz')
+  assert.ok(!assistant.includes('Che_24000'), 'assistant must not be downgraded')
+  assert.ok(secondary.includes('name="Aer_24000"'), '24 kHz library voice stays 24 kHz')
 }
 
 // --- XML экранируется ---

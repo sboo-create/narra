@@ -1,0 +1,28 @@
+{
+  "captured_at": "2026-07-23T17:50:00+03:00",
+  "railway_environment": "staging",
+  "evidence_scope": "sanitized non-secret model and route configuration",
+  "active_llm_routes": {
+    "character_chat": "openrouter",
+    "structured_task": "openrouter",
+    "summary": "openrouter",
+    "scenario": "openrouter",
+    "memory": "openrouter"
+  },
+  "configured_models": {
+    "openrouter": "deepseek/deepseek-v4-flash",
+    "giga_adapter": "gigachat-3-ultra",
+    "image": "k6-image-t2i",
+    "video": [
+      "k5-i2v-hd",
+      "k5-i2v-lite"
+    ],
+    "salute_recognition": "universal_turbo"
+  },
+  "notes": [
+    "All purpose-specific OpenRouter model overrides were unset, so OPENROUTER_MODEL applies to every active LLM purpose.",
+    "Giga is configured as an adapter but is not an active staging route.",
+    "Credential values, tokens and provider URLs are intentionally omitted."
+  ],
+  "contains_secrets": false
+}
