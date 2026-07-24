@@ -22,6 +22,7 @@
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "fetch-content": "node scripts/fetch-content.mjs",
+    "test:tts-language": "node scripts/tts-language.test.mjs",
     "push": "bash scripts/push.sh"
   },
   "dependencies": {

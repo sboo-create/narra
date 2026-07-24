@@ -1,4 +1,4 @@
-import type { Segment } from '@shared/types'
+import type { SaluteVoice, Segment } from '@shared/types'
 import { CoalescedTaskMap } from '@shared/coalesced-task'
 import { listenedFraction } from '@shared/playback-progress'
 import { buildSsml } from './ttsEmotion'
@@ -9,7 +9,7 @@ export type TtsMode = 'salute' | 'browser'
 interface Opts {
   mode: TtsMode
   segments: Segment[]
-  voiceFor: (charId: string | null) => string
+  voiceFor: (charId: string | null) => SaluteVoice
   cacheKeyFor: (idx: number) => string
   onIndex: (idx: number) => void
   onStatus: (s: TtsStatus) => void
@@ -174,7 +174,7 @@ export class TtsController {
     const seg = this.opts.segments[idx]
     const voice = this.opts.voiceFor(seg.character)
     const res = await window.narra.synthesize(
-      { ssml: buildSsml(seg.text, seg.emotion), voice },
+      { ssml: buildSsml(seg.text, seg.emotion, voice), voice },
       this.opts.cacheKeyFor(idx)
     )
     if (res.ok) return { url: res.data!.dataUrl, cached: Boolean(res.data!.cached) }

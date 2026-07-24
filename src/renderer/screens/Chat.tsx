@@ -3,6 +3,7 @@ import { useStore, canChat, canTts, canImage, charKey } from '../store/useStore'
 import { Locker } from '../components/Locker'
 import { chatMessages, summaryRequest, memoryUpdateRequest, emotionRequest } from '../lib/prompts'
 import { buildSsml, EMOTION_LABEL } from '../lib/ttsEmotion'
+import { hasForeignLanguage } from '../lib/ttsLanguage'
 import { speakOnce, SpeechController } from '../lib/voice'
 import { LivingPortrait } from '../components/LivingPortrait'
 import { CharAvatar } from '../components/CharAvatar'
@@ -82,9 +83,10 @@ export function Chat({ id, sceneContext, autoAsk }: Props) {
       const f = EMOTIONS.find((e) => w.includes(e))
       if (f) emo = f
     }
+    const voice = voiceFor(id)
     const aud = await window.narra.synthesize(
-      { ssml: buildSsml(m.content, emo), voice: voiceFor(id) },
-      `chatmsg-${fanfic.id}-${m.id}-${emo}`
+      { ssml: buildSsml(m.content, emo, voice), voice },
+      `chatmsg-${fanfic.id}-${m.id}-${emo}${hasForeignLanguage(m.content) ? '-ml1' : ''}`
     )
     if (!aud.ok) {
       setAvatarBusy(null)
@@ -295,9 +297,10 @@ export function Chat({ id, sceneContext, autoAsk }: Props) {
         if (found) emotion = found
       }
       if (speakTargetRef.current !== m.id) return // пользователь отменил, пока думали
+      const voice = voiceFor(id)
       const res = await window.narra.synthesize(
-        { ssml: buildSsml(m.content, emotion), voice: voiceFor(id) },
-        `chatmsg-${m.id}-${emotion}`
+        { ssml: buildSsml(m.content, emotion, voice), voice },
+        `chatmsg-${m.id}-${emotion}${hasForeignLanguage(m.content) ? '-ml1' : ''}`
       )
       if (speakTargetRef.current !== m.id) return
       if (res.ok) {
