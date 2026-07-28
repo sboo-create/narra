@@ -4,8 +4,18 @@
     {
       "name": "aiwa-webapp",
       "runtimeExecutable": "node",
-      "runtimeArgs": [".claude/aiwa-serve.js"],
+      "runtimeArgs": [
+        ".claude/aiwa-serve.js"
+      ],
       "port": 8901
+    },
+    {
+      "name": "aiwa-redesign",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        ".claude/aiwa2-serve.js"
+      ],
+      "port": 8902
     }
   ]
 }

@@ -1,1 +1,1 @@
-{"2026-07-23":{"requests":3,"byService":{"llm-complete":3},"tokensIn":0,"tokensOut":0,"ttsChars":0,"ips":{"::1":3}}}
+{"2026-07-23":{"requests":6,"byService":{"llm-complete":4,"image":2},"tokensIn":0,"tokensOut":0,"ttsChars":0,"ips":{"::1":6}},"2026-07-28":{"requests":2,"byService":{"video":2},"tokensIn":0,"tokensOut":0,"ttsChars":0,"ips":{"::1":2}}}

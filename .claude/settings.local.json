@@ -185,7 +185,8 @@
       "Bash(curl -sS -m 20 -o /dev/null -w \"dmg для автообновления: %{http_code}\\\\n\" https://narra-proxy-production.up.railway.app/updates/Narra-arm64.dmg)",
       "Bash(curl -sS -m 10 -o /dev/null -w \"контент для команды: %{http_code}\\\\n\" https://narra-proxy-production.up.railway.app/team/content/fanfic.json)",
       "Bash(git -c user.name=narra -c user.email=narra@local commit -m 'Установка в одну команду \\(install.sh снимает карантин Gatekeeper\\), подсказка в баннере обновления *)",
-      "Bash(mdfind -name aiwa_bot.py)"
+      "Bash(mdfind -name aiwa_bot.py)",
+      "Bash(RW=\"/Users/aleksandr/Documents/Claude/Projects/AIWA Vision / Wellness/aiwa-redesign\" && M=\"/Users/aleksandr/Documents/Claude/Projects/AIWA Vision / Wellness/AIWA_bot\" && mkdir -p \"$M/webapp2/assets\" && cp \"$RW/aiwa_webapp.html\" \"$M/webapp2/index.html\" && rm -rf \"$M/webapp2/assets/deslop\" && cp -R \"$RW/assets/deslop\" \"$M/webapp2/assets/deslop\" && ls \"$M/webapp2\" \"$M/webapp2/assets/deslop\" | head -12 && du -sh \"$M/webapp2\")"
     ]
   }
 }
