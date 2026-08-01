@@ -430,7 +430,7 @@ def _period_starts(now: float, days: float) -> tuple[float, dict[str, float]]:
         "selected": (day_start - timedelta(days=selected_days - 1)).timestamp(),
         "dau": day_start.timestamp(),
         "wau": (day_start - timedelta(days=day_start.weekday())).timestamp(),
-        "mau": day_start.replace(day=1).timestamp(),
+        "mau": (day_start - timedelta(days=29)).timestamp(),
     }
 
 
@@ -962,7 +962,7 @@ def compute_dashboard(days: float = 1.0) -> dict[str, Any]:
                 ("Ever used", "ever_used", "opened a book at least once"),
                 ("DAU", "dau", "active today in Moscow time"),
                 ("WAU", "wau", "active in the current Moscow ISO week"),
-                ("MAU", "mau", "active in the current Moscow month"),
+                ("MAU", "mau", "active in the last 30 dates"),
                 ("Sessions / DAU", "sessions_per_dau", "today MSK / DAU today"),
                 ("Tools / DAU", "tools_per_dau", "AI requests today MSK, retries excluded"),
             ) if key in overview
