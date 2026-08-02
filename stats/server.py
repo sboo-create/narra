@@ -19,7 +19,7 @@ import sqlite3
 import threading
 import time
 from collections import Counter, defaultdict, deque
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -941,6 +941,13 @@ def compute_dashboard(days: float = 1.0) -> dict[str, Any]:
     update_downloaded = update_keys("update_downloaded")
     update_verified = update_keys("update_verified", successful=True)
     update_installed = update_keys("update_installed")
+    # Снапшот ретеншна считается один раз на запрос: и карточки ретеншна, и
+    # черновик канона берут его отсюда, второй проход по событиям не нужен.
+    retention_snapshot: dict = {}
+    try:
+        retention_snapshot = compute_retention(now)
+    except Exception:  # noqa: BLE001 — карточки деградируют, ядро выживает
+        pass
     return {
         "updated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "window_days": window_days,
@@ -955,7 +962,8 @@ def compute_dashboard(days: float = 1.0) -> dict[str, Any]:
                 ("Ever used", "ever_used"), ("DAU", "dau"), ("WAU", "wau"), ("MAU", "mau"),
                 ("Sessions / DAU", "sessions_per_dau"), ("Tools / DAU", "tools_per_dau"),
             ) if key in overview
-        ] + _retention_cards(),
+        ] + _retention_cards(retention_snapshot)
+        + _canonical_cards(now, retention_snapshot),
         "primary": [
             {"label": label, "value": overview[key], "note": note}
             for label, key, note in (
@@ -1272,9 +1280,9 @@ def compute_retention(now: float | None = None) -> dict:
     }
 
 
-def _retention_cards() -> list[dict]:
+def _retention_cards(retention: dict | None = None) -> list[dict]:
     try:
-        rolling = compute_retention()["rolling"]
+        rolling = (retention or compute_retention())["rolling"]
         return [
             {"label": f"Retention {h.upper()} · rolling, 90d cohorts",
              "value": f"{rolling[h] * 100:.0f}%"}
@@ -1282,6 +1290,151 @@ def _retention_cards() -> list[dict]:
         ]
     except Exception:  # noqa: BLE001 — cards degrade, the core survives
         return []
+
+
+# «Сессия = использование продукта = активность человека, а сколько агент
+# работает в фоне — без разницы» (Артём/Цев, 02.08). Маски вида «в имени
+# есть tool/agent» падают ОТКРЫТО: незнакомое машинное событие молча
+# уезжает в человеческие сессии и завышает их. Аллоулист падает закрыто —
+# модуль перечисляет СВОИ человеческие события. Отдельный список тут
+# заводить не надо: ACTIVE_EVENTS ровно и означает «человек что-то
+# сделал». Пустой кортеж = карточек сессий у модуля нет, и это честнее
+# выдумки.
+# Важно, что снаружи остаётся: app_opened и app_version_seen шлёт
+# startTelemetry() на каждом запуске, а update_verified/update_installed —
+# app.whenReady() после самоперезапуска обновления, вообще без участия
+# человека. Появится openAtLogin — эти события полезут в сессии; в
+# аллоулисте их нет, и он это переживёт молча. В MACHINE_EVENT_NAMES их
+# тоже нет: запуск не работа агента.
+HUMAN_EVENT_NAMES: tuple[str, ...] = tuple(sorted(ACTIVE_EVENTS))
+# Машинные события перечисляются так же явно, а не как «всё остальное»:
+# дополнение к человеческому списку засасывает нейтральное (обновления,
+# версии, запуски) и выдаёт его за работу агента. Пустой список =
+# карточки Agent runtime у модуля нет.
+MACHINE_EVENT_NAMES: tuple[str, ...] = (
+    "media_job_cancelled", "media_job_completed", "media_job_enqueued",
+    "media_job_failed", "media_job_started", "provider_attempt_completed",
+    "provider_attempt_failed", "provider_attempt_not_configured",
+    "provider_attempt_started")
+# ai_request_* живёт по обе стороны: с origin=user это человек, с
+# origin=background — тот самый машинный марафон (_is_background_ai).
+# Поэтому одного IN по имени мало, origin нужен с обеих сторон.
+BACKGROUND_MACHINE_NAMES: tuple[str, ...] = (
+    "ai_request_completed", "ai_request_failed", "ai_request_started")
+# IS NOT / IS, а не != / =: у события без origin свойство NULL, и такое
+# событие человеческое, а не «неизвестно».
+_ORIGIN_SQL = "json_extract(properties, '$.origin')"
+# Разрыв, после которого следующее человеческое событие открывает новую
+# сессию (веб-стандарт 30 минут; фрейм Цева — интервалы между user msg,
+# «сессия это когда человек касается ноута»).
+SESSION_GAP_SECONDS = 30 * 60
+
+
+def _canonical_cards(now: float, retention: dict | None = None) -> list[dict]:
+    """Черновик канона «6 показателей» (Артём/Цева 02.08; ПН решает состав).
+
+    Сессии считаются двумя способами намеренно — в ПН выбирается один:
+    - «gap» — интервалы между human-событиями с разрывом 30 минут (фрейм
+      Цевы: сессия = когда человек касается ноута);
+    - «hourly» — прокси Артёма: уникальные пары (актор, час). Дешевле и
+      детерминированнее, но длинный разговор дробится по границам часа.
+    Обе смотрят только на HUMAN_EVENT_NAMES, поэтому агентский марафон не
+    надувает сессии; машинное время вынесено в Agent runtime по своему
+    списку MACHINE_EVENT_NAMES, а его объём в вызовах уже меряет
+    продуктовый блок ai. Списки не дополняют друг друга: запуски,
+    обновления и версии не человеческие и не машинные, они никакие.
+    Плюс Stickiness DAU/MAU (rolling) и Return rate W+1/W+2 из недельных
+    когорт. Всё деградирует молча, ядро summary неприкосновенно.
+    """
+    cards: list[dict] = []
+    try:
+        current = datetime.fromtimestamp(now, REPORTING_TZ)
+        day_start = current.replace(hour=0, minute=0, second=0, microsecond=0)
+        since = (day_start - timedelta(days=29)).timestamp()
+        window = " FROM events WHERE ts >= ? AND device_id != ''"
+        names = list(HUMAN_EVENT_NAMES)
+        # name IN (...) + origin != background — это _is_active_event,
+        # переписанный на SQL один в один.
+        human = (" AND name IN (" + ",".join("?" * len(names)) + ")"
+                 + " AND " + _ORIGIN_SQL + " IS NOT 'background'") if names else ""
+        machine_names = list(MACHINE_EVENT_NAMES)
+        background_names = list(BACKGROUND_MACHINE_NAMES)
+        # Всегда-машинное по имени ИЛИ человеческое по имени, но с фоновым
+        # origin. Нейтральное (запуски, обновления, версии) не попадает ни
+        # сюда, ни в human — оно просто не является ни тем, ни другим.
+        machine = " AND (" + " OR ".join(filter(None, (
+            ("name IN (" + ",".join("?" * len(machine_names)) + ")"
+             if machine_names else ""),
+            ("(name IN (" + ",".join("?" * len(background_names)) + ")"
+             " AND " + _ORIGIN_SQL + " IS 'background')"
+             if background_names else ""),
+        ))) + ")"
+        # Читаем под DB_LOCK, как и остальные чтения модуля: ingest и
+        # монитор пишут в то же соединение из своих потоков.
+        with DB_LOCK:
+            if names:
+                # Сессия начинается, когда предыдущее человеческое событие
+                # того же актора старше SESSION_GAP_SECONDS (или его не было).
+                gap_sessions = _db.execute(
+                    "SELECT COUNT(*) FROM (SELECT ts - LAG(ts) OVER"
+                    " (PARTITION BY device_id ORDER BY ts) AS delta"
+                    + window + human + ") WHERE delta IS NULL OR delta > ?",
+                    (since, *names, SESSION_GAP_SECONDS)).fetchone()[0]
+                hours = _db.execute(
+                    "SELECT COUNT(DISTINCT device_id || ':' || CAST(ts / 3600 AS INT))"
+                    + window + human, (since, *names)).fetchone()[0]
+            if machine_names or background_names:
+                agent_hours = _db.execute(
+                    "SELECT COUNT(DISTINCT device_id || ':' || CAST(ts / 3600 AS INT))"
+                    + window + machine,
+                    (since, *machine_names, *background_names)).fetchone()[0]
+            dau, mau = _db.execute(
+                "SELECT COUNT(DISTINCT CASE WHEN ts >= ? THEN device_id END),"
+                " COUNT(DISTINCT device_id)" + window,
+                (day_start.timestamp(), since)).fetchone()
+        if names:
+            cards.append({
+                "label": "Sessions / day · human, 30-min gap · 30 Moscow dates",
+                "value": f"{gap_sessions / 30:.1f}",
+            })
+            cards.append({
+                "label": "Sessions / day · human hourly proxy · 30 Moscow dates",
+                "value": f"{hours / 30:.1f}",
+            })
+        if (machine_names or background_names) and agent_hours:
+            cards.append({
+                "label": "Agent runtime · machine actor-hours / day",
+                "value": f"{agent_hours / 30:.1f}",
+            })
+        if mau:
+            cards.append({"label": "Stickiness · DAU/MAU rolling",
+                          "value": f"{dau / mau * 100:.0f}%"})
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        cohorts = (retention or compute_retention(now))["weekly_cohorts"]
+        sizes, weeks = cohorts.get("sizes") or {}, cohorts.get("weeks") or {}
+        if sizes:
+            current = datetime.fromtimestamp(now, REPORTING_TZ)
+            week_start = (current.date()
+                          - timedelta(days=current.weekday())).toordinal()
+            for offset in (1, 2):
+                den = num = 0
+                for key, size in sizes.items():
+                    # Зрелость: неделя W+offset когорты полностью прожита,
+                    # т.е. закончилась до начала текущей недели.
+                    cohort = date.fromisoformat(key).toordinal()
+                    if cohort + offset * 7 + 7 <= week_start:
+                        den += size
+                        num += (weeks.get(key) or {}).get(str(offset), 0)
+                if den:
+                    cards.append({
+                        "label": f"Return rate W+{offset} · weekly cohorts",
+                        "value": f"{num / den * 100:.0f}%",
+                    })
+    except Exception:  # noqa: BLE001
+        pass
+    return cards
 
 
 @app.get("/retention")
