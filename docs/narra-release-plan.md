@@ -1,5 +1,13 @@
 # Narra — release, media capacity и аналитика
 
+> **Инфраструктурный статус этого плана устарел.** После 5 августа 2026 года
+> production gateway и stats обслуживаются на `i167`, Railway staging
+> остановлен, а Railway production ожидает удаления владельцем аккаунта.
+> Текущее состояние зафиксировано в
+> [`infrastructure-current.md`](infrastructure-current.md); канонический код и
+> runbook находятся в
+> [`mishanaer/ReadAny`](https://github.com/mishanaer/ReadAny).
+
 > Обновлено 24 июля 2026
 > Рабочая ветка: `feat/narra-monitoring-and-voices`
 > Статус: gateway/stats staging и production Traction обновлены; общая карточка
