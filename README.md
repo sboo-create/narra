@@ -8,7 +8,7 @@
 Electron (main / preload / renderer React+Vite+TS)
         │  все запросы к нейросетям
         ▼
-Прокси server/index.mjs (Express, деплой на Railway) — ключи ТОЛЬКО здесь
+Gateway (Express, production на i167) — ключи ТОЛЬКО здесь
         ├─ GigaChat-3-Ultra  — чаты, разметка, саммари (LiteLLM-шлюз, SSE-стриминг)
         ├─ OpenRouter        — server-side маршрут/fallback по назначению запроса
         ├─ gigachat-image    — портреты героев
@@ -19,11 +19,15 @@ Electron (main / preload / renderer React+Vite+TS)
                           └─ bounded audit/outbox → stats-narra → Traction
 ```
 
-- Текущий Railway URL владельца: `https://narra-proxy-production.up.railway.app` (`/health`); перед релизом проверяется через отдельный staging.
+- Production gateway работает на `i167`, но публичный
+  `https://narra.multitool.works` остаётся закрыт ответом `503` до отдельного
+  cutover. Канонический серверный код, deploy и backup находятся в
+  [`mishanaer/ReadAny`](https://github.com/mishanaer/ReadAny/tree/main/services/narra-gateway);
+  актуальный статус описан в [`docs/infrastructure-current.md`](docs/infrastructure-current.md).
 - Автообновление: только `latest-mac.yml` + universal ZIP по HTTPS; notarized DMG публикуется как отдельный installer. Legacy `/app/latest` и `latest.json` не поддерживаются.
 - Доступ без приглашений: приложение само регистрирует installation UUID,
   получает 15-минутный bearer; gateway хранит отзыв и дневные per-install/global
-  бюджеты на Railway Volume. Общего registration secret в сборке нет:
+  бюджеты в постоянном server volume. Общего registration secret в сборке нет:
   per-install proof создаётся на устройстве, а сервер хранит только HMAC с
   отдельным `INSTALLATION_SECRET_PEPPER`.
 - Контент: `content/*.json` (книга) + `content/*-characters.json` (герои с паспортами внешности)
@@ -35,7 +39,7 @@ Electron (main / preload / renderer React+Vite+TS)
 npm install
 npm install --prefix server
 npm run fetch-content   # докачивает книги, которых нет в публичном репо (фанфик и др.)
-# ключи (только для локального сервера; в проде они в Railway Variables):
+# ключи только для локального сервера; production secrets хранятся на i167:
 cp server/.env.example server/.env   # и заполнить
 npm run proxy                                  # прокси на :8787
 npm run dev                                     # Electron + Vite HMR
@@ -54,7 +58,8 @@ npm run dev                                     # Electron + Vite HMR
 | Озвучка: сценарий и плеер | `src/renderer/lib/scenario.ts`, `ttsController.ts` |
 | Фоновое оживление портретов | `src/renderer/lib/idleManager.ts` |
 | Импорт книг (fb2/epub/pdf/txt) | `src/main/importer.ts` |
-| Прокси и все интеграции | `server/index.mjs` |
+| Историческая локальная копия gateway | `server/index.mjs` |
+| Канонический production gateway | `mishanaer/ReadAny/services/narra-gateway` |
 
 ## Релиз
 
